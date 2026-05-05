@@ -32,17 +32,8 @@ export_manifest <- function(
         extent <- .merge_extent(extent, layers$polygons$extent)
     }
     if (!is.null(gpoints)) {
-        sv        <- gpoints@spatVector
-        cell_size <- 100L
-        layers$transcripts <- .layer_manifest(sv, "points", artifacts_dir, url_prefix)
-        layers$transcripts$genes    <- as.list(sort(gpoints@unique_ID_cache))
-        layers$transcripts$overview <- .compute_overview(sv, cell_size)
-
-        gene_ov_dir <- file.path(normalizePath(artifacts_dir), "gene_overview")
-        .compute_gene_overviews(sv, gene_ov_dir, cell_size)
-        layers$transcripts$overview$gene_overview_url <-
-            paste0(url_prefix, "/gene_overview/gene_overview.parquet")
-
+        layers$transcripts <- .layer_manifest(gpoints@spatVector, "points", artifacts_dir, url_prefix)
+        layers$transcripts$genes <- as.list(sort(gpoints@unique_ID_cache))
         extent <- .merge_extent(extent, layers$transcripts$extent)
     }
 
@@ -96,54 +87,6 @@ export_manifest <- function(
     # Make relative to artifacts_dir, then prefix with URL
     rel <- sub(paste0(normalizePath(artifacts_dir), "/?"), "", normalizePath(full))
     paste0(url_prefix, "/", rel)
-}
-
-.compute_gene_overviews <- function(store, output_dir, cell_size = 100L) {
-    if (!requireNamespace("dplyr", quietly = TRUE)) {
-        warning("dplyr required for per-gene overview computation; skipping")
-        return(invisible(NULL))
-    }
-    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-    ext  <- store@params$disk_extent
-    xmin <- ext[[1]]
-    ymin <- ext[[3]]
-    out  <- file.path(output_dir, "gene_overview.parquet")
-    message("Computing per-gene overview grids (single Arrow pass)…")
-    # Sort by feat_ID so DuckDB can use row-group min/max stats for predicate pushdown.
-    # A single sorted file means 1-2 HTTP range requests per gene query rather than
-    # one HTTP request per gene file.
-    arrow::open_dataset(store@path) |>
-        dplyr::transmute(
-            feat_ID,
-            col = as.integer(floor((x_index - xmin) / cell_size)),
-            row = as.integer(floor((y_index - ymin) / cell_size))
-        ) |>
-        dplyr::count(feat_ID, col, row, name = "n") |>
-        dplyr::arrange(feat_ID) |>
-        arrow::write_parquet(out, chunk_size = 50000L)
-    message("Per-gene overview written to: ", out)
-    invisible(out)
-}
-
-.compute_overview <- function(store, cell_size = 100) {
-    if (!requireNamespace("dplyr", quietly = TRUE)) {
-        warning("dplyr required for overview computation; skipping")
-        return(NULL)
-    }
-    message("Computing overview density grid (single Arrow pass across all tiles)…")
-    ext  <- store@params$disk_extent  # xmin, xmax, ymin, ymax
-    xmin <- ext[[1]]
-    ymin <- ext[[3]]
-
-    grid <- arrow::open_dataset(store@path) |>
-        dplyr::mutate(
-            col = as.integer(floor((x_index - xmin) / cell_size)),
-            row = as.integer(floor((y_index - ymin) / cell_size))
-        ) |>
-        dplyr::count(col, row, name = "n") |>
-        dplyr::collect()
-
-    list(cell_size = cell_size, col = grid$col, row = grid$row, n = grid$n)
 }
 
 .merge_extent <- function(e1, e2) {
