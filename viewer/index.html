@@ -65,6 +65,23 @@
     .gene-row.selected .gene-name { color: #e5e7eb; }
     .gene-row:not(.selected) .gene-name { color: #6b7280; }
     #list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
+
+    #alpha-panel {
+      flex-shrink: 0; padding: 8px 12px 10px;
+      border-top: 1px solid #1f2937;
+    }
+    #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .alpha-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px; font-size: 11px; color: #6b7280;
+    }
+    .alpha-row label { width: 72px; flex-shrink: 0; }
+    .alpha-row input[type=range] {
+      flex: 1; height: 3px; accent-color: #4b5563; cursor: pointer;
+    }
+    .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
+    .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
+    .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
   </style>
 </head>
 <body>
@@ -83,6 +100,27 @@
       <div id="sel-count"></div>
     </div>
     <div id="gene-list"></div>
+    <div id="alpha-panel">
+      <h3>Opacity</h3>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-overview" checked>
+        <label>density</label>
+        <input type="range" id="alpha-overview" min="0" max="100" value="80">
+        <span class="alpha-val" id="val-overview">80</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-poly" checked>
+        <label>cells</label>
+        <input type="range" id="alpha-poly" min="0" max="100" value="60">
+        <span class="alpha-val" id="val-poly">60</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-tx" checked>
+        <label>transcripts</label>
+        <input type="range" id="alpha-tx" min="0" max="100" value="70">
+        <span class="alpha-val" id="val-tx">70</span>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/deck.gl@9.1.0/dist.min.js"></script>
@@ -92,7 +130,8 @@
 
     // ── constants ─────────────────────────────────────────────────────────────
     const TRANSCRIPT_ZOOM_THRESHOLD = 0;    // below: density bins; above: scatter points
-    const MAX_TRANSCRIPT_TILES      = 20;
+    const POLYGON_ZOOM_THRESHOLD    = -2.5; // below: skip polygon geometry (too small to see)
+    const MAX_TRANSCRIPT_TILES      = 25;   // transcript tiles are small — need more to fill viewport
     const MAX_LIST_ROWS             = 200;
     const OVERVIEW_CELL_SIZE        = 100;  // bin cell size in world units (microns)
 
@@ -104,7 +143,9 @@
     ];
 
     // ── state ─────────────────────────────────────────────────────────────────
-    let db, conn, overviewConn, manifest, deckgl, tileTimer, geneIndex;
+    let db, conn, overviewConn, polyConn, manifest, deckgl, tileTimer, geneIndex;
+    let spatialLoaded = false;
+    const failed = new Set(); // transcript tile keys that errored — skip retry
     let overviewBins     = null; // { length, pos, colors }
     let overviewGeneKey  = null; // gene selection key that produced current overviewBins
     let currentViewState = null;
@@ -116,6 +157,24 @@
     const selectedGenes = new Set();
     let   colorAll      = false;
     let   searchTerm    = '';
+    let   alphaOverview = 0.80;  let showOverview = true;
+    let   alphaPoly     = 0.60;  let showPoly     = true;
+    let   alphaTx       = 0.70;  let showTx       = true;
+
+    // Transcript data cache
+    let txBuild = null;
+    let txDirty = true;
+    function invalidateTx()     { txDirty = true; }
+    function getCachedTxData()  { if (txDirty) { txBuild = buildTranscriptData(); txDirty = false; } return txBuild; }
+
+    // Polygon data cache
+    let polyBuild = null;
+    let polyDirty = true;
+    function invalidatePoly()   { polyDirty = true; }
+    function getCachedPolyData(){ if (polyDirty) { polyBuild = buildPolygonData(); polyDirty = false; } return polyBuild; }
+
+    // Overview bins cache — manifest bins never change after load
+    let manifestOverviewBins = null;
 
     const $status   = document.getElementById('status');
     const $zoomInfo = document.getElementById('zoom-info');
@@ -129,10 +188,20 @@
       const workerUrl = URL.createObjectURL(
         new Blob([`importScripts("${bundle.mainWorker}")`], { type: 'text/javascript' })
       );
-      db          = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+      db           = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
       await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      conn        = await db.connect();  // used for tile-by-tile detail loads
-      overviewConn = await db.connect(); // separate connection so overview never blocks tiles
+      conn         = await db.connect();  // transcript tile loads
+      overviewConn = await db.connect();  // gene overview queries
+      polyConn     = await db.connect();  // polygon tile loads (separate to avoid blocking tx)
+      // Spatial extension: INSTALL and LOAD must be separate queries in DuckDB WASM
+      try {
+        $status.textContent = 'installing spatial extension…';
+        await polyConn.query('INSTALL spatial');
+        await polyConn.query('LOAD spatial');
+        spatialLoaded = true;
+      } catch (e) {
+        console.warn('Spatial extension unavailable, falling back to WKB decoder:', e.message);
+      }
     }
 
     function geneSelectionKey() { return [...selectedGenes].sort().join(','); }
@@ -145,10 +214,17 @@
 
     // ── shared: pack centers + colors for overview rendering ─────────────────
     function buildCells(centers, colorsPerCell) {
-      return { length: centers.length / 2, centers, colors: colorsPerCell };
+      const length  = centers.length / 2;
+      const indices = Array.from({ length }, (_, i) => i); // stable ref when object is cached
+      return { length, centers, colors: colorsPerCell, indices };
     }
 
-    // ── build overview bins from pre-computed manifest data (no-gene-filter case)
+    // ── build overview bins from manifest — computed once, never changes ─────
+    function getManifestOverviewBins() {
+      if (!manifestOverviewBins) manifestOverviewBins = buildOverviewBinsFromManifest();
+      return manifestOverviewBins;
+    }
+
     function buildOverviewBinsFromManifest() {
       const ov  = manifest.layers.transcripts.overview;
       const ext = manifest.layers.transcripts.extent;
@@ -212,7 +288,7 @@
 
     // ── compose per-gene overviews: sum counts per cell, single density ramp ──
     function buildCompositeOverview() {
-      if (selectedGenes.size === 0) return buildOverviewBinsFromManifest();
+      if (selectedGenes.size === 0) return getManifestOverviewBins();
       const genes = manifest.layers.transcripts.genes;
       const ext   = manifest.layers.transcripts.extent;
       const cs    = manifest.layers.transcripts.overview.cell_size;
@@ -258,22 +334,74 @@
       return stops[lo].map((v, i) => Math.round(v + f * (stops[hi][i] - v)));
     }
 
-    // ── detail: fetch one tile parquet file ───────────────────────────────────
-    async function fetchTile(url, layerName) {
-      const isTx = layerName === 'transcripts';
-      const cols  = isTx ? 'x_index, y_index, feat_ID' : 'x_index, y_index';
-      const tbl   = await conn.query(`SELECT ${cols} FROM read_parquet('${url}')`);
-      const n     = tbl.numRows;
-      const pos   = new Float32Array(n * 2);
-      const geneIdxs = isTx ? new Uint16Array(n) : null;
+    // ── fetch polygon tile ────────────────────────────────────────────────────
+    async function fetchPolygonTile(url) {
+      return spatialLoaded
+        ? fetchPolygonTileSpatial(url)
+        : fetchPolygonTileWKB(url);
+    }
+
+    async function fetchPolygonTileSpatial(url) {
+      const tbl = await polyConn.query(
+        `SELECT x_index, y_index, ST_AsGeoJSON(geom) AS gj
+         FROM read_parquet('${url}')`
+      );
+      const polys = [], cx = [];
+      for (const batch of tbl.batches) {
+        const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
+        for (let i = 0; i < batch.numRows; i++) {
+          cx.push(xs.get(i), ys.get(i));
+          try {
+            const gj   = JSON.parse(gs.get(i));
+            const rings = gj.type === 'Polygon'      ? gj.coordinates
+                        : gj.type === 'MultiPolygon' ? gj.coordinates[0]
+                        : null;
+            if (rings) polys.push({ polygon: rings });
+          } catch (_) {}
+        }
+      }
+      return { polys, centroids: new Float32Array(cx) };
+    }
+
+    async function fetchPolygonTileWKB(url) {
+      const tbl = await polyConn.query(
+        `SELECT x_index, y_index, geom FROM read_parquet('${url}')`
+      );
+      const polys = [], cx = [];
+      let logged = false;
+      for (const batch of tbl.batches) {
+        const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
+        for (let i = 0; i < batch.numRows; i++) {
+          cx.push(xs.get(i), ys.get(i));
+          const raw = gs.get(i);
+          if (!logged) { console.log('WKB raw type:', Object.prototype.toString.call(raw), raw); logged = true; }
+          // Normalise to Uint8Array regardless of what Arrow JS returns
+          let bytes = null;
+          if (raw instanceof Uint8Array)   bytes = raw;
+          else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
+          else if (raw?.buffer)            bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+          if (!bytes) continue;
+          const rings = decodeWKBPolygon(bytes);
+          if (rings) polys.push({ polygon: rings });
+        }
+      }
+      if (!polys.length && cx.length) console.warn('WKB decode produced 0 polygons — check console log above for raw type');
+      return { polys, centroids: new Float32Array(cx) };
+    }
+
+    // ── fetch transcript tile → { pos, geneIdxs } ────────────────────────────
+    async function fetchTranscriptTile(url) {
+      const tbl  = await conn.query(`SELECT x_index, y_index, feat_ID FROM read_parquet('${url}')`);
+      const n    = tbl.numRows;
+      const pos  = new Float32Array(n * 2);
+      const geneIdxs = new Uint16Array(n);
       let off = 0;
       for (const batch of tbl.batches) {
-        const xs = batch.getChildAt(0), ys = batch.getChildAt(1);
-        const fs = isTx ? batch.getChildAt(2) : null;
+        const xs = batch.getChildAt(0), ys = batch.getChildAt(1), fs = batch.getChildAt(2);
         for (let i = 0; i < batch.numRows; i++) {
           pos[off * 2]     = xs.get(i);
           pos[off * 2 + 1] = ys.get(i);
-          if (geneIdxs) geneIdxs[off] = geneIndex.get(fs.get(i)) ?? 0;
+          geneIdxs[off]    = geneIndex.get(fs.get(i)) ?? 0;
           off++;
         }
       }
@@ -295,15 +423,22 @@
     // ── detail tile load ──────────────────────────────────────────────────────
     async function loadTile(layerName, tile) {
       const key = `${layerName}:${tile.index}`;
-      if (cache.has(key) || pending.has(key)) return;
+      if (cache.has(key) || pending.has(key) || failed.has(key)) return;
       pending.add(key);
       updateStatus();
       try {
-        const data = await fetchTile(tile.url, layerName);
+        const data = layerName === 'polygons'
+          ? await fetchPolygonTile(tile.url)
+          : await fetchTranscriptTile(tile.url);
         if (cancelled.has(key)) { cancelled.delete(key); }
-        else                    { cache.set(key, data);  }
+        else {
+          cache.set(key, data);
+          if (layerName === 'transcripts') invalidateTx();
+          if (layerName === 'polygons')    invalidatePoly();
+        }
       } catch (e) {
         console.warn(`Failed to load tile ${key}:`, e);
+        if (layerName !== 'polygons') failed.add(key); // polygons retry freely (only 12 tiles)
       } finally {
         pending.delete(key);
         updateStatus();
@@ -351,17 +486,16 @@
       return { length: total, pos: outPos, colors: outColors };
     }
 
-    // ── polygon centroids ─────────────────────────────────────────────────────
+    // ── merge polygon tiles ───────────────────────────────────────────────────
     function buildPolygonData() {
-      let total = 0;
-      const parts = [];
-      for (const [k, { pos }] of cache)
-        if (k.startsWith('polygons:')) { parts.push(pos); total += pos.length / 2; }
-      if (!total) return null;
-      const out = new Float32Array(total * 2);
-      let off = 0;
-      for (const p of parts) { out.set(p, off); off += p.length; }
-      return out;
+      const polys = [], cx = [];
+      for (const [k, data] of cache) {
+        if (!k.startsWith('polygons:') || !data) continue;
+        for (const p of data.polys)       polys.push(p);
+        for (const v of data.centroids)   cx.push(v);
+      }
+      if (!cx.length) return null;
+      return { polys, centroids: new Float32Array(cx) };
     }
 
     // ── rebuild deck.gl layers ────────────────────────────────────────────────
@@ -370,45 +504,60 @@
       const layers     = [];
       const inOverview = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
 
-      const polyPos = buildPolygonData();
-      if (polyPos) {
-        layers.push(new deck.ScatterplotLayer({
-          id: 'polygons',
-          data: { length: polyPos.length / 2,
-                  attributes: { getPosition: { value: polyPos, size: 2 } } },
-          getRadius: 6, getFillColor: [255, 120, 80, 200],
-          radiusUnits: 'pixels', radiusMinPixels: 1,
-        }));
+      if (showPoly && alphaPoly > 0) {
+          const polyData = getCachedPolyData();
+          if (polyData?.polys.length) {
+            layers.push(new deck.PathLayer({
+              id: 'poly-outline',
+              data: polyData.polys,    // stable reference when cached
+              getPath: d => d.polygon[0],
+              getColor: [255, 255, 255, 255],
+              getWidth: 1,
+              widthUnits: 'pixels',
+              widthMinPixels: 1,
+              opacity: alphaPoly,
+            }));
+          } else if (polyData?.centroids?.length) {
+            const pos = polyData.centroids;
+            layers.push(new deck.ScatterplotLayer({
+              id: 'poly-centroids',
+              data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
+              opacity: alphaPoly,
+              getRadius: 4, getFillColor: [255, 255, 255, 200],
+              radiusUnits: 'pixels', radiusMinPixels: 1,
+            }));
+          }
       }
 
       if (inOverview) {
-        if (overviewBins) {
+        if (overviewBins && showOverview && alphaOverview > 0) {
           const h  = manifest.layers.transcripts.overview.cell_size / 2;
-          const { length, centers, colors } = overviewBins;
-          // Use index array as data so getters close over the typed arrays
+          const { indices, centers, colors } = overviewBins;
           layers.push(new deck.SolidPolygonLayer({
             id: 'overview',
-            data: Array.from({ length }, (_, i) => i),
+            data: indices,           // stable array reference when bins are cached
             getPolygon: i => {
               const cx = centers[i*2], cy = centers[i*2+1];
               return [[cx-h,cy-h],[cx+h,cy-h],[cx+h,cy+h],[cx-h,cy+h]];
             },
             getFillColor: i => [colors[i*4], colors[i*4+1], colors[i*4+2], colors[i*4+3]],
+            opacity: alphaOverview,
             stroked: false,
             extruded: false,
-            updateTriggers: { getPolygon: length, getFillColor: length },
+            updateTriggers: { getPolygon: overviewBins, getFillColor: overviewBins },
           }));
         }
       } else {
-        const tx = buildTranscriptData();
+        const tx = showTx && alphaTx > 0 ? getCachedTxData() : null;
         if (tx) {
           layers.push(new deck.ScatterplotLayer({
             id: 'transcripts',
             data: { length: tx.length,
                     attributes: {
                       getPosition: { value: tx.pos,    size: 2 },
-                      getFillColor: { value: tx.colors, size: 4 },
+                      getFillColor: { value: tx.colors, size: 4, normalized: true },
                     }},
+            opacity: alphaTx,
             getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
           }));
         }
@@ -420,11 +569,12 @@
     // ── evict + schedule tile loads / overview query ──────────────────────────
     function updateTiles(viewState) {
       currentViewState = viewState;
-      const txLayer       = manifest.layers.transcripts;
-      const txAboveThresh = txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
-      const inScope       = new Set();
+      const txLayer        = manifest.layers.transcripts;
+      const txAboveThresh   = showTx   && txLayer                  && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
+      const polyAboveThresh = showPoly  && manifest.layers.polygons && viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
+      const inScope        = new Set();
 
-      if (manifest.layers.polygons)
+      if (polyAboveThresh)
         for (const t of visibleTiles(viewState, manifest.layers.polygons.tiles))
           inScope.add(`polygons:${t.index}`);
 
@@ -432,16 +582,21 @@
         for (const t of visibleTiles(viewState, txLayer.tiles))
           inScope.add(`transcripts:${t.index}`);
 
-      // Evict transcript tiles that left scope
-      for (const key of cache.keys())
-        if (key.startsWith('transcripts:') && !inScope.has(key)) cache.delete(key);
+      // Evict tiles that left scope
+      for (const key of cache.keys()) {
+        if (!inScope.has(key)) {
+          if (key.startsWith('transcripts:')) { cache.delete(key); invalidateTx(); }
+          else if (key.startsWith('polygons:'))  { cache.delete(key); invalidatePoly(); }
+        }
+      }
 
       for (const key of pending)
         if (!inScope.has(key)) cancelled.add(key);
 
       renderLayers(viewState);
 
-      if (manifest.layers.polygons)
+      // Polygon tiles are large (only 12 total) — load all visible, no cap needed
+      if (polyAboveThresh)
         for (const t of visibleTiles(viewState, manifest.layers.polygons.tiles))
           loadTile('polygons', t);
 
@@ -454,7 +609,7 @@
             const db2 = Math.hypot((b.xmin + b.xmax) / 2 - cx, (b.ymin + b.ymax) / 2 - cy);
             return da - db2;
           })
-          .slice(0, MAX_TRANSCRIPT_TILES - pending.size)
+          .slice(0, MAX_TRANSCRIPT_TILES - [...pending].filter(k => k.startsWith('transcripts:')).length)
           .forEach(t => loadTile('transcripts', t));
       } else {
         const geneKey = geneSelectionKey();
@@ -534,6 +689,7 @@
     function toggleGene(geneIdx) {
       if (selectedGenes.has(geneIdx)) selectedGenes.delete(geneIdx);
       else                            selectedGenes.add(geneIdx);
+      invalidateTx();
       renderGeneList();
       if (currentViewState?.zoom < TRANSCRIPT_ZOOM_THRESHOLD) {
         overviewGeneKey = null; // force re-evaluation in updateTiles
@@ -579,15 +735,33 @@
         renderGeneList();
       });
 
+      function makeLayerControl(checkId, sliderId, valId, visSetter, alphaSetter) {
+        const check  = document.getElementById(checkId);
+        const slider = document.getElementById(sliderId);
+        const label  = document.getElementById(valId);
+        const sync   = () => { slider.disabled = !check.checked; renderLayers(currentViewState); };
+        check.addEventListener('change', () => { visSetter(check.checked); sync(); });
+        slider.addEventListener('input', () => {
+          label.textContent = slider.value;
+          alphaSetter(slider.value / 100);
+          renderLayers(currentViewState);
+        });
+      }
+      makeLayerControl('show-overview','alpha-overview','val-overview', v=>showOverview=v, v=>alphaOverview=v);
+      makeLayerControl('show-poly',    'alpha-poly',    'val-poly',     v=>showPoly=v,     v=>alphaPoly=v);
+      makeLayerControl('show-tx',      'alpha-tx',      'val-tx',       v=>showTx=v,       v=>alphaTx=v);
+
       const $btnColorAll = document.getElementById('btn-color-all');
       $btnColorAll.addEventListener('click', () => {
         colorAll = !colorAll;
         $btnColorAll.classList.toggle('active', colorAll);
+        invalidateTx();
         renderLayers(currentViewState);
       });
 
       document.getElementById('btn-clear').addEventListener('click', () => {
         selectedGenes.clear();
+        invalidateTx();
         renderGeneList();
         if (currentViewState?.zoom < TRANSCRIPT_ZOOM_THRESHOLD) {
           overviewGeneKey = null;
