@@ -18,61 +18,51 @@
       color: #6b7280; font-size: 12px;
     }
 
-    /* ── gene panel ─────────────────────────────────────────────────────── */
     #panel {
       position: absolute; top: 0; right: 0; bottom: 0; width: 260px;
-      background: rgba(17, 24, 39, 0.92);
-      border-left: 1px solid #1f2937;
-      display: flex; flex-direction: column;
-      color: #d1d5db; font-size: 12px;
+      background: rgba(17,24,39,0.92); border-left: 1px solid #1f2937;
+      display: flex; flex-direction: column; color: #d1d5db; font-size: 12px;
     }
-    #panel-header {
-      padding: 12px 12px 8px;
-      border-bottom: 1px solid #1f2937;
-      flex-shrink: 0;
-    }
+    #panel-header { padding: 12px 12px 8px; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     #panel-header h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
     #gene-search {
       width: 100%; padding: 5px 8px;
       background: #1f2937; border: 1px solid #374151; border-radius: 4px;
-      color: #e5e7eb; font-size: 12px; font-family: monospace;
-      outline: none;
+      color: #e5e7eb; font-size: 12px; font-family: monospace; outline: none;
     }
     #gene-search:focus { border-color: #4b5563; }
-    #panel-actions {
-      display: flex; gap: 6px; margin-top: 8px;
-    }
+    #panel-actions { display: flex; gap: 6px; margin-top: 8px; }
     #panel-actions button {
       flex: 1; padding: 4px; background: #1f2937;
       border: 1px solid #374151; border-radius: 4px;
-      color: #9ca3af; font-size: 11px; font-family: monospace;
-      cursor: pointer;
+      color: #9ca3af; font-size: 11px; font-family: monospace; cursor: pointer;
     }
     #panel-actions button:hover { background: #374151; color: #e5e7eb; }
     #btn-color-all.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
     #sel-count { color: #6b7280; font-size: 11px; margin-top: 6px; }
 
-    #gene-list {
-      flex: 1; overflow-y: auto; padding: 4px 0;
-    }
+    #gene-list { flex: 1; overflow-y: auto; padding: 4px 0; }
     #gene-list::-webkit-scrollbar { width: 4px; }
     #gene-list::-webkit-scrollbar-track { background: transparent; }
     #gene-list::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
 
-    .gene-row {
-      display: flex; align-items: center; gap: 7px;
-      padding: 3px 12px; cursor: pointer; user-select: none;
-    }
+    .gene-row { display: flex; align-items: center; gap: 7px; padding: 3px 12px; cursor: pointer; user-select: none; }
     .gene-row:hover { background: #1f2937; }
     .gene-row.selected { background: #1e2d40; }
-    .gene-dot {
-      flex-shrink: 0; width: 8px; height: 8px;
-      border-radius: 50%; border: 1px solid #374151;
-    }
+    .gene-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #374151; }
     .gene-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .gene-row.selected .gene-name { color: #e5e7eb; }
     .gene-row:not(.selected) .gene-name { color: #6b7280; }
     #list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
+
+    #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
+    .alpha-row label { width: 72px; flex-shrink: 0; }
+    .alpha-row input[type=range] { flex: 1; height: 3px; accent-color: #4b5563; cursor: pointer; }
+    .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
+    .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
+    .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
   </style>
 </head>
 <body>
@@ -91,6 +81,27 @@
       <div id="sel-count"></div>
     </div>
     <div id="gene-list"></div>
+    <div id="alpha-panel">
+      <h3>Opacity</h3>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-overview" checked>
+        <label>density</label>
+        <input type="range" id="alpha-overview" min="0" max="100" value="80">
+        <span class="alpha-val" id="val-overview">80</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-poly" checked>
+        <label>cells</label>
+        <input type="range" id="alpha-poly" min="0" max="100" value="60">
+        <span class="alpha-val" id="val-poly">60</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-tx" checked>
+        <label>transcripts</label>
+        <input type="range" id="alpha-tx" min="0" max="100" value="70">
+        <span class="alpha-val" id="val-tx">70</span>
+      </div>
+    </div>
   </div>
 
   <script src="https://unpkg.com/deck.gl@9.1.0/dist.min.js"></script>
@@ -99,11 +110,12 @@
     import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 
     // ── constants ─────────────────────────────────────────────────────────────
-    const TRANSCRIPT_ZOOM_THRESHOLD = 0;
-    const MAX_TRANSCRIPT_TILES      = 20;
+    const TRANSCRIPT_ZOOM_THRESHOLD = 0;     // below: overview density; above: scatter
+    const POLYGON_ZOOM_THRESHOLD    = -2.5;  // below: skip polygon geometry
+    const MAX_TRANSCRIPT_TILES      = 25;
     const MAX_LIST_ROWS             = 200;
+    const OVERVIEW_CELL_SIZE        = 100;   // world units (microns)
 
-    // 20-color qualitative palette (works on dark backgrounds)
     const PALETTE = [
       [76,114,176],[221,132,82],[85,168,104],[196,78,82],[129,114,179],
       [100,194,188],[218,139,195],[204,185,116],[140,140,140],[147,120,96],
@@ -112,13 +124,38 @@
     ];
 
     // ── state ─────────────────────────────────────────────────────────────────
-    let db, conn, manifest, deckgl, tileTimer, geneIndex;
-    const cache         = new Map();  // "layer:idx" → { pos: Float32Array, geneIdxs?: Uint16Array }
-    const pending       = new Set();
-    const cancelled     = new Set();
-    const selectedGenes = new Set();  // Set of gene indices (integers)
-    let   colorAll      = false;      // show all transcripts with per-gene colors
-    let   searchTerm    = '';
+    let db, conn, overviewConn, polyConn;
+    let spatialLoaded   = false;
+    let manifest, deckgl, tileTimer, geneIndex, currentViewState;
+
+    // tile cache and loading
+    const cache     = new Map();   // "layer:idx" → data
+    const pending   = new Set();
+    const cancelled = new Set();
+    const failed    = new Set();   // transcript tiles that errored — no retry
+
+    // gene selection
+    const selectedGenes   = new Set();
+    const geneOverviewCache = new Map(); // geneName → {col,row,n} Int32Arrays
+    let   colorAll        = false;
+    let   searchTerm      = '';
+    let   overviewBins    = null;
+    let   overviewGeneKey = null;
+
+    // visibility + opacity
+    let showOverview = true;  let alphaOverview = 0.80;
+    let showPoly     = true;  let alphaPoly     = 0.60;
+    let showTx       = true;  let alphaTx       = 0.70;
+
+    // data caches — rebuilt only when source data changes
+    let txBuild = null;  let txDirty = true;
+    let polyBuild = null; let polyDirty = true;
+    let manifestOverviewBins = null;
+
+    function invalidateTx()    { txDirty   = true; }
+    function invalidatePoly()  { polyDirty = true; }
+    function getCachedTxData() { if (txDirty)   { txBuild   = buildTranscriptData(); txDirty   = false; } return txBuild; }
+    function getCachedPolyData(){ if (polyDirty) { polyBuild = buildPolygonData();   polyDirty = false; } return polyBuild; }
 
     const $status   = document.getElementById('status');
     const $zoomInfo = document.getElementById('zoom-info');
@@ -128,33 +165,231 @@
 
     // ── DuckDB init ───────────────────────────────────────────────────────────
     async function initDB() {
-      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+      const bundle    = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
       const workerUrl = URL.createObjectURL(
         new Blob([`importScripts("${bundle.mainWorker}")`], { type: 'text/javascript' })
       );
-      db   = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+      db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
       await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      conn = await db.connect();
+      conn         = await db.connect(); // transcript tile loads
+      overviewConn = await db.connect(); // gene overview queries
+      polyConn     = await db.connect(); // polygon tile loads
+      try {
+        $status.textContent = 'loading spatial extension…';
+        await polyConn.query('INSTALL spatial');
+        await polyConn.query('LOAD spatial');
+        spatialLoaded = true;
+      } catch (e) {
+        console.warn('Spatial extension unavailable:', e.message);
+      }
     }
 
-    // ── fetch tile → { pos, geneIdxs? } ─────────────────────────────────────
-    // Polygons don't have feat_ID — branch on layerName to avoid query failure
-    async function fetchTile(url, layerName) {
-      const isTranscript = layerName === 'transcripts';
-      const cols = isTranscript ? 'x_index, y_index, feat_ID' : 'x_index, y_index';
-      const tbl  = await conn.query(`SELECT ${cols} FROM read_parquet('${url}')`);
-      const n    = tbl.numRows;
-      const pos  = new Float32Array(n * 2);
-      const geneIdxs = isTranscript ? new Uint16Array(n) : null;
+    // ── overview: density color ramp ──────────────────────────────────────────
+    function densityColor(t) {
+      const stops = [[8,15,60],[0,80,180],[0,190,160],[120,210,0],[255,200,0],[255,80,0],[180,0,0]];
+      const s = t * (stops.length - 1);
+      const lo = Math.floor(s), hi = Math.min(lo + 1, stops.length - 1), f = s - lo;
+      return stops[lo].map((v, i) => Math.round(v + f * (stops[hi][i] - v)));
+    }
+
+    function pctile(arr, p) {
+      const s = Float64Array.from(arr).sort();
+      return s[Math.min(Math.floor(s.length * p), s.length - 1)];
+    }
+
+    // Pack cell centers + colors into a renderable object with stable index array
+    function buildCells(centers, colors) {
+      const length  = centers.length / 2;
+      const indices = Array.from({ length }, (_, i) => i);
+      return { length, centers, colors, indices };
+    }
+
+    // ── overview: manifest-based all-genes density (computed once) ────────────
+    function getManifestOverviewBins() {
+      if (!manifestOverviewBins) manifestOverviewBins = buildOverviewBinsFromManifest();
+      return manifestOverviewBins;
+    }
+
+    function buildOverviewBinsFromManifest() {
+      const ov  = manifest?.layers?.transcripts?.overview;
+      if (!ov) return null;
+      const ext  = manifest.layers.transcripts.extent;
+      const { col, row, n } = ov;
+      const ceil = pctile(n, 0.98);
+      if (!ceil) return null;
+      const centers = new Float32Array(n.length * 2);
+      const colors  = new Uint8Array(n.length * 4);
+      for (let i = 0; i < n.length; i++) {
+        centers[i*2]   = ext.xmin + (col[i] + 0.5) * ov.cell_size;
+        centers[i*2+1] = ext.ymin + (row[i] + 0.5) * ov.cell_size;
+        const t = Math.min(Math.pow(n[i] / ceil, 0.5), 1.0);
+        const [r, g, b] = densityColor(t);
+        colors[i*4] = r; colors[i*4+1] = g; colors[i*4+2] = b;
+        colors[i*4+3] = Math.round(120 + 120 * t);
+      }
+      return buildCells(centers, colors);
+    }
+
+    // ── overview: per-gene parquet queries (composited density) ───────────────
+    function geneSelectionKey() { return [...selectedGenes].sort().join(','); }
+
+    async function ensureGeneOverview(geneName) {
+      if (geneOverviewCache.has(geneName)) return;
+      const url = manifest.layers.transcripts.overview.gene_overview_url;
+      try {
+        const result = await overviewConn.query(
+          `SELECT col, row, n::INTEGER AS n FROM read_parquet('${url}') WHERE feat_ID = '${geneName}'`
+        );
+        const nr  = result.numRows;
+        const col = new Int32Array(nr), row = new Int32Array(nr), n = new Int32Array(nr);
+        let off = 0;
+        for (const batch of result.batches) {
+          const cs = batch.getChildAt(0), rs = batch.getChildAt(1), ns = batch.getChildAt(2);
+          for (let i = 0; i < batch.numRows; i++) {
+            col[off] = cs.get(i); row[off] = rs.get(i); n[off] = ns.get(i); off++;
+          }
+        }
+        geneOverviewCache.set(geneName, { col, row, n });
+      } catch (e) {
+        console.warn(`Gene overview failed for ${geneName}:`, e);
+        geneOverviewCache.set(geneName, null);
+      }
+    }
+
+    async function updateGeneOverview() {
+      const genes = manifest.layers.transcripts.genes;
+      for (const gi of selectedGenes) {
+        await ensureGeneOverview(genes[gi]);
+        const bins = buildCompositeOverview();
+        if (bins) overviewBins = bins;
+        renderLayers(currentViewState);
+      }
+    }
+
+    function buildCompositeOverview() {
+      if (selectedGenes.size === 0) return getManifestOverviewBins();
+      const genes = manifest.layers.transcripts.genes;
+      const ext   = manifest.layers.transcripts.extent;
+      const cs    = manifest.layers.transcripts.overview.cell_size;
+      const cellSum = new Map();
+      for (const gi of selectedGenes) {
+        const data = geneOverviewCache.get(genes[gi]);
+        if (!data) continue;
+        const { col, row, n } = data;
+        for (let i = 0; i < n.length; i++) {
+          const key = col[i] * 100000 + row[i];
+          const ex  = cellSum.get(key);
+          if (ex) ex.sum += n[i];
+          else cellSum.set(key, { sum: n[i], col: col[i], row: row[i] });
+        }
+      }
+      if (!cellSum.size) return null;
+      const sums  = Array.from(cellSum.values(), v => v.sum);
+      const ceil  = pctile(sums, 0.98) || 1;
+      const centers = new Float32Array(cellSum.size * 2);
+      const colors  = new Uint8Array(cellSum.size * 4);
+      let off = 0;
+      for (const { sum, col, row } of cellSum.values()) {
+        centers[off*2]   = ext.xmin + (col + 0.5) * cs;
+        centers[off*2+1] = ext.ymin + (row + 0.5) * cs;
+        const t = Math.min(Math.pow(sum / ceil, 0.5), 1.0);
+        const [r, g, b] = densityColor(t);
+        colors[off*4] = r; colors[off*4+1] = g; colors[off*4+2] = b;
+        colors[off*4+3] = Math.round(120 + 120 * t);
+        off++;
+      }
+      return buildCells(centers, colors);
+    }
+
+    // ── polygon: fetch via spatial extension or WKB fallback ─────────────────
+    async function fetchPolygonTile(url) {
+      if (spatialLoaded) {
+        const tbl = await polyConn.query(
+          `SELECT x_index, y_index, ST_AsGeoJSON(geom) AS gj FROM read_parquet('${url}')`
+        );
+        const polys = [], cx = [];
+        for (const batch of tbl.batches) {
+          const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
+          for (let i = 0; i < batch.numRows; i++) {
+            cx.push(xs.get(i), ys.get(i));
+            try {
+              const gj   = JSON.parse(gs.get(i));
+              const rings = gj.type === 'Polygon'      ? gj.coordinates
+                          : gj.type === 'MultiPolygon' ? gj.coordinates[0]
+                          : null;
+              if (rings) polys.push({ polygon: rings });
+            } catch (_) {}
+          }
+        }
+        return { polys, centroids: new Float32Array(cx) };
+      } else {
+        // WKB fallback
+        const tbl = await polyConn.query(`SELECT x_index, y_index, geom FROM read_parquet('${url}')`);
+        const polys = [], cx = [];
+        for (const batch of tbl.batches) {
+          const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
+          for (let i = 0; i < batch.numRows; i++) {
+            cx.push(xs.get(i), ys.get(i));
+            const raw = gs.get(i);
+            let bytes = null;
+            if (raw instanceof Uint8Array) bytes = raw;
+            else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
+            else if (raw?.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+            if (bytes) {
+              const rings = decodeWKBPolygon(bytes);
+              if (rings) polys.push({ polygon: rings });
+            }
+          }
+        }
+        return { polys, centroids: new Float32Array(cx) };
+      }
+    }
+
+    function decodeWKBPolygon(wkb) {
+      if (!wkb || wkb.byteLength < 9) return null;
+      const v = new DataView(wkb.buffer, wkb.byteOffset, wkb.byteLength);
+      let off = 0;
+      const le = v.getUint8(off++) === 1;
+      const type = v.getUint32(off, le); off += 4;
+      const baseType = type & 0xffff;
+      if (type & 0x20000000) off += 4; // skip SRID
+      if (baseType === 3) return readWKBRings(v, off, le);
+      if (baseType === 6) {
+        const n = v.getUint32(off, le); off += 4;
+        if (!n) return null;
+        off++; const st = v.getUint32(off, le) & 0xffff; off += 4;
+        return st === 3 ? readWKBRings(v, off, le) : null;
+      }
+      return null;
+    }
+
+    function readWKBRings(v, off, le) {
+      const nRings = v.getUint32(off, le); off += 4;
+      const rings = [];
+      for (let r = 0; r < nRings; r++) {
+        const nPts = v.getUint32(off, le); off += 4;
+        const ring = new Array(nPts);
+        for (let p = 0; p < nPts; p++) {
+          ring[p] = [v.getFloat64(off, le), v.getFloat64(off+8, le)]; off += 16;
+        }
+        rings.push(ring);
+      }
+      return rings.length ? rings : null;
+    }
+
+    // ── transcript: fetch tile ────────────────────────────────────────────────
+    async function fetchTranscriptTile(url) {
+      const tbl = await conn.query(`SELECT x_index, y_index, feat_ID FROM read_parquet('${url}')`);
+      const n   = tbl.numRows;
+      const pos = new Float32Array(n * 2);
+      const geneIdxs = new Uint16Array(n);
       let off = 0;
       for (const batch of tbl.batches) {
-        const xs = batch.getChildAt(0);
-        const ys = batch.getChildAt(1);
-        const fs = isTranscript ? batch.getChildAt(2) : null;
+        const xs = batch.getChildAt(0), ys = batch.getChildAt(1), fs = batch.getChildAt(2);
         for (let i = 0; i < batch.numRows; i++) {
-          pos[off * 2]     = xs.get(i);
-          pos[off * 2 + 1] = ys.get(i);
-          if (geneIdxs) geneIdxs[off] = geneIndex.get(fs.get(i)) ?? 0;
+          pos[off*2]   = xs.get(i);
+          pos[off*2+1] = ys.get(i);
+          geneIdxs[off] = geneIndex.get(fs.get(i)) ?? 0;
           off++;
         }
       }
@@ -169,131 +404,163 @@
       const hh = (window.innerHeight / 2) / scale;
       const vp = { xmin: cx - hw, xmax: cx + hw, ymin: cy - hh, ymax: cy + hh };
       return tiles.filter(t =>
-        t.xmax > vp.xmin && t.xmin < vp.xmax &&
-        t.ymax > vp.ymin && t.ymin < vp.ymax
+        t.xmax > vp.xmin && t.xmin < vp.xmax && t.ymax > vp.ymin && t.ymin < vp.ymax
       );
     }
 
-    // ── load one tile ─────────────────────────────────────────────────────────
+    // ── tile loading ──────────────────────────────────────────────────────────
     async function loadTile(layerName, tile) {
       const key = `${layerName}:${tile.index}`;
-      if (cache.has(key) || pending.has(key)) return;
+      if (cache.has(key) || pending.has(key) || failed.has(key)) return;
       pending.add(key);
       updateStatus();
       try {
-        const data = await fetchTile(tile.url, layerName);
+        const data = layerName === 'polygons'
+          ? await fetchPolygonTile(tile.url)
+          : await fetchTranscriptTile(tile.url);
         if (cancelled.has(key)) {
           cancelled.delete(key);
         } else {
           cache.set(key, data);
+          if (layerName === 'transcripts') invalidateTx();
+          if (layerName === 'polygons')    invalidatePoly();
         }
       } catch (e) {
         console.warn(`Failed to load tile ${key}:`, e);
+        if (layerName !== 'polygons') failed.add(key);
       } finally {
         pending.delete(key);
         updateStatus();
-        renderLayers();
+        renderLayers(currentViewState);
       }
     }
 
-    // ── build merged transcript data with optional gene filter ────────────────
-    // Modes:
-    //   colorAll=false, selectedGenes empty → all points, single blue
-    //   colorAll=true,  selectedGenes empty → all points, per-gene palette color
-    //   selectedGenes non-empty             → filtered to selection, per-gene color
+    // ── build transcript scatter data (with caching) ──────────────────────────
     function buildTranscriptData() {
       const filtering = selectedGenes.size > 0;
       const useColor  = filtering || colorAll;
       let total = 0;
       const parts = [];
-
       for (const [k, entry] of cache) {
         if (!k.startsWith('transcripts:')) continue;
         const { pos, geneIdxs } = entry;
         let count = filtering ? 0 : geneIdxs.length;
-        if (filtering) {
+        if (filtering)
           for (let i = 0; i < geneIdxs.length; i++)
             if (selectedGenes.has(geneIdxs[i])) count++;
-        }
         if (count) { parts.push({ pos, geneIdxs, count }); total += count; }
       }
-
       if (!total) return null;
-
       const outPos    = new Float32Array(total * 2);
       const outColors = new Uint8Array(total * 4);
       let off = 0;
-
       for (const { pos, geneIdxs } of parts) {
         for (let i = 0; i < geneIdxs.length; i++) {
           const gi = geneIdxs[i];
           if (filtering && !selectedGenes.has(gi)) continue;
-          outPos[off * 2]     = pos[i * 2];
-          outPos[off * 2 + 1] = pos[i * 2 + 1];
+          outPos[off*2]   = pos[i*2];
+          outPos[off*2+1] = pos[i*2+1];
           const c = useColor ? PALETTE[gi % PALETTE.length] : [100, 180, 255];
-          outColors[off * 4]     = c[0];
-          outColors[off * 4 + 1] = c[1];
-          outColors[off * 4 + 2] = c[2];
-          outColors[off * 4 + 3] = useColor ? 210 : 160;
+          outColors[off*4] = c[0]; outColors[off*4+1] = c[1];
+          outColors[off*4+2] = c[2]; outColors[off*4+3] = useColor ? 210 : 160;
           off++;
         }
       }
       return { length: total, pos: outPos, colors: outColors };
     }
 
-    // ── merge polygon centroids ───────────────────────────────────────────────
+    // ── build polygon geometry data (with caching) ────────────────────────────
     function buildPolygonData() {
-      let total = 0;
-      const parts = [];
-      for (const [k, { pos }] of cache) {
-        if (k.startsWith('polygons:')) { parts.push(pos); total += pos.length / 2; }
+      const polys = [], cx = [];
+      for (const [k, data] of cache) {
+        if (!k.startsWith('polygons:') || !data) continue;
+        for (const p of data.polys)     polys.push(p);
+        for (const v of data.centroids) cx.push(v);
       }
-      if (!total) return null;
-      const out = new Float32Array(total * 2);
-      let off = 0;
-      for (const p of parts) { out.set(p, off); off += p.length; }
-      return out;
+      if (!cx.length) return null;
+      return { polys, centroids: new Float32Array(cx) };
     }
 
-    // ── rebuild deck.gl layers ────────────────────────────────────────────────
-    function renderLayers() {
-      if (!deckgl) return;
-      const layers = [];
+    // ── render deck.gl layers ─────────────────────────────────────────────────
+    function renderLayers(viewState) {
+      if (!deckgl || !viewState) return;
+      const layers     = [];
+      const inOverview = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
+      const polyZoneOk = viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
 
-      const polyPos = buildPolygonData();
-      if (polyPos) {
-        layers.push(new deck.ScatterplotLayer({
-          id: 'polygons',
-          data: { length: polyPos.length / 2,
-                  attributes: { getPosition: { value: polyPos, size: 2 } } },
-          getRadius: 6, getFillColor: [255, 120, 80, 200],
-          radiusUnits: 'pixels', radiusMinPixels: 1,
+      // Overview density bins
+      if (inOverview && showOverview && alphaOverview > 0 && overviewBins) {
+        const h = manifest.layers.transcripts.overview.cell_size / 2;
+        const { indices, centers, colors } = overviewBins;
+        layers.push(new deck.SolidPolygonLayer({
+          id: 'overview',
+          data: indices,
+          getPolygon: i => {
+            const cx = centers[i*2], cy = centers[i*2+1];
+            return [[cx-h,cy-h],[cx+h,cy-h],[cx+h,cy+h],[cx-h,cy+h]];
+          },
+          getFillColor: i => [colors[i*4], colors[i*4+1], colors[i*4+2], colors[i*4+3]],
+          opacity: alphaOverview,
+          stroked: false, extruded: false,
+          updateTriggers: { getPolygon: overviewBins, getFillColor: overviewBins },
         }));
       }
 
-      const tx = buildTranscriptData();
-      if (tx) {
-        layers.push(new deck.ScatterplotLayer({
-          id: 'transcripts',
-          data: { length: tx.length,
-                  attributes: {
-                    getPosition: { value: tx.pos,    size: 2 },
-                    getFillColor: { value: tx.colors, size: 4 },
-                  }},
-          getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
-        }));
+      // Polygon outlines (PathLayer — no fill, outline only)
+      if (showPoly && alphaPoly > 0 && polyZoneOk) {
+        const polyData = getCachedPolyData();
+        if (polyData?.polys?.length) {
+          layers.push(new deck.PathLayer({
+            id: 'poly-outline',
+            data: polyData.polys,
+            getPath: d => d.polygon[0],
+            getColor: [255, 255, 255, 255],
+            getWidth: 1,
+            widthUnits: 'pixels',
+            widthMinPixels: 1,
+            opacity: alphaPoly,
+          }));
+        } else if (polyData?.centroids?.length) {
+          const pos = polyData.centroids;
+          layers.push(new deck.ScatterplotLayer({
+            id: 'poly-centroids',
+            data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
+            getRadius: 4, getFillColor: [255, 255, 255, 200],
+            radiusUnits: 'pixels', radiusMinPixels: 1,
+            opacity: alphaPoly,
+          }));
+        }
+      }
+
+      // Transcript scatter points
+      if (!inOverview && showTx && alphaTx > 0) {
+        const tx = getCachedTxData();
+        if (tx) {
+          layers.push(new deck.ScatterplotLayer({
+            id: 'transcripts',
+            data: { length: tx.length,
+                    attributes: {
+                      getPosition: { value: tx.pos,    size: 2 },
+                      getFillColor: { value: tx.colors, size: 4, normalized: true },
+                    }},
+            opacity: alphaTx,
+            getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
+          }));
+        }
       }
 
       deckgl.setProps({ layers });
     }
 
-    // ── evict + schedule tile loads ───────────────────────────────────────────
+    // ── tile eviction + load scheduling ──────────────────────────────────────
     function updateTiles(viewState) {
-      const txLayer        = manifest.layers.transcripts;
-      const txAboveThresh  = txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
+      currentViewState = viewState;
+      const txLayer       = manifest.layers.transcripts;
+      const txAboveThresh  = showTx   && txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
+      const polyAboveThresh = showPoly && manifest.layers.polygons && viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
       const inScope        = new Set();
 
-      if (manifest.layers.polygons)
+      if (polyAboveThresh)
         for (const t of visibleTiles(viewState, manifest.layers.polygons.tiles))
           inScope.add(`polygons:${t.index}`);
 
@@ -301,33 +568,55 @@
         for (const t of visibleTiles(viewState, txLayer.tiles))
           inScope.add(`transcripts:${t.index}`);
 
-      for (const key of cache.keys())
-        if (key.startsWith('transcripts:') && !inScope.has(key)) cache.delete(key);
+      // Evict out-of-scope tiles
+      for (const key of cache.keys()) {
+        if (!inScope.has(key)) {
+          if      (key.startsWith('transcripts:')) { cache.delete(key); invalidateTx(); }
+          else if (key.startsWith('polygons:'))    { cache.delete(key); invalidatePoly(); }
+        }
+      }
 
+      // Cancel in-flight loads that left scope
       for (const key of pending)
         if (!inScope.has(key)) cancelled.add(key);
 
-      renderLayers();
+      renderLayers(viewState);
 
-      if (manifest.layers.polygons)
+      // Load polygon tiles (no cap — only 12 total, large tiles)
+      if (polyAboveThresh)
         for (const t of visibleTiles(viewState, manifest.layers.polygons.tiles))
           loadTile('polygons', t);
 
+      // Load transcript tiles (capped, sorted by distance from centre)
       if (txAboveThresh) {
         const [cx, cy] = viewState.target;
+        const txPending = [...pending].filter(k => k.startsWith('transcripts:')).length;
         visibleTiles(viewState, txLayer.tiles)
           .filter(t => !cache.has(`transcripts:${t.index}`) && !pending.has(`transcripts:${t.index}`))
-          .sort((a, b) => {
-            const da = Math.hypot((a.xmin + a.xmax) / 2 - cx, (a.ymin + a.ymax) / 2 - cy);
-            const db2 = Math.hypot((b.xmin + b.xmax) / 2 - cx, (b.ymin + b.ymax) / 2 - cy);
-            return da - db2;
-          })
-          .slice(0, MAX_TRANSCRIPT_TILES - pending.size)
+          .sort((a, b) =>
+            Math.hypot((a.xmin+a.xmax)/2 - cx, (a.ymin+a.ymax)/2 - cy) -
+            Math.hypot((b.xmin+b.xmax)/2 - cx, (b.ymin+b.ymax)/2 - cy)
+          )
+          .slice(0, MAX_TRANSCRIPT_TILES - txPending)
           .forEach(t => loadTile('transcripts', t));
+      }
+
+      // Overview density (below transcript threshold)
+      if (!txAboveThresh && showOverview) {
+        const geneKey = geneSelectionKey();
+        if (overviewGeneKey !== geneKey) {
+          overviewGeneKey = geneKey;
+          if (selectedGenes.size === 0) {
+            overviewBins = getManifestOverviewBins();
+            renderLayers(viewState);
+          } else {
+            updateGeneOverview();
+          }
+        }
       }
     }
 
-    // ── on viewport change ────────────────────────────────────────────────────
+    // ── viewport change ───────────────────────────────────────────────────────
     function onViewStateChange({ viewState }) {
       deckgl.setProps({ viewState });
       $zoomInfo.textContent = `zoom ${viewState.zoom.toFixed(2)}`;
@@ -335,7 +624,6 @@
       tileTimer = setTimeout(() => updateTiles(viewState), 150);
     }
 
-    // ── status ────────────────────────────────────────────────────────────────
     function updateStatus() {
       $status.textContent = pending.size
         ? `loading ${pending.size} tile(s)…`
@@ -343,49 +631,37 @@
     }
 
     // ── gene panel ────────────────────────────────────────────────────────────
-    function colorForGene(geneIdx) {
-      const [r, g, b] = PALETTE[geneIdx % PALETTE.length];
+    function colorForGene(gi) {
+      const [r, g, b] = PALETTE[gi % PALETTE.length];
       return `rgb(${r},${g},${b})`;
     }
 
     function renderGeneList() {
-      const genes  = manifest.layers.transcripts.genes;
-      const term   = searchTerm.toLowerCase();
-      const matches = term
-        ? genes.filter(g => g.toLowerCase().includes(term))
-        : genes;
-
-      const show = matches.slice(0, MAX_LIST_ROWS);
-      const frag = document.createDocumentFragment();
-
-      for (const name of show) {
-        const idx     = geneIndex.get(name);
-        const sel     = selectedGenes.has(idx);
-        const row     = document.createElement('div');
+      const genes   = manifest.layers.transcripts.genes;
+      const term    = searchTerm.toLowerCase();
+      const matches = term ? genes.filter(g => g.toLowerCase().includes(term)) : genes;
+      const frag    = document.createDocumentFragment();
+      for (const name of matches.slice(0, MAX_LIST_ROWS)) {
+        const idx = geneIndex.get(name);
+        const sel = selectedGenes.has(idx);
+        const row = document.createElement('div');
         row.className = 'gene-row' + (sel ? ' selected' : '');
-        row.dataset.idx = idx;
-
-        const dot  = document.createElement('span');
+        const dot = document.createElement('span');
         dot.className = 'gene-dot';
         dot.style.background = sel ? colorForGene(idx) : 'transparent';
-
         const label = document.createElement('span');
         label.className = 'gene-name';
         label.textContent = name;
-
-        row.appendChild(dot);
-        row.appendChild(label);
+        row.appendChild(dot); row.appendChild(label);
         row.addEventListener('click', () => toggleGene(idx));
         frag.appendChild(row);
       }
-
       if (matches.length > MAX_LIST_ROWS) {
-        const overflow = document.createElement('div');
-        overflow.id = 'list-overflow';
-        overflow.textContent = `+${matches.length - MAX_LIST_ROWS} more — refine search`;
-        frag.appendChild(overflow);
+        const ov = document.createElement('div');
+        ov.id = 'list-overflow';
+        ov.textContent = `+${matches.length - MAX_LIST_ROWS} more — refine search`;
+        frag.appendChild(ov);
       }
-
       $list.replaceChildren(frag);
       const n = selectedGenes.size;
       $selCount.textContent = n ? `${n} gene${n > 1 ? 's' : ''} selected` : '';
@@ -393,9 +669,15 @@
 
     function toggleGene(geneIdx) {
       if (selectedGenes.has(geneIdx)) selectedGenes.delete(geneIdx);
-      else selectedGenes.add(geneIdx);
+      else                            selectedGenes.add(geneIdx);
+      invalidateTx();
       renderGeneList();
-      renderLayers();
+      if (currentViewState?.zoom < TRANSCRIPT_ZOOM_THRESHOLD) {
+        overviewGeneKey = null; // force overview recompute
+        updateTiles(currentViewState);
+      } else {
+        renderLayers(currentViewState);
+      }
     }
 
     // ── bootstrap ─────────────────────────────────────────────────────────────
@@ -409,7 +691,6 @@
         return r.json();
       });
 
-      // Build gene → index lookup from sorted gene list in manifest
       geneIndex = new Map(manifest.layers.transcripts.genes.map((g, i) => [g, i]));
 
       const ext  = manifest.extent;
@@ -423,30 +704,49 @@
       const initialViewState = { target: [cx, cy, 0], zoom, minZoom: zoom - 2, maxZoom: zoom + 12 };
 
       deckgl = new deck.Deck({
-        canvas: 'deck-canvas',
-        width: '100%', height: '100%',
+        canvas: 'deck-canvas', width: '100%', height: '100%',
         views: new deck.OrthographicView({ id: 'ortho', controller: true }),
-        initialViewState, controller: true,
-        onViewStateChange, layers: [],
+        initialViewState, controller: true, onViewStateChange, layers: [],
       });
 
-      // Wire up gene panel controls
-      $search.addEventListener('input', () => {
-        searchTerm = $search.value;
-        renderGeneList();
-      });
+      // Gene panel
+      $search.addEventListener('input', () => { searchTerm = $search.value; renderGeneList(); });
+
       const $btnColorAll = document.getElementById('btn-color-all');
       $btnColorAll.addEventListener('click', () => {
         colorAll = !colorAll;
         $btnColorAll.classList.toggle('active', colorAll);
-        renderLayers();
+        invalidateTx();
+        renderLayers(currentViewState);
       });
 
       document.getElementById('btn-clear').addEventListener('click', () => {
         selectedGenes.clear();
+        invalidateTx();
         renderGeneList();
-        renderLayers();
+        if (currentViewState?.zoom < TRANSCRIPT_ZOOM_THRESHOLD) {
+          overviewGeneKey = null; updateTiles(currentViewState);
+        } else {
+          renderLayers(currentViewState);
+        }
       });
+
+      // Opacity sliders + visibility checkboxes
+      function makeLayerControl(checkId, sliderId, valId, visSetter, alphaSetter) {
+        const check  = document.getElementById(checkId);
+        const slider = document.getElementById(sliderId);
+        const label  = document.getElementById(valId);
+        const sync   = () => { slider.disabled = !check.checked; renderLayers(currentViewState); };
+        check.addEventListener('change', () => { visSetter(check.checked); invalidateTx(); sync(); updateTiles(currentViewState); });
+        slider.addEventListener('input', () => {
+          label.textContent = slider.value;
+          alphaSetter(slider.value / 100);
+          renderLayers(currentViewState);
+        });
+      }
+      makeLayerControl('show-overview','alpha-overview','val-overview', v => showOverview = v, v => alphaOverview = v);
+      makeLayerControl('show-poly',    'alpha-poly',    'val-poly',     v => showPoly     = v, v => alphaPoly     = v);
+      makeLayerControl('show-tx',      'alpha-tx',      'val-tx',       v => { showTx = v; invalidateTx(); }, v => alphaTx = v);
 
       renderGeneList();
       updateTiles(initialViewState);
