@@ -77,8 +77,6 @@ function updateScalebar(viewState) {
 
 function onViewStateChange({ viewState }) {
   state.deckgl.setProps({ viewState });
-  const $z = document.getElementById('zoom-info');
-  if ($z) $z.textContent = `zoom ${viewState.zoom.toFixed(2)}`;
   updateScalebar(viewState);
   clearTimeout(state.tileTimer);
   state.tileTimer = setTimeout(() => updateTiles(viewState), 150);
