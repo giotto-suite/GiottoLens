@@ -1,4 +1,4 @@
-# GiottoAtlas Design Document
+# GiottoLens Design Document
 
 ## Goals
 A static, zero-infrastructure spatial biology viewer for GiottoDisk-backed data. Requirements:
@@ -86,16 +86,16 @@ These prevent `buildTranscriptData()` (O(n) over millions of points) from runnin
 
 ### Two-step launch
 ```r
-server <- serve_atlas(gpoints, gpolygons)  # HTTP server + file setup
-viewer <- launch_atlas(server)              # browser + WebSocket
+server <- serve_lens(gpoints, gpolygons)  # HTTP server + file setup
+viewer <- launch_lens(server)              # browser + WebSocket
 ```
 
-### HTTP server (`AtlasServer`)
+### HTTP server (`LensServer`)
 Started via `processx` (background process, `cleanup = TRUE`). Runs `npx serve` from `serve_root` (the parent of `artifacts/`). Serves both parquet data and viewer HTML from one origin — no CORS boundary.
 
 URL structure: `http://localhost:3000/artifacts/{uid}/...` for data, `http://localhost:3000/atlas/` for viewer.
 
-### WebSocket (`AtlasViewer`)
+### WebSocket (`LensViewer`)
 `httpuv::startServer()` runs non-blocking via the `later` event loop — R console stays free. Callbacks use `later::later()` to run in the R event loop, not inside the httpuv handler thread.
 
 Private env capture pattern (R6 + async):

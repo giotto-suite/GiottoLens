@@ -28,7 +28,7 @@ function connect() {
     clearTimeout(reconnectTimer);
     setRStatus('connected');
     outQueue.splice(0).forEach(m => ws.send(m));
-    console.log('GiottoAtlas: connected to R');
+    console.log('GiottoLens: connected to R');
   };
 
   ws.onmessage = ({ data }) => {
@@ -36,7 +36,7 @@ function connect() {
       const msg = JSON.parse(data);
       handlers.get(msg.type)?.(msg.data);
     } catch (e) {
-      console.warn('GiottoAtlas: bad message from R:', e);
+      console.warn('GiottoLens: bad message from R:', e);
     }
   };
 

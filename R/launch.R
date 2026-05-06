@@ -1,17 +1,17 @@
-# ── serve_atlas() ─────────────────────────────────────────────────────────────
+# ── serve_lens() ─────────────────────────────────────────────────────────────
 
-#' Set up the GiottoAtlas data directory
+#' Set up the GiottoLens data directory
 #'
 #' Derives all paths from the GiottoDisk store objects, copies viewer files,
-#' and generates the manifest.  The HTTP server is started by [launch_atlas()].
+#' and generates the manifest.  The HTTP server is started by [launch_lens()].
 #'
 #' @param gpoints    giottoPoints object (optional)
 #' @param gpolygons  giottoPolygon object (optional)
 #' @param port       Port for the combined HTTP + WebSocket server (default: 3000)
 #' @param url_prefix Override the URL prefix (default: `http://localhost:{port}`)
-#' @return An [AtlasServer] configuration object
+#' @return An [LensServer] configuration object
 #' @export
-serve_atlas <- function(
+serve_lens <- function(
     gpoints    = NULL,
     gpolygons  = NULL,
     port       = 3000L,
@@ -38,28 +38,28 @@ serve_atlas <- function(
         url_prefix = url_prefix
     )
 
-    AtlasServer$new(serve_root = serve_root, port = port, url_prefix = url_prefix)
+    LensServer$new(serve_root = serve_root, port = port, url_prefix = url_prefix)
 }
 
 
-# ── launch_atlas() ────────────────────────────────────────────────────────────
+# ── launch_lens() ────────────────────────────────────────────────────────────
 
-#' Open the GiottoAtlas viewer
+#' Open the GiottoLens viewer
 #'
 #' Starts a combined HTTP + WebSocket server via httpuv — no Node.js required.
 #' Static files and parquet data are served using httpuv's C++ static path
 #' handler (concurrent, Range-aware, never blocks R's event loop).  The
 #' WebSocket runs on the same port so the RStudio viewer pane can connect.
 #'
-#' @param server An [AtlasServer] object returned by [serve_atlas()]
+#' @param server An [LensServer] object returned by [serve_lens()]
 #' @param open   Open browser / viewer pane automatically
-#' @return An [AtlasViewer] object; call `$close()` to stop the server
+#' @return An [LensViewer] object; call `$close()` to stop the server
 #' @export
-launch_atlas <- function(server, open = TRUE) {
-    if (!inherits(server, "AtlasServer"))
-        stop("Pass the AtlasServer returned by serve_atlas()")
+launch_lens <- function(server, open = TRUE) {
+    if (!inherits(server, "LensServer"))
+        stop("Pass the LensServer returned by serve_lens()")
 
-    viewer <- AtlasViewer$new(serve_root  = server$serve_root,
+    viewer <- LensViewer$new(serve_root  = server$serve_root,
                                port        = server$port,
                                url_prefix  = server$url_prefix)
     url <- paste0(server$url_prefix, "/atlas/")
@@ -69,11 +69,11 @@ launch_atlas <- function(server, open = TRUE) {
 }
 
 
-# ── AtlasServer ───────────────────────────────────────────────────────────────
+# ── LensServer ───────────────────────────────────────────────────────────────
 
-#' Configuration object returned by [serve_atlas()]
+#' Configuration object returned by [serve_lens()]
 #' @export
-AtlasServer <- R6::R6Class("AtlasServer",
+LensServer <- R6::R6Class("LensServer",
     public = list(
         #' @field url_prefix Base URL
         url_prefix = NULL,
@@ -88,11 +88,11 @@ AtlasServer <- R6::R6Class("AtlasServer",
             self$url_prefix <- url_prefix
         },
 
-        #' @description Shorthand for launch_atlas(server)
-        open = function(open = TRUE) launch_atlas(self, open = open),
+        #' @description Shorthand for launch_lens(server)
+        open = function(open = TRUE) launch_lens(self, open = open),
 
         print = function(...) {
-            cat("AtlasServer\n")
+            cat("LensServer\n")
             cat("  url:  ", self$url_prefix, "\n")
             cat("  root: ", self$serve_root, "\n")
             invisible(self)
@@ -101,9 +101,9 @@ AtlasServer <- R6::R6Class("AtlasServer",
 )
 
 
-# ── AtlasViewer ───────────────────────────────────────────────────────────────
+# ── LensViewer ───────────────────────────────────────────────────────────────
 
-#' Combined HTTP + WebSocket server returned by [launch_atlas()]
+#' Combined HTTP + WebSocket server returned by [launch_lens()]
 #'
 #' File serving uses httpuv's C++ `staticPath` handler — concurrent and
 #' Range-aware without touching R's event loop.  WebSocket messages (selection,
@@ -111,7 +111,7 @@ AtlasServer <- R6::R6Class("AtlasServer",
 #' directly.
 #'
 #' @export
-AtlasViewer <- R6::R6Class("AtlasViewer",
+LensViewer <- R6::R6Class("LensViewer",
 
     public = list(
         #' @field port        Server port
@@ -133,7 +133,7 @@ AtlasViewer <- R6::R6Class("AtlasViewer",
         #' @description Send a typed message to the viewer
         send = function(type, data = NULL) {
             if (is.null(private$ws)) {
-                warning("AtlasViewer: no viewer connected yet")
+                warning("LensViewer: no viewer connected yet")
                 return(invisible(self))
             }
             private$ws$send(jsonlite::toJSON(
@@ -154,13 +154,13 @@ AtlasViewer <- R6::R6Class("AtlasViewer",
             if (!is.null(private$server)) {
                 private$server$stop()
                 private$server <- NULL
-                message("AtlasViewer: server stopped")
+                message("LensViewer: server stopped")
             }
             invisible(self)
         },
 
         print = function(...) {
-            cat("AtlasViewer\n")
+            cat("LensViewer\n")
             cat("  url:         ", self$url_prefix, "\n")
             cat("  connected:   ", !is.null(private$ws), "\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
@@ -214,15 +214,15 @@ AtlasViewer <- R6::R6Class("AtlasViewer",
                                         later::later(function() cb(dat), delay = 0)
 
                                 }, error = function(e)
-                                    warning("AtlasViewer message error: ", e$message))
+                                    warning("LensViewer message error: ", e$message))
                             })
-                            message("AtlasViewer: viewer connected")
+                            message("LensViewer: viewer connected")
                         }
                     )
                 )
-                message("AtlasViewer: server started at ", self$url_prefix)
+                message("LensViewer: server started at ", self$url_prefix)
             }, error = function(e)
-                stop("AtlasViewer: failed to start server on port ", self$port,
+                stop("LensViewer: failed to start server on port ", self$port,
                      " — already in use? ", e$message))
         }
     )
@@ -243,15 +243,15 @@ AtlasViewer <- R6::R6Class("AtlasViewer",
 }
 
 .viewer_src_dir <- function() {
-    installed <- system.file("viewer", package = "GiottoAtlas")
+    installed <- system.file("viewer", package = "GiottoLens")
     if (nzchar(installed)) return(installed)
-    pkg_path <- tryCatch(find.package("GiottoAtlas"), error = function(e) "")
+    pkg_path <- tryCatch(find.package("GiottoLens"), error = function(e) "")
     if (nzchar(pkg_path)) {
         path <- file.path(pkg_path, "viewer")
         if (dir.exists(path)) return(normalizePath(path))
     }
     stop("Cannot locate viewer files. ",
-         "Ensure GiottoAtlas is loaded via devtools::load_all() or installed.")
+         "Ensure GiottoLens is loaded via devtools::load_all() or installed.")
 }
 
 .random_port <- function() sample(49152L:65535L, 1L)

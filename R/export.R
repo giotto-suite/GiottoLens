@@ -1,7 +1,7 @@
-#' Export a GiottoAtlas manifest.json
+#' Export a GiottoLens manifest.json
 #'
 #' Generates the manifest JSON that tells the viewer where to find tile data.
-#' Called internally by [launch_atlas()]; can also be called directly if you
+#' Called internally by [launch_lens()]; can also be called directly if you
 #' want to regenerate the manifest without relaunching.
 #'
 #' @param gpoints       giottoPoints object (optional)

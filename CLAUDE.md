@@ -1,14 +1,14 @@
-# GiottoAtlas — Claude Code Guide
+# GiottoLens — Claude Code Guide
 
 ## What this is
 A static spatial biology viewer for GiottoDisk-backed data. Two R functions launch a local HTTP server and open a deck.gl + DuckDB WASM viewer in the browser with bidirectional R communication via WebSocket.
 
 ## Package structure
 ```
-GiottoAtlas/
+GiottoLens/
 ├── R/
 │   ├── export.R      # export_manifest() — generates manifest.json from GiottoDisk stores
-│   └── launch.R      # serve_atlas(), launch_atlas(), AtlasServer, AtlasViewer R6 classes
+│   └── launch.R      # serve_lens(), launch_lens(), LensServer, LensViewer R6 classes
 ├── inst/
 │   └── viewer/       # ALL viewer JS/HTML files live here (not viewer/ at root)
 │       ├── index.html
@@ -30,22 +30,22 @@ devtools::load_all()   # for R-only changes
 
 # After editing inst/viewer/ JS files:
 devtools::install()    # must reinstall for inst/ changes to take effect
-library(GiottoAtlas)
+library(GiottoLens)
 
 # Launch:
-server <- serve_atlas(gpoints, gpolygons)   # starts npx serve via processx
-viewer <- launch_atlas(server)               # opens browser + WebSocket
+server <- serve_lens(gpoints, gpolygons)   # starts npx serve via processx
+viewer <- launch_lens(server)               # opens browser + WebSocket
 server$stop()                                # kill HTTP server (also auto-stops on session exit)
 ```
 
 ## Key conventions
 
 **R side:**
-- `serve_atlas()` derives all paths from `store@path` — never ask user for `artifacts_dir`
+- `serve_lens()` derives all paths from `store@path` — never ask user for `artifacts_dir`
 - `serve_root` = `dirname(dirname(dirname(store@path)))` (3 levels up from the data files)
 - Viewer files served at `serve_root/atlas/`, parquet data at `serve_root/artifacts/`
 - Always open browser to `/atlas/` — WebSocket uses `ws://${location.host}` (same origin, no ws_port param)
-- `AtlasServer` (R6) is a config-only object (no process); `AtlasViewer` (R6) owns the combined httpuv server
+- `LensServer` (R6) is a config-only object (no process); `LensViewer` (R6) owns the combined httpuv server
 - httpuv `staticPath` serves files in C++ — concurrent, Range-aware, never blocks R's event loop
 - Direct field assignment in `onMessage` is safe — httpuv dispatches callbacks to the main R thread
 - Capture `private` env before async closures: `priv <- private` then use `priv$ws <- ws`
