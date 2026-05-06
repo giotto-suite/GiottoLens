@@ -30,19 +30,26 @@ export function renderLayers(viewState) {
   if (state.showPoly && state.alphaPoly > 0) {
     const polyData = getCachedPolyData();
     if (polyZoneOk && polyData?.polys?.length) {
-      layers.push(new deck.PathLayer({
+      layers.push(new deck.PolygonLayer({
         id: 'poly-outline',
         data: polyData.polys,
-        getPath: d => d.polygon[0],
-        getColor: d => {
-          if (d.id != null && state.selectedCells.has(d.id)) return [255, 220, 50, 255];
-          if (d.id != null && state.metaColors) return state.metaColors.get(d.id) ?? [255, 255, 255, 255];
-          return [255, 255, 255, 255];
+        getPolygon: d => d.polygon[0],
+        filled: true,
+        getFillColor: d => {
+          if (d.id != null && state.metaColors) return state.metaColors.get(d.id) ?? [80, 80, 80, 80];
+          return [255, 255, 255, 20];
         },
-        getWidth: d => d.id != null && state.selectedCells.has(d.id) ? 2 : 1,
-        widthUnits: 'pixels', widthMinPixels: 1,
+        stroked: true,
+        getLineColor: d => d.id != null && state.selectedCells.has(d.id)
+          ? [255, 220, 50, 255] : [255, 255, 255, 200],
+        getLineWidth: d => d.id != null && state.selectedCells.has(d.id) ? 2 : 1,
+        lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
         opacity: state.alphaPoly,
-        updateTriggers: { getColor: [state.selVersion, state.metaCol], getWidth: state.selVersion },
+        updateTriggers: {
+          getFillColor: state.metaCol,
+          getLineColor: state.selVersion,
+          getLineWidth: state.selVersion,
+        },
       }));
     } else if (polyData?.centroids?.length) {
       layers.push(new deck.ScatterplotLayer({
