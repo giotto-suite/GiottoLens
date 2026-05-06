@@ -32,6 +32,7 @@ directly.
 \itemize{
 \item \href{#method-LensViewer-new}{\code{LensViewer$new()}}
 \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
+\item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
 \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
 \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
 \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
@@ -56,6 +57,25 @@ Send a typed message to the viewer
 \if{html}{\out{<div class="r">}}\preformatted{LensViewer$send(type, data = NULL)}\if{html}{\out{</div>}}
 }
 
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-push_metadata"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-push_metadata}{}}}
+\subsection{Method \code{push_metadata()}}{
+Push cell metadata to the viewer for polygon coloring
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_metadata(x, cols = NULL)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{x}}{A giotto object or a data.frame/data.table with a cell_ID column}
+
+\item{\code{cols}}{Character vector of columns to include (NULL = all)}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-on"></a>}}

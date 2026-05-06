@@ -236,6 +236,52 @@ function buildPolygonData() {
   return { polys, centroids: new Float32Array(cx), ids };
 }
 
+// ── Cell metadata coloring ────────────────────────────────────────────────────
+export async function buildMetaColors() {
+  if (!state.metaCol) { state.metaColors = null; return; }
+  try {
+    const tbl = await state.polyConn.query(
+      `SELECT cell_ID, "${state.metaCol}" AS val FROM cell_meta`
+    );
+    const colInfo  = state.metaCols.find(c => c.name === state.metaCol);
+    const isNumeric = colInfo?.numeric ?? false;
+    const colors = new Map();
+    if (isNumeric) {
+      let min = Infinity, max = -Infinity;
+      for (const batch of tbl.batches) {
+        const vals = batch.getChildAt(1);
+        for (let i = 0; i < batch.numRows; i++) {
+          const v = vals.get(i);
+          if (v !== null) { if (v < min) min = v; if (v > max) max = v; }
+        }
+      }
+      const range = max - min || 1;
+      for (const batch of tbl.batches) {
+        const ids = batch.getChildAt(0), vals = batch.getChildAt(1);
+        for (let i = 0; i < batch.numRows; i++) {
+          const t = Math.max(0, Math.min(1, (vals.get(i) - min) / range));
+          // low=blue, high=red
+          colors.set(ids.get(i), [Math.round(t*255), 0, Math.round((1-t)*255), 220]);
+        }
+      }
+    } else {
+      const cats = new Map();
+      for (const batch of tbl.batches) {
+        const ids = batch.getChildAt(0), vals = batch.getChildAt(1);
+        for (let i = 0; i < batch.numRows; i++) {
+          const v = String(vals.get(i) ?? 'NA');
+          if (!cats.has(v)) cats.set(v, PALETTE[cats.size % PALETTE.length]);
+          colors.set(ids.get(i), [...cats.get(v), 220]);
+        }
+      }
+    }
+    state.metaColors = colors;
+  } catch (e) {
+    console.warn('buildMetaColors failed:', e);
+    state.metaColors = null;
+  }
+}
+
 function updateStatus() {
   const $s = document.getElementById('status');
   if ($s) $s.textContent = state.pending.size

@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
-import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, getCachedPolyData } from './data.js';
+import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, getCachedPolyData, buildMetaColors } from './data.js';
 import { geneSelectionKey, getManifestOverviewBins, buildCompositeOverview, updateGeneOverview } from './overview.js';
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
@@ -290,7 +290,33 @@ async function main() {
   makeLayerControl('show-tx',     'alpha-tx',      'val-tx',
     v => { state.showTx = v; invalidateTx(); }, v => state.alphaTx = v);
 
+  // Metadata column selector
+  document.getElementById('meta-col-select')?.addEventListener('change', async e => {
+    state.metaCol = e.target.value || null;
+    await buildMetaColors();
+    renderLayers(state.currentViewState);
+  });
+
   // R → viewer message handlers
+  onMessage('load_metadata', async ({ url, types }) => {
+    const fullUrl = `${location.origin}${url}`;
+    await state.polyConn.query(
+      `CREATE OR REPLACE TABLE cell_meta AS SELECT * FROM read_parquet('${fullUrl}')`
+    );
+    // types is a named object from R: { col_name: "categorical"|"continuous" }
+    state.metaCols = Object.entries(types ?? {}).map(([name, kind]) => ({
+      name,
+      numeric: kind === 'continuous',
+    }));
+    const sel = document.getElementById('meta-col-select');
+    if (sel) {
+      sel.innerHTML = '<option value="">none</option>' +
+        state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+      document.getElementById('meta-panel').style.display = '';
+    }
+    if (state.metaCol) { await buildMetaColors(); renderLayers(state.currentViewState); }
+  });
+
   onMessage('color_cells',    data => { /* TODO: annotation phase */ console.log('color_cells', data); });
   onMessage('highlight_genes', genes => {
     genes.forEach(g => {

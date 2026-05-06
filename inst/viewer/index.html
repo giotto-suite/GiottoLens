@@ -52,6 +52,12 @@
     .gene-row:not(.selected) .gene-name { color: #6b7280; }
     #list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
 
+    #meta-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #meta-col-select {
+      flex: 1; padding: 4px 6px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
+    }
     #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
     #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
@@ -126,6 +132,13 @@
       <div id="sel-count"></div>
     </div>
     <div id="gene-list"></div>
+    <div id="meta-panel" style="display:none">
+      <h3>Cells</h3>
+      <div class="alpha-row">
+        <label>color by</label>
+        <select id="meta-col-select"><option value="">none</option></select>
+      </div>
+    </div>
     <div id="alpha-panel">
       <h3>Opacity</h3>
       <div class="alpha-row">

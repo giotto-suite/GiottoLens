@@ -44,4 +44,9 @@ export const state = {
   lassoActive:  false,
   selectedCells: new Set(),
   selVersion:   0,
+
+  // Cell metadata
+  metaCols:    [],    // [{name, numeric}] populated when metadata is loaded
+  metaCol:     null,  // active coloring column
+  metaColors:  null,  // Map<cell_ID, [r,g,b,a]> built async
 };

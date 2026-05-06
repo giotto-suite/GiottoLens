@@ -34,20 +34,30 @@ export function renderLayers(viewState) {
         id: 'poly-outline',
         data: polyData.polys,
         getPath: d => d.polygon[0],
-        getColor: d => d.id != null && state.selectedCells.has(d.id) ? [255, 220, 50, 255] : [255, 255, 255, 255],
+        getColor: d => {
+          if (d.id != null && state.selectedCells.has(d.id)) return [255, 220, 50, 255];
+          if (d.id != null && state.metaColors) return state.metaColors.get(d.id) ?? [255, 255, 255, 255];
+          return [255, 255, 255, 255];
+        },
         getWidth: d => d.id != null && state.selectedCells.has(d.id) ? 2 : 1,
         widthUnits: 'pixels', widthMinPixels: 1,
         opacity: state.alphaPoly,
-        updateTriggers: { getColor: state.selVersion, getWidth: state.selVersion },
+        updateTriggers: { getColor: [state.selVersion, state.metaCol], getWidth: state.selVersion },
       }));
     } else if (polyData?.centroids?.length) {
-      const pos = polyData.centroids;
       layers.push(new deck.ScatterplotLayer({
         id: 'poly-centroids',
-        data: { length: pos.length / 2, attributes: { getPosition: { value: pos, size: 2 } } },
-        getRadius: 3, getFillColor: [255, 255, 255, 200],
-        radiusUnits: 'pixels', radiusMinPixels: 1,
+        data: { length: polyData.ids.length,
+                attributes: { getPosition: { value: polyData.centroids, size: 2 } } },
+        getFillColor: (_, { index }) => {
+          const id = polyData.ids[index];
+          if (id != null && state.selectedCells.has(id)) return [255, 220, 50, 255];
+          if (id != null && state.metaColors) return state.metaColors.get(id) ?? [160, 160, 160, 180];
+          return [255, 255, 255, 200];
+        },
+        getRadius: 3, radiusUnits: 'pixels', radiusMinPixels: 1,
         opacity: state.alphaPoly,
+        updateTriggers: { getFillColor: [state.selVersion, state.metaCol] },
       }));
     }
 

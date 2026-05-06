@@ -127,6 +127,7 @@ LensViewer <- R6::R6Class("LensViewer",
             self$port      <- port
             self$url_prefix <- url_prefix
             private$root   <- serve_root
+            reg.finalizer(self, function(v) v$close(), onexit = TRUE)
             private$start_server()
         },
 
@@ -140,6 +141,47 @@ LensViewer <- R6::R6Class("LensViewer",
                 list(type = type, data = data),
                 auto_unbox = TRUE, null = "null"
             ))
+            invisible(self)
+        },
+
+        #' @description Push cell metadata to the viewer for polygon coloring
+        #' @param x      A giotto object or a data.frame/data.table with a cell_ID column
+        #' @param cols   Character vector of columns to include (NULL = all)
+        push_metadata = function(x, cols = NULL) {
+            if (is.null(private$ws)) {
+                warning("LensViewer: no viewer connected yet")
+                return(invisible(self))
+            }
+            if (inherits(x, "giotto")) {
+                if (!requireNamespace("GiottoClass", quietly = TRUE))
+                    stop("GiottoClass is required to push metadata from a giotto object")
+                meta <- as.data.frame(GiottoClass::pDataDT(x))
+            } else {
+                meta <- as.data.frame(x)
+            }
+            id_col <- if ("cell_ID" %in% names(meta)) "cell_ID" else names(meta)[1]
+            if (!is.null(cols))
+                meta <- meta[, unique(c(id_col, intersect(cols, names(meta)))), drop = FALSE]
+            meta_dir <- file.path(private$root, "lens", "metadata")
+            dir.create(meta_dir, recursive = TRUE, showWarnings = FALSE)
+            path <- file.path(meta_dir, "cell_meta.parquet")
+            arrow::write_parquet(meta, path)
+            # Classify each column so JS doesn't have to guess
+            data_cols <- setdiff(names(meta), id_col)
+            col_types  <- vapply(data_cols, function(cn) {
+                x <- meta[[cn]]
+                if (is.factor(x) || is.character(x) || is.logical(x)) return("categorical")
+                if (is.integer(x)) return("categorical")   # cluster IDs etc.
+                "continuous"
+            }, character(1L))
+            self$send("load_metadata", list(
+                url   = "/lens/metadata/cell_meta.parquet",
+                types = as.list(col_types)   # named: col → "categorical"|"continuous"
+            ))
+            message("LensViewer: pushed metadata — ",
+                    nrow(meta), " cells, ",
+                    ncol(meta) - 1L, " column(s): ",
+                    paste(setdiff(names(meta), id_col), collapse = ", "))
             invisible(self)
         },
 
