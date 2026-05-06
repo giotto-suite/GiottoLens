@@ -120,6 +120,7 @@ function makeLayerControl(checkId, sliderId, valId, visSetter, alphaSetter) {
   const slider = document.getElementById(sliderId);
   const label  = document.getElementById(valId);
   if (!check || !slider) return;
+  slider.disabled = !check.checked;
   check.addEventListener('change', () => {
     visSetter(check.checked);
     slider.disabled = !check.checked;

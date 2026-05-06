@@ -1,5 +1,5 @@
 export const TRANSCRIPT_ZOOM_THRESHOLD = 0;
-export const POLYGON_ZOOM_THRESHOLD   = -0.5;  // outlines pop in; centroids show below
+export const POLYGON_ZOOM_THRESHOLD   = -1;  // outlines pop in; centroids show below
 export const MAX_TRANSCRIPT_TILES     = 25;
 export const MAX_LIST_ROWS            = 200;
 export const OVERVIEW_CELL_SIZE       = 100;

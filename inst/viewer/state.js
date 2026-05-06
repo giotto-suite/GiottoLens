@@ -31,7 +31,7 @@ export const state = {
   // Visibility + opacity
   showOverview: true,  alphaOverview: 0.80,
   showPoly:     true,  alphaPoly:     0.60,
-  showTx:       true,  alphaTx:       0.70,
+  showTx:       false, alphaTx:       0.70,
 
   // Data caches
   txBuild:   null, txDirty:   true,
