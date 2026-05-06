@@ -1,7 +1,12 @@
 Package: GiottoLens
 Title: Interactive Spatial Biology Viewer for GiottoDisk Data
-Version: 0.1.0
-Authors@R: person("George", role = c("aut", "cre"), email = "balrith@gmail.com")
+Version: 0.0.1
+Authors@R: c(
+	person("Ruben", "Dries", email = "rubendries@gmail.com",
+		 role = c("aut", "cre"), comment = c(ORCID = "0000-0001-7650-7754")),
+	person("Jiaji", "George Chen", email = "jiajic@bu.edu",
+		 role = c("aut"))
+	)
 Description: An interactive web viewer for GiottoDisk-backed spatial biology data
     using deck.gl and DuckDB WASM. Supports transcript scatter, polygon outlines,
     density rasterization, gene filtering, cell selection, and annotation drawing.

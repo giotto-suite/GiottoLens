@@ -18,14 +18,14 @@ serve_lens <- function(
     url_prefix = paste0("http://localhost:", port)
 ) {
     serve_root <- .derive_serve_root(gpoints, gpolygons)
-    atlas_dir  <- file.path(serve_root, "atlas")
-    dir.create(atlas_dir, recursive = TRUE, showWarnings = FALSE)
+    lens_dir  <- file.path(serve_root, "lens")
+    dir.create(lens_dir, recursive = TRUE, showWarnings = FALSE)
 
     viewer_src   <- .viewer_src_dir()
     viewer_files <- list.files(viewer_src, full.names = TRUE)
-    copied <- file.copy(viewer_files, atlas_dir, overwrite = TRUE)
+    copied <- file.copy(viewer_files, lens_dir, overwrite = TRUE)
     message("Copied ", sum(copied), "/", length(copied),
-            " viewer files to: ", atlas_dir)
+            " viewer files to: ", lens_dir)
     if (!all(copied))
         warning("Some viewer files failed to copy: ",
                 paste(basename(viewer_files[!copied]), collapse = ", "))
@@ -33,7 +33,7 @@ serve_lens <- function(
     export_manifest(
         gpoints    = gpoints,
         gpolygons  = gpolygons,
-        output     = file.path(atlas_dir, "manifest.json"),
+        output     = file.path(lens_dir, "manifest.json"),
         serve_root = serve_root,
         url_prefix = url_prefix
     )
@@ -62,7 +62,7 @@ launch_lens <- function(server, open = TRUE) {
     viewer <- LensViewer$new(serve_root  = server$serve_root,
                                port        = server$port,
                                url_prefix  = server$url_prefix)
-    url <- paste0(server$url_prefix, "/atlas/")
+    url <- paste0(server$url_prefix, "/lens/")
     if (open) utils::browseURL(url)
     message("Viewer: ", url)
     invisible(viewer)

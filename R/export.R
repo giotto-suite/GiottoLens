@@ -14,7 +14,7 @@
 export_manifest <- function(
     gpoints    = NULL,
     gpolygons  = NULL,
-    output     = "atlas/manifest.json",
+    output     = "lens/manifest.json",
     serve_root,
     url_prefix = "http://localhost:3000"
 ) {

@@ -43,8 +43,8 @@ server$stop()                                # kill HTTP server (also auto-stops
 **R side:**
 - `serve_lens()` derives all paths from `store@path` — never ask user for `artifacts_dir`
 - `serve_root` = `dirname(dirname(dirname(store@path)))` (3 levels up from the data files)
-- Viewer files served at `serve_root/atlas/`, parquet data at `serve_root/artifacts/`
-- Always open browser to `/atlas/` — WebSocket uses `ws://${location.host}` (same origin, no ws_port param)
+- Viewer files served at `serve_root/lens/`, parquet data at `serve_root/artifacts/`
+- Always open browser to `/lens/` — WebSocket uses `ws://${location.host}` (same origin, no ws_port param)
 - `LensServer` (R6) is a config-only object (no process); `LensViewer` (R6) owns the combined httpuv server
 - httpuv `staticPath` serves files in C++ — concurrent, Range-aware, never blocks R's event loop
 - Direct field assignment in `onMessage` is safe — httpuv dispatches callbacks to the main R thread
@@ -60,7 +60,7 @@ server$stop()                                # kill HTTP server (also auto-stops
 
 ## Common mistakes to avoid
 - Do not use `ST_GeomFromWKB(geom)` — `geom` is already GEOMETRY type from GeoParquet metadata
-- Do not open browser to `/atlas/index.html` — serve strips .html and redirects, breaking relative imports
+- Do not open browser to `/lens/index.html` — serve strips .html and redirects, breaking relative imports
 - Do not add polygon tiles to `failed` Set — they should always retry (only 12 tiles)
 - Do not run tile eviction on polygon tiles based on zoom — polygons must always stay in scope for centroid rendering
 - `getFillColor` in `SolidPolygonLayer` binary format is per-triangle not per-polygon — use function accessors

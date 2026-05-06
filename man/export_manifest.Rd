@@ -2,12 +2,12 @@
 % Please edit documentation in R/export.R
 \name{export_manifest}
 \alias{export_manifest}
-\title{Export a GiottoAtlas manifest.json}
+\title{Export a GiottoLens manifest.json}
 \usage{
 export_manifest(
   gpoints = NULL,
   gpolygons = NULL,
-  output = "atlas/manifest.json",
+  output = "lens/manifest.json",
   serve_root,
   url_prefix = "http://localhost:3000"
 )
@@ -26,6 +26,6 @@ URLs are computed relative to this root}
 }
 \description{
 Generates the manifest JSON that tells the viewer where to find tile data.
-Called internally by [launch_atlas()]; can also be called directly if you
+Called internally by [launch_lens()]; can also be called directly if you
 want to regenerate the manifest without relaunching.
 }

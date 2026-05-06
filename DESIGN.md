@@ -25,7 +25,7 @@ Each tile has `x_index`, `y_index` (precomputed centroids), `geom` (WKB), `feat_
 Parquet footer contains pre-computed row group statistics and byte offsets — DuckDB reads the footer once and fetches only the relevant byte ranges via HTTP range requests. `.duckdb` files require navigating B-tree pointer chains (multiple round trips per query). The DuckDB team recommends parquet for HTTP/cloud access.
 
 ### Manifest (generated at export time)
-`atlas/manifest.json` contains tile bounding boxes, URLs, gene list, and pre-computed overview data. The viewer fetches this once at startup and never re-reads it.
+`lens/manifest.json` contains tile bounding boxes, URLs, gene list, and pre-computed overview data. The viewer fetches this once at startup and never re-reads it.
 
 Pre-computed overviews (when generated):
 - **All-genes density grid**: ~5850 cells at 100-micron resolution, stored inline as col/row/n arrays
@@ -93,7 +93,7 @@ viewer <- launch_lens(server)              # browser + WebSocket
 ### HTTP server (`LensServer`)
 Started via `processx` (background process, `cleanup = TRUE`). Runs `npx serve` from `serve_root` (the parent of `artifacts/`). Serves both parquet data and viewer HTML from one origin — no CORS boundary.
 
-URL structure: `http://localhost:3000/artifacts/{uid}/...` for data, `http://localhost:3000/atlas/` for viewer.
+URL structure: `http://localhost:3000/artifacts/{uid}/...` for data, `http://localhost:3000/lens/` for viewer.
 
 ### WebSocket (`LensViewer`)
 `httpuv::startServer()` runs non-blocking via the `later` event loop — R console stays free. Callbacks use `later::later()` to run in the R event loop, not inside the httpuv handler thread.
