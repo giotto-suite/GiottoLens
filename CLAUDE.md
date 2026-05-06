@@ -44,10 +44,11 @@ server$stop()                                # kill HTTP server (also auto-stops
 - `serve_atlas()` derives all paths from `store@path` — never ask user for `artifacts_dir`
 - `serve_root` = `dirname(dirname(dirname(store@path)))` (3 levels up from the data files)
 - Viewer files served at `serve_root/atlas/`, parquet data at `serve_root/artifacts/`
-- Always open browser to `/atlas/?ws_port=PORT` (with trailing slash — avoids serve redirect bug)
-- `AtlasServer` (R6) manages the npx serve process; `AtlasViewer` (R6) manages the WebSocket
-- httpuv callbacks must use `later::later()` to run in the R event loop, not inside the handler
-- Capture `private` env before async callbacks: `priv <- private` then `priv$ws <- ws`
+- Always open browser to `/atlas/` — WebSocket uses `ws://${location.host}` (same origin, no ws_port param)
+- `AtlasServer` (R6) is a config-only object (no process); `AtlasViewer` (R6) owns the combined httpuv server
+- httpuv `staticPath` serves files in C++ — concurrent, Range-aware, never blocks R's event loop
+- Direct field assignment in `onMessage` is safe — httpuv dispatches callbacks to the main R thread
+- Capture `private` env before async closures: `priv <- private` then use `priv$ws <- ws`
 
 **JS side:**
 - All shared state lives in `state.js` as a single exported object — mutate via `state.foo = bar`

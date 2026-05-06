@@ -34,11 +34,11 @@ export function renderLayers(viewState) {
         id: 'poly-outline',
         data: polyData.polys,
         getPath: d => d.polygon[0],
-        getColor: [255, 255, 255, 255],
-        getWidth: 1,
-        widthUnits: 'pixels',
-        widthMinPixels: 1,
+        getColor: d => d.id != null && state.selectedCells.has(d.id) ? [255, 220, 50, 255] : [255, 255, 255, 255],
+        getWidth: d => d.id != null && state.selectedCells.has(d.id) ? 2 : 1,
+        widthUnits: 'pixels', widthMinPixels: 1,
         opacity: state.alphaPoly,
+        updateTriggers: { getColor: state.selVersion, getWidth: state.selVersion },
       }));
     } else if (polyData?.centroids?.length) {
       const pos = polyData.centroids;
@@ -49,6 +49,26 @@ export function renderLayers(viewState) {
         radiusUnits: 'pixels', radiusMinPixels: 1,
         opacity: state.alphaPoly,
       }));
+    }
+
+    // Selected cell overlay (visible at all zooms, including centroid view)
+    if (polyData?.ids && state.selectedCells.size > 0) {
+      const selPos = [];
+      const cents  = polyData.centroids;
+      for (let i = 0; i < polyData.ids.length; i++)
+        if (polyData.ids[i] != null && state.selectedCells.has(polyData.ids[i]))
+          selPos.push([cents[i*2], cents[i*2+1]]);
+      if (selPos.length)
+        layers.push(new deck.ScatterplotLayer({
+          id: 'selected-cells',
+          data: selPos,
+          getPosition: d => d,
+          getFillColor: [255, 220, 50, 180],
+          getLineColor: [255, 220, 50, 255],
+          stroked: true, getLineWidth: 1, lineWidthUnits: 'pixels',
+          getRadius: 5, radiusUnits: 'pixels', radiusMinPixels: 2,
+          updateTriggers: { data: state.selVersion },
+        }));
     }
   }
 
@@ -67,6 +87,34 @@ export function renderLayers(viewState) {
         getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
       }));
     }
+  }
+
+  // Draw polygon ring in progress
+  if (state.drawRing.length >= 1) {
+    const preview = state.drawRing.length >= 2
+      ? [...state.drawRing, state.drawRing[0]] : state.drawRing;
+    layers.push(new deck.PathLayer({
+      id: 'draw-ring',
+      data: [preview], getPath: d => d,
+      getColor: [255, 200, 50], getWidth: 2,
+      widthUnits: 'pixels', widthMinPixels: 1,
+    }));
+    layers.push(new deck.ScatterplotLayer({
+      id: 'draw-verts',
+      data: state.drawRing, getPosition: d => d,
+      getFillColor: [255, 200, 50, 255],
+      getRadius: 4, radiusUnits: 'pixels',
+    }));
+  }
+
+  // Lasso ring in progress
+  if (state.lassoRing.length >= 2) {
+    layers.push(new deck.PathLayer({
+      id: 'lasso-ring',
+      data: [[...state.lassoRing, state.lassoRing[0]]], getPath: d => d,
+      getColor: [100, 200, 255], getWidth: 2,
+      widthUnits: 'pixels', widthMinPixels: 1,
+    }));
   }
 
   state.deckgl.setProps({ layers });

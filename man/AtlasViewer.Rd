@@ -2,16 +2,28 @@
 % Please edit documentation in R/launch.R
 \name{AtlasViewer}
 \alias{AtlasViewer}
-\title{Bidirectional R <-> viewer communication handle returned by [launch_atlas()]}
+\title{Combined HTTP + WebSocket server returned by [launch_atlas()]}
 \description{
-Bidirectional R <-> viewer communication handle returned by [launch_atlas()]
+Combined HTTP + WebSocket server returned by [launch_atlas()]
 
-Bidirectional R <-> viewer communication handle returned by [launch_atlas()]
+Combined HTTP + WebSocket server returned by [launch_atlas()]
+}
+\details{
+File serving uses httpuv's C++ `staticPath` handler — concurrent and
+Range-aware without touching R's event loop.  WebSocket messages (selection,
+annotations) are dispatched to the main R thread and update public fields
+directly.
 }
 \section{Public fields}{
 \if{html}{\out{<div class="r6-fields">}}
 \describe{
-\item{\code{ws_port}}{Port the WebSocket server is listening on}
+\item{\code{port}}{Server port}
+
+\item{\code{url_prefix}}{Base URL}
+
+\item{\code{selection}}{Character vector of selected cell IDs; updated on each lasso}
+
+\item{\code{annotations}}{List of GeoJSON strings from drawn polygons}
 }
 \if{html}{\out{</div>}}
 }
@@ -30,9 +42,8 @@ Bidirectional R <-> viewer communication handle returned by [launch_atlas()]
 \if{html}{\out{<a id="method-AtlasViewer-new"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasViewer-new}{}}}
 \subsection{Method \code{new()}}{
-Start the WebSocket server
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$new()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$new(serve_root, port, url_prefix)}\if{html}{\out{</div>}}
 }
 
 }
@@ -40,45 +51,27 @@ Start the WebSocket server
 \if{html}{\out{<a id="method-AtlasViewer-send"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasViewer-send}{}}}
 \subsection{Method \code{send()}}{
-Send a message to the viewer
+Send a typed message to the viewer
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$send(type, data = NULL)}\if{html}{\out{</div>}}
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{type}}{Message type string (e.g. `"highlight_genes"`)}
-
-\item{\code{data}}{R object serialized to JSON}
-}
-\if{html}{\out{</div>}}
-}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-AtlasViewer-on"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasViewer-on}{}}}
 \subsection{Method \code{on()}}{
-Register a callback for messages from the viewer
+Register a callback for a viewer message type
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$on(type, callback)}\if{html}{\out{</div>}}
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{type}}{Message type string (e.g. `"annotation"`)}
-
-\item{\code{callback}}{Function receiving the parsed message data}
-}
-\if{html}{\out{</div>}}
-}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-AtlasViewer-close"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasViewer-close}{}}}
 \subsection{Method \code{close()}}{
-Stop the WebSocket server
+Stop the HTTP + WebSocket server
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$close()}\if{html}{\out{</div>}}
 }
@@ -88,7 +81,6 @@ Stop the WebSocket server
 \if{html}{\out{<a id="method-AtlasViewer-print"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasViewer-print}{}}}
 \subsection{Method \code{print()}}{
-Print method
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasViewer$print(...)}\if{html}{\out{</div>}}
 }

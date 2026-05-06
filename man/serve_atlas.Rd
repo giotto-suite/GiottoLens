@@ -2,7 +2,7 @@
 % Please edit documentation in R/launch.R
 \name{serve_atlas}
 \alias{serve_atlas}
-\title{Set up and start the GiottoAtlas data server}
+\title{Set up the GiottoAtlas data directory}
 \usage{
 serve_atlas(
   gpoints = NULL,
@@ -16,15 +16,14 @@ serve_atlas(
 
 \item{gpolygons}{giottoPolygon object (optional)}
 
-\item{port}{Port for the HTTP server (default: 3000)}
+\item{port}{Port for the combined HTTP + WebSocket server (default: 3000)}
 
 \item{url_prefix}{Override the URL prefix (default: `http://localhost:{port}`)}
 }
 \value{
-An [AtlasServer] object
+An [AtlasServer] configuration object
 }
 \description{
-Derives all paths from the GiottoDisk store objects, generates the manifest,
-copies the viewer files, and starts an HTTP server via `npx serve` as a
-background process. Returns an [AtlasServer] handle.
+Derives all paths from the GiottoDisk store objects, copies viewer files,
+and generates the manifest.  The HTTP server is started by [launch_atlas()].
 }

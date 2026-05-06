@@ -2,18 +2,20 @@
 % Please edit documentation in R/launch.R
 \name{AtlasServer}
 \alias{AtlasServer}
-\title{HTTP server handle returned by [serve_atlas()]}
+\title{Configuration object returned by [serve_atlas()]}
 \description{
-HTTP server handle returned by [serve_atlas()]
+Configuration object returned by [serve_atlas()]
 
-HTTP server handle returned by [serve_atlas()]
+Configuration object returned by [serve_atlas()]
 }
 \section{Public fields}{
 \if{html}{\out{<div class="r6-fields">}}
 \describe{
-\item{\code{url_prefix}}{Base URL for the server}
+\item{\code{url_prefix}}{Base URL}
 
-\item{\code{port}}{Port the server is listening on}
+\item{\code{port}}{Server port}
+
+\item{\code{serve_root}}{Root directory being served}
 }
 \if{html}{\out{</div>}}
 }
@@ -22,8 +24,6 @@ HTTP server handle returned by [serve_atlas()]
 \itemize{
 \item \href{#method-AtlasServer-new}{\code{AtlasServer$new()}}
 \item \href{#method-AtlasServer-open}{\code{AtlasServer$open()}}
-\item \href{#method-AtlasServer-is_running}{\code{AtlasServer$is_running()}}
-\item \href{#method-AtlasServer-stop}{\code{AtlasServer$stop()}}
 \item \href{#method-AtlasServer-print}{\code{AtlasServer$print()}}
 \item \href{#method-AtlasServer-clone}{\code{AtlasServer$clone()}}
 }
@@ -32,7 +32,6 @@ HTTP server handle returned by [serve_atlas()]
 \if{html}{\out{<a id="method-AtlasServer-new"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasServer-new}{}}}
 \subsection{Method \code{new()}}{
-Start the npx serve process
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasServer$new(serve_root, port, url_prefix)}\if{html}{\out{</div>}}
 }
@@ -42,29 +41,9 @@ Start the npx serve process
 \if{html}{\out{<a id="method-AtlasServer-open"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasServer-open}{}}}
 \subsection{Method \code{open()}}{
-Open the viewer (shorthand for launch_atlas(server))
+Shorthand for launch_atlas(server)
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasServer$open(open = TRUE)}\if{html}{\out{</div>}}
-}
-
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-AtlasServer-is_running"></a>}}
-\if{latex}{\out{\hypertarget{method-AtlasServer-is_running}{}}}
-\subsection{Method \code{is_running()}}{
-Check if the HTTP server process is alive
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{AtlasServer$is_running()}\if{html}{\out{</div>}}
-}
-
-}
-\if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-AtlasServer-stop"></a>}}
-\if{latex}{\out{\hypertarget{method-AtlasServer-stop}{}}}
-\subsection{Method \code{stop()}}{
-Stop the HTTP server process
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{AtlasServer$stop()}\if{html}{\out{</div>}}
 }
 
 }
@@ -72,7 +51,6 @@ Stop the HTTP server process
 \if{html}{\out{<a id="method-AtlasServer-print"></a>}}
 \if{latex}{\out{\hypertarget{method-AtlasServer-print}{}}}
 \subsection{Method \code{print()}}{
-Print method
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{AtlasServer$print(...)}\if{html}{\out{</div>}}
 }

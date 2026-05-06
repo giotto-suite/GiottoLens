@@ -1,10 +1,42 @@
 import { state } from './state.js';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
-import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly } from './data.js';
+import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, getCachedPolyData } from './data.js';
 import { geneSelectionKey, getManifestOverviewBins, buildCompositeOverview, updateGeneOverview } from './overview.js';
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
+
+// ── Annotation helpers ────────────────────────────────────────────────────────
+function canvasToData(clientX, clientY) {
+  const rect = document.getElementById('deck-canvas').getBoundingClientRect();
+  const vp   = state.deckgl.getViewports()[0];
+  const [x, y] = vp.unproject([clientX - rect.left, clientY - rect.top]);
+  return [x, y];
+}
+
+function pointInPolygon(ring, x, y) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+function setMode(m) {
+  state.mode = m;
+  state.drawRing  = [];
+  state.lassoRing = [];
+  state.lassoActive = false;
+  state.deckgl.setProps({ controller: m === 'lasso'
+    ? { dragPan: false, doubleClickZoom: false }
+    : { doubleClickZoom: false } });
+  document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === m)
+  );
+  renderLayers(state.currentViewState);
+}
 
 // ── Tile eviction + load scheduling ──────────────────────────────────────────
 function updateTiles(viewState) {
@@ -129,9 +161,93 @@ async function main() {
   state.deckgl = new deck.Deck({
     canvas: 'deck-canvas', width: '100%', height: '100%',
     views: new deck.OrthographicView({ id: 'ortho', controller: true }),
-    initialViewState, controller: true, onViewStateChange, layers: [],
+    initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
   updateScalebar(initialViewState);
+
+  // ── Toolbar mode buttons ──────────────────────────────────────────────────
+  document.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
+    btn.addEventListener('click', () => setMode(btn.dataset.mode))
+  );
+  document.getElementById('tool-clear-sel')?.addEventListener('click', () => {
+    state.selectedCells.clear();
+    state.selVersion++;
+    sendToR('cell_selection', { ids: [] });
+    renderLayers(state.currentViewState);
+  });
+
+  // ── Canvas annotation / lasso events ─────────────────────────────────────
+  const canvas = document.getElementById('deck-canvas');
+  let lassoDragged  = false;
+  let lassoLastPx   = null;
+
+  canvas.addEventListener('click', e => {
+    if (state.mode !== 'draw') return;
+    state.drawRing.push(canvasToData(e.clientX, e.clientY));
+    renderLayers(state.currentViewState);
+  });
+
+  canvas.addEventListener('dblclick', e => {
+    if (state.mode !== 'draw') return;
+    state.drawRing.pop(); // second click already added by click handler
+    if (state.drawRing.length >= 3) {
+      const closed = [...state.drawRing, state.drawRing[0]];
+      sendToR('annotation', {
+        geojson: JSON.stringify({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [closed] } })
+      });
+    }
+    state.drawRing = [];
+    renderLayers(state.currentViewState);
+  });
+
+  canvas.addEventListener('mousedown', e => {
+    if (state.mode !== 'lasso') return;
+    lassoDragged = false;
+    lassoLastPx  = [e.clientX, e.clientY];
+    state.lassoActive = true;
+    state.lassoRing   = [canvasToData(e.clientX, e.clientY)];
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (state.mode !== 'lasso' || !state.lassoActive) return;
+    const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
+    if (Math.hypot(dx, dy) < 5) return;
+    lassoLastPx  = [e.clientX, e.clientY];
+    lassoDragged = true;
+    state.lassoRing.push(canvasToData(e.clientX, e.clientY));
+    renderLayers(state.currentViewState);
+  });
+
+  window.addEventListener('mouseup', e => {
+    if (state.mode !== 'lasso' || !state.lassoActive) return;
+    state.lassoActive = false;
+    if (lassoDragged && state.lassoRing.length >= 3) {
+      const polyData = getCachedPolyData();
+      if (polyData?.ids) {
+        const ring  = state.lassoRing;
+        const cents = polyData.centroids;
+        const newSel = new Set(state.selectedCells);
+        for (let i = 0; i < polyData.ids.length; i++)
+          if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
+            newSel.add(polyData.ids[i]);
+        state.selectedCells = newSel;
+        state.selVersion++;
+        sendToR('cell_selection', { ids: [...newSel] });
+      }
+    }
+    state.lassoRing = [];
+    renderLayers(state.currentViewState);
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      state.drawRing  = [];
+      state.lassoRing = [];
+      state.lassoActive = false;
+      if (state.mode !== 'pan') setMode('pan');
+      else renderLayers(state.currentViewState);
+    }
+  });
 
   // Gene panel
   const $search = document.getElementById('gene-search');

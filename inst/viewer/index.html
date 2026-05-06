@@ -61,6 +61,27 @@
     .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
     .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
 
+    #toolbar {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 3px;
+      background: rgba(17,24,39,0.88); border: 1px solid #374151; border-radius: 6px;
+      padding: 4px; pointer-events: all; user-select: none; z-index: 10;
+    }
+    .tool-btn {
+      padding: 4px 10px; background: none; border: 1px solid transparent; border-radius: 4px;
+      color: #9ca3af; cursor: pointer; font-size: 11px; font-family: monospace;
+    }
+    .tool-btn:hover { background: #374151; color: #e5e7eb; }
+    .tool-btn.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+    .tool-sep { width: 1px; height: 16px; background: #374151; margin: 0 2px; flex-shrink: 0; }
+
+    #r-status {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      margin-left: 5px; vertical-align: middle; background: #4b5563;
+    }
+    #r-status.connected    { background: #34d399; }
+    #r-status.disconnected { background: #f87171; }
+
     #scalebar {
       position: absolute; bottom: 20px; left: 12px;
       pointer-events: none; user-select: none;
@@ -79,7 +100,14 @@
 </head>
 <body>
   <canvas id="deck-canvas"></canvas>
-  <div id="hud">GiottoAtlas</div>
+  <div id="hud">GiottoAtlas<span id="r-status" title="R connection"></span></div>
+  <div id="toolbar">
+    <button class="tool-btn active" data-mode="pan">pan</button>
+    <button class="tool-btn" data-mode="draw">draw</button>
+    <button class="tool-btn" data-mode="lasso">select</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" id="tool-clear-sel">clear sel</button>
+  </div>
   <div id="scalebar">
     <div id="scalebar-bar"></div>
     <span id="scalebar-label"></span>

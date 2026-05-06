@@ -1,37 +1,34 @@
-// WebSocket connection to R via httpuv.
-// Port is passed in the URL: ?ws_port=PORT
-// Fails gracefully when not present — viewer works standalone.
+// WebSocket connects back to the same origin (same port as the HTTP server).
+// This works in the RStudio viewer pane and any browser with no CORS issues.
+// Reconnects every 2s until R's event loop processes the initial handshake.
 
-const params  = new URLSearchParams(window.location.search);
-const wsPort  = params.get('ws_port');
-
-let ws       = null;
-const handlers  = new Map();
-const outQueue  = [];
+let ws             = null;
+let reconnectTimer = null;
+const handlers     = new Map();
+const outQueue     = [];
 
 export const isConnected = () => ws?.readyState === WebSocket.OPEN;
-
-// Register a handler for messages arriving from R
 export function onMessage(type, fn) { handlers.set(type, fn); }
 
-// Send a message to R
 export function sendToR(type, data) {
   const msg = JSON.stringify({ type, data });
   if (isConnected()) ws.send(msg);
-  else outQueue.push(msg); // queued until connection opens
+  else outQueue.push(msg);
 }
 
-export function initComms() {
-  if (!wsPort) {
-    console.log('GiottoAtlas: no ws_port param — running standalone (no R connection)');
-    return;
-  }
+function setRStatus(s) {
+  const el = document.getElementById('r-status');
+  if (el) { el.className = s; el.title = 'R: ' + s; }
+}
 
-  ws = new WebSocket(`ws://localhost:${wsPort}`);
+function connect() {
+  ws = new WebSocket(`ws://${location.host}`);
 
   ws.onopen = () => {
-    console.log(`GiottoAtlas: connected to R on port ${wsPort}`);
-    outQueue.splice(0).forEach(m => ws.send(m)); // flush queued messages
+    clearTimeout(reconnectTimer);
+    setRStatus('connected');
+    outQueue.splice(0).forEach(m => ws.send(m));
+    console.log('GiottoAtlas: connected to R');
   };
 
   ws.onmessage = ({ data }) => {
@@ -39,10 +36,18 @@ export function initComms() {
       const msg = JSON.parse(data);
       handlers.get(msg.type)?.(msg.data);
     } catch (e) {
-      console.warn('GiottoAtlas: invalid message from R:', e);
+      console.warn('GiottoAtlas: bad message from R:', e);
     }
   };
 
-  ws.onerror = () => console.warn('GiottoAtlas: R WebSocket error');
-  ws.onclose = () => console.log('GiottoAtlas: R connection closed');
+  ws.onerror = () => setRStatus('disconnected');
+
+  ws.onclose = () => {
+    setRStatus('disconnected');
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+}
+
+export function initComms() {
+  connect();
 }

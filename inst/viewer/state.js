@@ -36,4 +36,12 @@ export const state = {
   // Data caches
   txBuild:   null, txDirty:   true,
   polyBuild: null, polyDirty: true,
+
+  // Annotation / selection
+  mode:         'pan',   // 'pan' | 'draw' | 'lasso'
+  drawRing:     [],
+  lassoRing:    [],
+  lassoActive:  false,
+  selectedCells: new Set(),
+  selVersion:   0,
 };

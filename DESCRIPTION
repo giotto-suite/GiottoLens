@@ -13,7 +13,6 @@ Imports:
     jsonlite,
     httpuv,
     later,
-    processx,
     R6
 Suggests:
     GiottoClass,

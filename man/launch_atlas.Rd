@@ -9,12 +9,14 @@ launch_atlas(server, open = TRUE)
 \arguments{
 \item{server}{An [AtlasServer] object returned by [serve_atlas()]}
 
-\item{open}{Open browser automatically}
+\item{open}{Open browser / viewer pane automatically}
 }
 \value{
-An [AtlasViewer] object
+An [AtlasViewer] object; call `$close()` to stop the server
 }
 \description{
-Opens the viewer in a browser and starts the R <-> viewer WebSocket
-communication channel. Call after [serve_atlas()].
+Starts a combined HTTP + WebSocket server via httpuv — no Node.js required.
+Static files and parquet data are served using httpuv's C++ static path
+handler (concurrent, Range-aware, never blocks R's event loop).  The
+WebSocket runs on the same port so the RStudio viewer pane can connect.
 }

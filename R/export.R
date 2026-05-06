@@ -61,7 +61,7 @@ export_manifest <- function(
     })
 
     disk_ext <- store@params$disk_extent  # xmin, xmax, ymin, ymax
-    list(
+    out <- list(
         type   = type,
         uid    = store@uid,
         extent = list(
@@ -70,6 +70,8 @@ export_manifest <- function(
         ),
         tiles  = tiles
     )
+    if (type == "polygons") out$id_col <- "poly_ID"
+    out
 }
 
 .tile_url <- function(store, tile_idx, serve_root, url_prefix) {

@@ -36,43 +36,67 @@ export function visibleTiles(viewState, tiles) {
 }
 
 // ── Polygon tile fetch ────────────────────────────────────────────────────────
-export async function fetchPolygonTile(url) {
-  if (state.spatialLoaded) {
-    const tbl = await state.polyConn.query(
-      `SELECT x_index, y_index, ST_AsGeoJSON(geom) AS gj FROM read_parquet('${url}')`
-    );
-    const polys = [], cx = [];
-    for (const batch of tbl.batches) {
-      const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
-      for (let i = 0; i < batch.numRows; i++) {
-        cx.push(xs.get(i), ys.get(i));
-        try {
-          const gj   = JSON.parse(gs.get(i));
-          const rings = gj.type === 'Polygon'      ? gj.coordinates
-                      : gj.type === 'MultiPolygon' ? gj.coordinates[0]
-                      : null;
-          if (rings) polys.push({ polygon: rings });
-        } catch (_) {}
-      }
+async function _fetchPolyWithId(url, idCol) {
+  const gjSel = state.spatialLoaded ? 'ST_AsGeoJSON(geom) AS gj' : 'geom';
+  const sel   = `${idCol} AS _id, x_index, y_index, ${gjSel}`;
+  const tbl   = await state.polyConn.query(`SELECT ${sel} FROM read_parquet('${url}')`);
+  const polys = [], cx = [], ids = [];
+  for (const batch of tbl.batches) {
+    const idB = batch.getChildAt(0), xs = batch.getChildAt(1), ys = batch.getChildAt(2), gs = batch.getChildAt(3);
+    for (let i = 0; i < batch.numRows; i++) {
+      const id = idB.get(i);
+      cx.push(xs.get(i), ys.get(i));
+      ids.push(id);
+      _parsePolyGeom(gs.get(i), id, polys);
     }
-    return { polys, centroids: new Float32Array(cx) };
-  } else {
-    const tbl = await state.polyConn.query(`SELECT x_index, y_index, geom FROM read_parquet('${url}')`);
-    const polys = [], cx = [];
-    for (const batch of tbl.batches) {
-      const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
-      for (let i = 0; i < batch.numRows; i++) {
-        cx.push(xs.get(i), ys.get(i));
-        const raw = gs.get(i);
-        let bytes = null;
-        if (raw instanceof Uint8Array) bytes = raw;
-        else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
-        else if (raw?.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
-        if (bytes) { const rings = decodeWKBPolygon(bytes); if (rings) polys.push({ polygon: rings }); }
-      }
-    }
-    return { polys, centroids: new Float32Array(cx) };
   }
+  return { polys, centroids: new Float32Array(cx), ids };
+}
+
+async function _fetchPolyNoId(url) {
+  const gjSel = state.spatialLoaded ? 'ST_AsGeoJSON(geom) AS gj' : 'geom';
+  const tbl   = await state.polyConn.query(`SELECT x_index, y_index, ${gjSel} FROM read_parquet('${url}')`);
+  const polys = [], cx = [], ids = [];
+  for (const batch of tbl.batches) {
+    const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
+    for (let i = 0; i < batch.numRows; i++) {
+      cx.push(xs.get(i), ys.get(i));
+      ids.push(null);
+      _parsePolyGeom(gs.get(i), null, polys);
+    }
+  }
+  return { polys, centroids: new Float32Array(cx), ids };
+}
+
+function _parsePolyGeom(raw, id, polys) {
+  if (state.spatialLoaded) {
+    try {
+      const gj    = JSON.parse(raw);
+      const rings = gj.type === 'Polygon'      ? gj.coordinates
+                  : gj.type === 'MultiPolygon' ? gj.coordinates[0]
+                  : null;
+      if (rings) polys.push({ polygon: rings, id });
+    } catch (_) {}
+  } else {
+    let bytes = null;
+    if (raw instanceof Uint8Array) bytes = raw;
+    else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
+    else if (raw?.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    if (bytes) { const rings = decodeWKBPolygon(bytes); if (rings) polys.push({ polygon: rings, id }); }
+  }
+}
+
+export async function fetchPolygonTile(url) {
+  const idCol = state.manifest?.layers?.polygons?.id_col;
+  if (idCol) {
+    try {
+      return await _fetchPolyWithId(url, idCol);
+    } catch (_) {
+      // Column not found in parquet — disable for all future tiles and fall through
+      state.manifest.layers.polygons.id_col = null;
+    }
+  }
+  return _fetchPolyNoId(url);
 }
 
 function decodeWKBPolygon(wkb) {
@@ -201,14 +225,15 @@ function buildTranscriptData() {
 }
 
 function buildPolygonData() {
-  const polys = [], cx = [];
+  const polys = [], cx = [], ids = [];
   for (const [k, data] of state.cache) {
     if (!k.startsWith('polygons:') || !data) continue;
     for (const p of data.polys)     polys.push(p);
     for (const v of data.centroids) cx.push(v);
+    for (const id of data.ids)      ids.push(id);
   }
   if (!cx.length) return null;
-  return { polys, centroids: new Float32Array(cx) };
+  return { polys, centroids: new Float32Array(cx), ids };
 }
 
 function updateStatus() {
