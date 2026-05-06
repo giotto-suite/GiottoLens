@@ -66,10 +66,20 @@ function updateTiles(viewState) {
   }
 }
 
+function updateScalebar(viewState) {
+  const pxPerMicron = Math.pow(2, viewState.zoom);
+  const exp = Math.pow(10, Math.floor(Math.log10(100 / pxPerMicron)));
+  const niceMicrons = [1, 2, 5, 10].map(x => x * exp).find(x => x * pxPerMicron >= 80) ?? exp * 10;
+  const label = niceMicrons >= 1000 ? `${niceMicrons / 1000} mm` : `${niceMicrons} μm`;
+  document.getElementById('scalebar-bar').style.width = (niceMicrons * pxPerMicron) + 'px';
+  document.getElementById('scalebar-label').textContent = label;
+}
+
 function onViewStateChange({ viewState }) {
   state.deckgl.setProps({ viewState });
   const $z = document.getElementById('zoom-info');
   if ($z) $z.textContent = `zoom ${viewState.zoom.toFixed(2)}`;
+  updateScalebar(viewState);
   clearTimeout(state.tileTimer);
   state.tileTimer = setTimeout(() => updateTiles(viewState), 150);
 }
@@ -123,6 +133,7 @@ async function main() {
     views: new deck.OrthographicView({ id: 'ortho', controller: true }),
     initialViewState, controller: true, onViewStateChange, layers: [],
   });
+  updateScalebar(initialViewState);
 
   // Gene panel
   const $search = document.getElementById('gene-search');
