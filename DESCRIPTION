@@ -1,0 +1,22 @@
+Package: GiottoAtlas
+Title: Static Spatial Biology Viewer for GiottoDisk Data
+Version: 0.1.0
+Authors@R: person("George", role = c("aut", "cre"), email = "balrith@gmail.com")
+Description: A static web viewer for GiottoDisk-backed spatial biology data using
+    deck.gl and DuckDB WASM. Supports transcript scatter, polygon outlines, density
+    rasterization, and gene filtering. Includes bidirectional R communication via
+    httpuv WebSocket for annotation workflows.
+License: MIT
+Imports:
+    arrow,
+    dplyr,
+    jsonlite,
+    httpuv,
+    later,
+    processx,
+    R6
+Suggests:
+    GiottoClass,
+    GiottoDisk
+Encoding: UTF-8
+RoxygenNote: 7.3.3

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GiottoAtlas</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #111827; overflow: hidden; font-family: monospace; }
+    canvas { position: absolute; inset: 0; }
+
+    #hud {
+      position: absolute; top: 12px; left: 12px;
+      color: #d1d5db; font-size: 12px; line-height: 1.6;
+      pointer-events: none; user-select: none;
+    }
+    #status { position: absolute; top: 12px; right: 276px; color: #6b7280; font-size: 12px; }
+
+    #panel {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 260px;
+      background: rgba(17,24,39,0.92); border-left: 1px solid #1f2937;
+      display: flex; flex-direction: column; color: #d1d5db; font-size: 12px;
+    }
+    #panel-header { padding: 12px 12px 8px; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
+    #panel-header h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    #gene-search {
+      width: 100%; padding: 5px 8px;
+      background: #1f2937; border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 12px; font-family: monospace; outline: none;
+    }
+    #gene-search:focus { border-color: #4b5563; }
+    #panel-actions { display: flex; gap: 6px; margin-top: 8px; }
+    #panel-actions button {
+      flex: 1; padding: 4px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #9ca3af; font-size: 11px; font-family: monospace; cursor: pointer;
+    }
+    #panel-actions button:hover { background: #374151; color: #e5e7eb; }
+    #btn-color-all.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+    #sel-count { color: #6b7280; font-size: 11px; margin-top: 6px; }
+
+    #gene-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+    #gene-list::-webkit-scrollbar { width: 4px; }
+    #gene-list::-webkit-scrollbar-track { background: transparent; }
+    #gene-list::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+
+    .gene-row { display: flex; align-items: center; gap: 7px; padding: 3px 12px; cursor: pointer; user-select: none; }
+    .gene-row:hover { background: #1f2937; }
+    .gene-row.selected { background: #1e2d40; }
+    .gene-dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #374151; }
+    .gene-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gene-row.selected .gene-name { color: #e5e7eb; }
+    .gene-row:not(.selected) .gene-name { color: #6b7280; }
+    #list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
+
+    #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
+    .alpha-row label { width: 72px; flex-shrink: 0; }
+    .alpha-row input[type=range] { flex: 1; height: 3px; accent-color: #4b5563; cursor: pointer; }
+    .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
+    .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
+    .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <canvas id="deck-canvas"></canvas>
+  <div id="hud">GiottoAtlas<br><span id="zoom-info"></span></div>
+  <div id="status">initializing…</div>
+
+  <div id="panel">
+    <div id="panel-header">
+      <h3>Transcripts</h3>
+      <input id="gene-search" type="text" placeholder="search genes…" autocomplete="off" spellcheck="false">
+      <div id="panel-actions">
+        <button id="btn-color-all">color all</button>
+        <button id="btn-clear">clear</button>
+      </div>
+      <div id="sel-count"></div>
+    </div>
+    <div id="gene-list"></div>
+    <div id="alpha-panel">
+      <h3>Opacity</h3>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-overview" checked>
+        <label>density</label>
+        <input type="range" id="alpha-overview" min="0" max="100" value="80">
+        <span class="alpha-val" id="val-overview">80</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-poly" checked>
+        <label>cells</label>
+        <input type="range" id="alpha-poly" min="0" max="100" value="60">
+        <span class="alpha-val" id="val-poly">60</span>
+      </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-tx" checked>
+        <label>transcripts</label>
+        <input type="range" id="alpha-tx" min="0" max="100" value="70">
+        <span class="alpha-val" id="val-tx">70</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/deck.gl@9.1.0/dist.min.js"></script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
