@@ -90,8 +90,12 @@ export function renderLayers(viewState) {
   }
 
   // Transcript scatter points
+  const txSampleEl = document.getElementById('tx-sample');
   if (!inOverview && state.showTx && state.alphaTx > 0) {
     const tx = getCachedTxData();
+    const tier = Math.min(3, Math.max(0, state.txZoomTier));
+    const label = ['1/16', '1/4', null, null][tier];
+    if (txSampleEl) txSampleEl.textContent = label ? `tx ${label}` : '';
     if (tx) {
       layers.push(new deck.ScatterplotLayer({
         id: 'transcripts',
@@ -101,10 +105,12 @@ export function renderLayers(viewState) {
                   getFillColor: { value: tx.colors, size: 4, normalized: true },
                 }},
         opacity: state.alphaTx,
-        getRadius: Math.max(0.5, Math.min(2, viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD + 0.5)),
+        getRadius: Math.max(0.5, Math.min(1.5, viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD + 0.5)),
         radiusUnits: 'pixels', radiusMinPixels: 0.5,
       }));
     }
+  } else {
+    if (txSampleEl) txSampleEl.textContent = '';
   }
 
   // Draw polygon ring in progress

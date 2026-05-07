@@ -41,6 +41,8 @@ function setMode(m) {
 // ── Tile eviction + load scheduling ──────────────────────────────────────────
 function updateTiles(viewState) {
   state.currentViewState = viewState;
+  const newTier = Math.min(3, Math.max(0, Math.floor(viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD)));
+  if (newTier !== state.txZoomTier) { state.txZoomTier = newTier; invalidateTx(); }
   const txLayer        = state.manifest.layers.transcripts;
   const txAboveThresh  = state.showTx   && txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
   // Polygon tiles always stay in scope — only 12 tiles, centroids needed at all zooms
@@ -261,6 +263,15 @@ async function main() {
   $btnColorAll?.addEventListener('click', () => {
     state.colorAll = !state.colorAll;
     $btnColorAll.classList.toggle('active', state.colorAll);
+    invalidateTx();
+    renderLayers(state.currentViewState);
+  });
+
+  const $btnPalette = document.getElementById('btn-palette');
+  const paletteLabels = ['muted', 'vivid'];
+  $btnPalette?.addEventListener('click', () => {
+    state.txPaletteIdx = (state.txPaletteIdx + 1) % paletteLabels.length;
+    $btnPalette.textContent = paletteLabels[state.txPaletteIdx];
     invalidateTx();
     renderLayers(state.currentViewState);
   });

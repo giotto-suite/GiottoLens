@@ -1,6 +1,6 @@
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
 import { state } from './state.js';
-import { PALETTE } from './constants.js';
+import { PALETTE, PALETTES } from './constants.js';
 
 // ── DuckDB init ───────────────────────────────────────────────────────────────
 export async function initDB() {
@@ -194,15 +194,15 @@ export function getCachedPolyData() {
 function buildTranscriptData() {
   const filtering = state.selectedGenes.size > 0;
   const useColor  = filtering || state.colorAll;
+  const stride    = [16, 4, 1, 1][Math.min(3, Math.max(0, state.txZoomTier))];
   let total = 0;
   const parts = [];
   for (const [k, entry] of state.cache) {
     if (!k.startsWith('transcripts:')) continue;
     const { pos, geneIdxs } = entry;
-    let count = filtering ? 0 : geneIdxs.length;
-    if (filtering)
-      for (let i = 0; i < geneIdxs.length; i++)
-        if (state.selectedGenes.has(geneIdxs[i])) count++;
+    let count = 0;
+    for (let i = 0; i < geneIdxs.length; i += stride)
+      if (!filtering || state.selectedGenes.has(geneIdxs[i])) count++;
     if (count) { parts.push({ pos, geneIdxs, count }); total += count; }
   }
   if (!total) return null;
@@ -210,12 +210,13 @@ function buildTranscriptData() {
   const outColors = new Uint8Array(total * 4);
   let off = 0;
   for (const { pos, geneIdxs } of parts) {
-    for (let i = 0; i < geneIdxs.length; i++) {
+    for (let i = 0; i < geneIdxs.length; i += stride) {
       const gi = geneIdxs[i];
       if (filtering && !state.selectedGenes.has(gi)) continue;
       outPos[off*2]   = pos[i*2];
       outPos[off*2+1] = pos[i*2+1];
-      const c = useColor ? PALETTE[gi % PALETTE.length] : [100, 180, 255];
+      const pal = PALETTES[state.txPaletteIdx] ?? PALETTES[0];
+      const c = useColor ? pal[gi % pal.length] : [100, 180, 255];
       outColors[off*4] = c[0]; outColors[off*4+1] = c[1];
       outColors[off*4+2] = c[2]; outColors[off*4+3] = useColor ? 210 : 160;
       off++;

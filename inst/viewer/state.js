@@ -20,8 +20,9 @@ export const state = {
   // Gene selection
   selectedGenes:    new Set(),
   geneOverviewCache: new Map(),
-  colorAll:   false,
-  searchTerm: '',
+  colorAll:      false,
+  txPaletteIdx:  0,
+  searchTerm:    '',
 
   // Overview
   overviewBins:         null,
@@ -34,8 +35,9 @@ export const state = {
   showTx:       false, alphaTx:       0.70,
 
   // Data caches
-  txBuild:   null, txDirty:   true,
-  polyBuild: null, polyDirty: true,
+  txBuild:    null, txDirty:    true,
+  txZoomTier: -1,
+  polyBuild:  null, polyDirty:  true,
 
   // Annotation / selection
   mode:         'pan',   // 'pan' | 'draw' | 'lasso'
