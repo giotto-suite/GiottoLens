@@ -101,7 +101,8 @@ export function renderLayers(viewState) {
                   getFillColor: { value: tx.colors, size: 4, normalized: true },
                 }},
         opacity: state.alphaTx,
-        getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
+        getRadius: Math.max(0.5, Math.min(2, viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD + 0.5)),
+        radiusUnits: 'pixels', radiusMinPixels: 0.5,
       }));
     }
   }
