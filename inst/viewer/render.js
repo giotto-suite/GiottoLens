@@ -113,6 +113,47 @@ export function renderLayers(viewState) {
     if (txSampleEl) txSampleEl.textContent = '';
   }
 
+  // Persisted annotations
+  if (state.showAnnotations && state.alphaAnnotations > 0 && state.annotations.length > 0) {
+    layers.push(new deck.PolygonLayer({
+      id: 'annotations',
+      data: state.annotations,
+      getPolygon: d => d.coords,
+      filled: true,
+      getFillColor: d => d.id === state.selectedAnnotId
+        ? [255, 200, 50, 50] : [100, 200, 255, 25],
+      stroked: true,
+      getLineColor: d => d.id === state.selectedAnnotId
+        ? [255, 200, 50, 255] : [100, 200, 255, 220],
+      getLineWidth: 2,
+      lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
+      opacity: state.alphaAnnotations,
+      pickable: true,
+      onClick: ({ object }) => {
+        const newId = object?.id === state.selectedAnnotId ? null : object?.id;
+        state.selectedAnnotId = newId;
+        state.onAnnotSelect?.(newId);
+        renderLayers(viewState);
+      },
+      updateTriggers: {
+        getFillColor: state.selectedAnnotId,
+        getLineColor: state.selectedAnnotId,
+      },
+    }));
+  }
+
+  // Rectangle preview in progress
+  if (state.rectStart && state.rectPreview) {
+    const [x0, y0] = state.rectStart, [x1, y1] = state.rectPreview;
+    layers.push(new deck.PathLayer({
+      id: 'rect-preview',
+      data: [[[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]],
+      getPath: d => d,
+      getColor: [255, 200, 50], getWidth: 2,
+      widthUnits: 'pixels', widthMinPixels: 1,
+    }));
+  }
+
   // Draw polygon ring in progress
   if (state.drawRing.length >= 1) {
     const preview = state.drawRing.length >= 2

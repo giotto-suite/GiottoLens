@@ -16,6 +16,21 @@
     #status { position: absolute; top: 12px; right: 276px; color: #6b7280; font-size: 12px; }
     #tx-sample { margin-left: 8px; color: #4b5563; font-size: 11px; }
 
+    #annot-popup {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      background: rgba(17,24,39,0.92); border: 1px solid #1f2937; border-radius: 6px;
+      padding: 10px 12px; display: none; flex-direction: column; gap: 6px;
+      pointer-events: all; z-index: 10; min-width: 160px;
+    }
+    #annot-popup.visible { display: flex; }
+    #annot-type { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.05em; }
+    #annot-name {
+      width: 100%; padding: 4px 8px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 12px; font-family: monospace; outline: none;
+    }
+    #annot-name:focus { border-color: #4b5563; }
+
     #panel {
       position: absolute; top: 0; right: 0; bottom: 0; width: 260px;
       background: rgba(17,24,39,0.92); border-left: 1px solid #1f2937;
@@ -77,12 +92,20 @@
       padding: 4px; pointer-events: all; user-select: none; z-index: 10;
     }
     .tool-btn {
-      padding: 4px 10px; background: none; border: 1px solid transparent; border-radius: 4px;
-      color: #9ca3af; cursor: pointer; font-size: 11px; font-family: monospace;
+      padding: 5px 7px; background: none; border: 1px solid transparent; border-radius: 4px;
+      color: #9ca3af; cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
+    .tool-btn svg { width: 15px; height: 15px; stroke-width: 1.75; pointer-events: none; }
     .tool-btn:hover { background: #374151; color: #e5e7eb; }
     .tool-btn.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
     .tool-sep { width: 1px; height: 16px; background: #374151; margin: 0 2px; flex-shrink: 0; }
+    .tool-group { position: relative; }
+    .tool-submenu {
+      display: none; flex-direction: column; gap: 3px;
+      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      background: rgba(17,24,39,0.92); border: 1px solid #374151; border-radius: 6px; padding: 4px;
+    }
+    .tool-group.open .tool-submenu { display: flex; }
 
     #r-status {
       display: inline-block; width: 7px; height: 7px; border-radius: 50%;
@@ -111,15 +134,32 @@
   <canvas id="deck-canvas"></canvas>
   <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span></div>
   <div id="toolbar">
-    <button class="tool-btn active" data-mode="pan">pan</button>
-    <button class="tool-btn" data-mode="draw">draw</button>
-    <button class="tool-btn" data-mode="lasso">select</button>
+    <button class="tool-btn active" data-mode="pan" title="pan"><i data-lucide="hand"></i></button>
     <div class="tool-sep"></div>
-    <button class="tool-btn" id="tool-clear-sel">clear sel</button>
+    <div class="tool-group" id="group-draw">
+      <button class="tool-btn tool-group-btn" id="btn-group-draw" title="draw"><i data-lucide="pencil"></i></button>
+      <div class="tool-submenu">
+        <button class="tool-btn" data-mode="poly" title="polygon"><i data-lucide="pentagon"></i></button>
+        <button class="tool-btn" data-mode="rect" title="rectangle"><i data-lucide="square"></i></button>
+        <button class="tool-btn" data-mode="freehand" title="freehand"><i data-lucide="spline"></i></button>
+      </div>
+    </div>
+    <div class="tool-sep"></div>
+    <div class="tool-group" id="group-select">
+      <button class="tool-btn tool-group-btn" id="btn-group-select" title="select"><i data-lucide="mouse-pointer-2"></i></button>
+      <div class="tool-submenu">
+        <button class="tool-btn" data-mode="lasso" title="lasso"><i data-lucide="lasso"></i></button>
+        <button class="tool-btn" id="tool-clear-sel" title="clear selection"><i data-lucide="circle-x"></i></button>
+      </div>
+    </div>
   </div>
   <div id="scalebar">
     <div id="scalebar-bar"></div>
     <span id="scalebar-label"></span>
+  </div>
+  <div id="annot-popup">
+    <span id="annot-type"></span>
+    <input id="annot-name" type="text" placeholder="name…" autocomplete="off" spellcheck="false">
   </div>
   <div id="status">initializing…</div>
 
@@ -162,10 +202,18 @@
         <input type="range" id="alpha-tx" min="0" max="100" value="70">
         <span class="alpha-val" id="val-tx">70</span>
       </div>
+      <div class="alpha-row">
+        <input type="checkbox" id="show-annotations" checked>
+        <label>annotations</label>
+        <input type="range" id="alpha-annotations" min="0" max="100" value="60">
+        <span class="alpha-val" id="val-annotations">60</span>
+      </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/deck.gl@9.1.0/dist.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script type="module" src="./main.js"></script>
+  <script>document.addEventListener('DOMContentLoaded', () => lucide.createIcons())</script>
 </body>
 </html>

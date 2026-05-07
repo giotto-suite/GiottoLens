@@ -1,16 +1,19 @@
 import { state } from './state.js';
-import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
+import { TRANSCRIPT_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
 import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, getCachedPolyData, buildMetaColors } from './data.js';
-import { geneSelectionKey, getManifestOverviewBins, buildCompositeOverview, updateGeneOverview } from './overview.js';
+import { geneSelectionKey, getManifestOverviewBins, updateGeneOverview } from './overview.js';
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
 function canvasToData(clientX, clientY) {
-  const rect = document.getElementById('deck-canvas').getBoundingClientRect();
-  const vp   = state.deckgl.getViewports()[0];
-  const [x, y] = vp.unproject([clientX - rect.left, clientY - rect.top]);
+  const rect  = document.getElementById('deck-canvas').getBoundingClientRect();
+  const vs    = state.currentViewState;
+  const scale = Math.pow(2, vs.zoom);
+  const [cx, cy] = vs.target;
+  const x = cx + (clientX - rect.left - rect.width  / 2) / scale;
+  const y = cy - (clientY - rect.top  - rect.height / 2) / scale;
   return [x, y];
 }
 
@@ -24,17 +27,37 @@ function pointInPolygon(ring, x, y) {
   return inside;
 }
 
+function generateAnnotId() {
+  return `ann_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function syncAnnotationsToR() {
+  sendToR('annotations_update', {
+    annotations: state.annotations.map(a => ({
+      id: a.id, type: a.type, name: a.name ?? '',
+      geojson: JSON.stringify({
+        type: 'Feature',
+        geometry: { type: 'Polygon', coordinates: [a.coords] }
+      })
+    }))
+  });
+}
+
 function setMode(m) {
   state.mode = m;
-  state.drawRing  = [];
-  state.lassoRing = [];
+  state.drawRing   = [];
+  state.lassoRing  = [];
   state.lassoActive = false;
-  state.deckgl.setProps({ controller: m === 'lasso'
+  state.rectStart  = null;
+  state.rectPreview = null;
+  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'rect' || m === 'freehand')
     ? { dragPan: false, doubleClickZoom: false }
     : { doubleClickZoom: false } });
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m)
   );
+  document.getElementById('btn-group-draw')?.classList.toggle('active', ['poly','rect','freehand'].includes(m));
+  document.getElementById('btn-group-select')?.classList.toggle('active', ['lasso'].includes(m));
   renderLayers(state.currentViewState);
 }
 
@@ -155,20 +178,57 @@ async function main() {
   const cx   = (ext.xmin + ext.xmax) / 2;
   const cy   = (ext.ymin + ext.ymax) / 2;
   const zoom = Math.log2(
-    Math.min(window.innerWidth  / (ext.xmax - ext.xmin),
-             window.innerHeight / (ext.ymax - ext.ymin))
+    Math.min((window.innerWidth - 260) / (ext.xmax - ext.xmin),
+              window.innerHeight       / (ext.ymax - ext.ymin))
   ) - 0.3;
 
   const initialViewState = { target: [cx, cy, 0], zoom, minZoom: zoom - 2, maxZoom: zoom + 12 };
 
   state.deckgl = new deck.Deck({
     canvas: 'deck-canvas', width: '100%', height: '100%',
-    views: new deck.OrthographicView({ id: 'ortho', controller: true }),
+    views: new deck.OrthographicView({ id: 'ortho', controller: true, flipY: false }),
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
   updateScalebar(initialViewState);
 
+  // ── Annotation popup ─────────────────────────────────────────────────────
+  const $annotPopup = document.getElementById('annot-popup');
+  const $annotName  = document.getElementById('annot-name');
+  const $annotType  = document.getElementById('annot-type');
+
+  state.onAnnotSelect = (id) => {
+    if (id) {
+      const annot = state.annotations.find(a => a.id === id);
+      if ($annotName)  $annotName.value       = annot?.name ?? '';
+      if ($annotType)  $annotType.textContent  = annot?.type ?? '';
+      $annotPopup?.classList.add('visible');
+    } else {
+      $annotPopup?.classList.remove('visible');
+    }
+  };
+
+  $annotName?.addEventListener('input', () => {
+    if (!state.selectedAnnotId) return;
+    state.annotations = state.annotations.map(a =>
+      a.id === state.selectedAnnotId ? { ...a, name: $annotName.value } : a
+    );
+    syncAnnotationsToR();
+  });
+
   // ── Toolbar mode buttons ──────────────────────────────────────────────────
+  function toggleGroup(groupId, otherGroupId) {
+    const grp   = document.getElementById(groupId);
+    const other = document.getElementById(otherGroupId);
+    const opening = !grp.classList.contains('open');
+    other?.classList.remove('open');
+    grp.classList.toggle('open', opening);
+  }
+
+  document.getElementById('btn-group-draw')?.addEventListener('click', () =>
+    toggleGroup('group-draw', 'group-select'));
+  document.getElementById('btn-group-select')?.addEventListener('click', () =>
+    toggleGroup('group-select', 'group-draw'));
+
   document.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
     btn.addEventListener('click', () => setMode(btn.dataset.mode))
   );
@@ -185,70 +245,111 @@ async function main() {
   let lassoLastPx   = null;
 
   canvas.addEventListener('click', e => {
-    if (state.mode !== 'draw') return;
+    if (state.mode !== 'poly') return;
+    const r = document.getElementById('deck-canvas').getBoundingClientRect();
+    const picked = state.deckgl.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
+    if (picked?.layer?.id === 'annotations') return;
     state.drawRing.push(canvasToData(e.clientX, e.clientY));
     renderLayers(state.currentViewState);
   });
 
-  canvas.addEventListener('dblclick', e => {
-    if (state.mode !== 'draw') return;
-    state.drawRing.pop(); // second click already added by click handler
+  canvas.addEventListener('dblclick', () => {
+    if (state.mode !== 'poly') return;
+    state.drawRing.pop(); // remove 2nd click vertex
+    state.drawRing.pop(); // remove 1st click vertex — both from the dblclick are unwanted
     if (state.drawRing.length >= 3) {
-      const closed = [...state.drawRing, state.drawRing[0]];
-      sendToR('annotation', {
-        geojson: JSON.stringify({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [closed] } })
-      });
+      const coords = [...state.drawRing, state.drawRing[0]];
+      state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'polygon', name: '', coords }];
+      syncAnnotationsToR();
     }
     state.drawRing = [];
     renderLayers(state.currentViewState);
   });
 
   canvas.addEventListener('mousedown', e => {
-    if (state.mode !== 'lasso') return;
-    lassoDragged = false;
-    lassoLastPx  = [e.clientX, e.clientY];
-    state.lassoActive = true;
-    state.lassoRing   = [canvasToData(e.clientX, e.clientY)];
+    if (state.mode === 'lasso' || state.mode === 'freehand') {
+      lassoDragged = false;
+      lassoLastPx  = [e.clientX, e.clientY];
+      state.lassoActive = true;
+      state.lassoRing   = [canvasToData(e.clientX, e.clientY)];
+    } else if (state.mode === 'rect') {
+      state.rectStart   = canvasToData(e.clientX, e.clientY);
+      state.rectPreview = state.rectStart;
+    }
   });
 
   canvas.addEventListener('mousemove', e => {
-    if (state.mode !== 'lasso' || !state.lassoActive) return;
-    const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
-    if (Math.hypot(dx, dy) < 5) return;
-    lassoLastPx  = [e.clientX, e.clientY];
-    lassoDragged = true;
-    state.lassoRing.push(canvasToData(e.clientX, e.clientY));
-    renderLayers(state.currentViewState);
+    if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
+      const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
+      if (Math.hypot(dx, dy) < (state.mode === 'freehand' ? 20 : 5)) return;
+      lassoLastPx  = [e.clientX, e.clientY];
+      lassoDragged = true;
+      state.lassoRing.push(canvasToData(e.clientX, e.clientY));
+      renderLayers(state.currentViewState);
+    } else if (state.mode === 'rect' && state.rectStart) {
+      state.rectPreview = canvasToData(e.clientX, e.clientY);
+      renderLayers(state.currentViewState);
+    }
   });
 
-  window.addEventListener('mouseup', e => {
-    if (state.mode !== 'lasso' || !state.lassoActive) return;
-    state.lassoActive = false;
-    if (lassoDragged && state.lassoRing.length >= 3) {
-      const polyData = getCachedPolyData();
-      if (polyData?.ids) {
-        const ring  = state.lassoRing;
-        const cents = polyData.centroids;
-        const newSel = new Set(state.selectedCells);
-        for (let i = 0; i < polyData.ids.length; i++)
-          if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
-            newSel.add(polyData.ids[i]);
-        state.selectedCells = newSel;
-        state.selVersion++;
-        sendToR('cell_selection', { ids: [...newSel] });
+  window.addEventListener('mouseup', () => {
+    if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
+      state.lassoActive = false;
+      if (lassoDragged && state.lassoRing.length >= 3) {
+        if (state.mode === 'lasso') {
+          const polyData = getCachedPolyData();
+          if (polyData?.ids) {
+            const ring  = state.lassoRing;
+            const cents = polyData.centroids;
+            const newSel = new Set(state.selectedCells);
+            for (let i = 0; i < polyData.ids.length; i++)
+              if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
+                newSel.add(polyData.ids[i]);
+            state.selectedCells = newSel;
+            state.selVersion++;
+            sendToR('cell_selection', { ids: [...newSel] });
+          }
+        } else {
+          const coords = [...state.lassoRing, state.lassoRing[0]];
+          state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'freehand', name: '', coords }];
+          syncAnnotationsToR();
+        }
       }
+      state.lassoRing = [];
+      renderLayers(state.currentViewState);
+    } else if (state.mode === 'rect' && state.rectStart) {
+      const [x0, y0] = state.rectStart;
+      const [x1, y1] = state.rectPreview ?? state.rectStart;
+      if (Math.abs(x1 - x0) > 0 && Math.abs(y1 - y0) > 0) {
+        const coords = [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]];
+        state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'rectangle', name: '', coords }];
+        syncAnnotationsToR();
+      }
+      state.rectStart  = null;
+      state.rectPreview = null;
+      renderLayers(state.currentViewState);
     }
-    state.lassoRing = [];
-    renderLayers(state.currentViewState);
   });
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      state.drawRing  = [];
-      state.lassoRing = [];
+      state.drawRing   = [];
+      state.lassoRing  = [];
       state.lassoActive = false;
+      state.rectStart  = null;
+      state.rectPreview = null;
+      state.selectedAnnotId = null;
+      state.onAnnotSelect?.(null);
       if (state.mode !== 'pan') setMode('pan');
       else renderLayers(state.currentViewState);
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedAnnotId
+        && document.activeElement?.id !== 'annot-name') {
+      state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotId);
+      state.selectedAnnotId = null;
+      syncAnnotationsToR();
+      renderLayers(state.currentViewState);
+      e.preventDefault();
     }
   });
 
@@ -299,8 +400,10 @@ async function main() {
     v => state.showOverview = v, v => state.alphaOverview = v);
   makeLayerControl('show-poly',   'alpha-poly',    'val-poly',
     v => state.showPoly = v,     v => state.alphaPoly     = v);
-  makeLayerControl('show-tx',     'alpha-tx',      'val-tx',
+  makeLayerControl('show-tx',          'alpha-tx',          'val-tx',
     v => { state.showTx = v; invalidateTx(); }, v => state.alphaTx = v);
+  makeLayerControl('show-annotations', 'alpha-annotations', 'val-annotations',
+    v => state.showAnnotations = v, v => state.alphaAnnotations = v);
 
   // Metadata column selector
   document.getElementById('meta-col-select')?.addEventListener('change', async e => {

@@ -246,10 +246,16 @@ LensViewer <- R6::R6Class("LensViewer",
                                         pub$selection <- if (length(dat$ids))
                                             unlist(dat$ids) else character(0)
 
-                                    if (identical(type, "annotation") &&
-                                            !is.null(dat$geojson))
-                                        pub$annotations <- c(pub$annotations,
-                                                             list(dat$geojson))
+                                    if (identical(type, "annotations_update"))
+                                        pub$annotations <- lapply(
+                                            dat$annotations,
+                                            function(a) list(
+                                                id     = a[["id"]],
+                                                name   = a[["name"]] %||% "",
+                                                type   = a[["type"]],
+                                                geojson = a[["geojson"]]
+                                            )
+                                        )
 
                                     cb <- priv$cbs[[type]]
                                     if (!is.null(cb))

@@ -30,9 +30,15 @@ export const state = {
   manifestOverviewBins: null,
 
   // Visibility + opacity
-  showOverview: true,  alphaOverview: 0.80,
-  showPoly:     true,  alphaPoly:     0.60,
-  showTx:       false, alphaTx:       0.70,
+  showOverview:     true,  alphaOverview:     0.80,
+  showPoly:         true,  alphaPoly:         0.60,
+  showTx:           false, alphaTx:           0.70,
+  showAnnotations:  true,  alphaAnnotations:  0.60,
+
+  // Annotations
+  annotations:      [],
+  selectedAnnotId:  null,
+  onAnnotSelect:    null,
 
   // Data caches
   txBuild:    null, txDirty:    true,
@@ -40,10 +46,12 @@ export const state = {
   polyBuild:  null, polyDirty:  true,
 
   // Annotation / selection
-  mode:         'pan',   // 'pan' | 'draw' | 'lasso'
+  mode:         'pan',   // 'pan' | 'draw' | 'lasso' | 'rect'
   drawRing:     [],
   lassoRing:    [],
   lassoActive:  false,
+  rectStart:    null,
+  rectPreview:  null,
   selectedCells: new Set(),
   selVersion:   0,
 
