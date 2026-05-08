@@ -57,9 +57,12 @@ export const state = {
   brushDown:    false,
   brushPos:     null,
   brushRadius:  30,
-  selectedCells: new Set(),
-  selVersion:   0,
-  allPolyIds:   new Set(),
+  selectedCells:  new Set(),
+  selVersion:     0,
+  allPolyIds:     new Set(),
+  crossFilter:    false,
+  spatialFilter:  null,   // Set | null — cells from spatial selection
+  scatterFilter:  null,   // Set | null — cells from scatter selection
 
   // Cell metadata
   metaCols:    [],    // [{name, numeric}] populated when metadata is loaded

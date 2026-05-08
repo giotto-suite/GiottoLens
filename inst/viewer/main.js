@@ -6,8 +6,7 @@ import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
 import { loadMetaIntoMosaic, initMosaicPanels } from './mosaic.js';
-import { renderScatter, refreshScatterColors } from './scatter.js';
-import { onCoord, notify } from './coordination.js';
+import { onCoord, notify, recomputeCrossFilter, clearFilters } from './coordination.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
 function dataToScreen(dx, dy) {
@@ -246,12 +245,20 @@ async function main() {
   onCoord('cellSelection', () => {
     sendToR('cell_selection', { ids: [...state.selectedCells] });
     renderLayers(state.currentViewState);
-    renderScatter();
   });
   onCoord('metaColors', () => {
     renderMetaLegend();
-    refreshScatterColors();
     renderLayers(state.currentViewState);
+  });
+
+  document.getElementById('btn-crossfilter')?.addEventListener('click', () => {
+    state.crossFilter = !state.crossFilter;
+    document.getElementById('btn-crossfilter')?.classList.toggle('active', state.crossFilter);
+    if (!state.crossFilter) {
+      // Drop filter state but keep the current selectedCells as-is
+      state.spatialFilter = null;
+      state.scatterFilter = null;
+    }
   });
 
   // ── Split.js layout ──────────────────────────────────────────────────────
@@ -385,11 +392,7 @@ async function main() {
   document.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
     btn.addEventListener('click', () => setMode(btn.dataset.mode))
   );
-  document.getElementById('tool-clear-sel')?.addEventListener('click', () => {
-    state.selectedCells.clear();
-    state.selVersion++;
-    notify('cellSelection');
-  });
+  document.getElementById('tool-clear-sel')?.addEventListener('click', () => clearFilters());
 
   document.getElementById('tool-invert-sel')?.addEventListener('click', () => {
     if (!state.allPolyIds.size) return;
@@ -503,15 +506,15 @@ async function main() {
         const polyData = getCachedPolyData();
         if (polyData?.ids) {
           const cents = polyData.centroids;
-          const newSel = new Set(state.selectedCells);
+          const brushSet = new Set(state.crossFilter ? (state.spatialFilter ?? []) : state.selectedCells);
           for (let i = 0; i < polyData.ids.length; i++)
             if (polyData.ids[i] != null && Math.hypot(cents[i*2] - coords[0], cents[i*2+1] - coords[1]) <= r)
-              newSel.add(polyData.ids[i]);
-          state.selectedCells = newSel;
-          state.selVersion++;
-          notify('cellSelection');
+              brushSet.add(polyData.ids[i]);
+          if (state.crossFilter) { state.spatialFilter = brushSet; recomputeCrossFilter(); }
+          else { state.selectedCells = brushSet; state.selVersion++; notify('cellSelection'); }
         }
       }
+      renderLayers(state.currentViewState);
     }
 
     if (state.mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
@@ -536,7 +539,7 @@ async function main() {
   window.addEventListener('mouseup', () => {
     if (state.mode === 'brush' && state.brushDown) {
       state.brushDown = false;
-      notify('cellSelection');
+      if (state.crossFilter) recomputeCrossFilter(); else notify('cellSelection');
     }
     if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
       state.lassoActive = false;
@@ -546,13 +549,12 @@ async function main() {
           if (polyData?.ids) {
             const ring  = state.lassoRing;
             const cents = polyData.centroids;
-            const newSel = new Set(state.selectedCells);
+            const lassoSet = new Set();
             for (let i = 0; i < polyData.ids.length; i++)
               if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
-                newSel.add(polyData.ids[i]);
-            state.selectedCells = newSel;
-            state.selVersion++;
-            notify('cellSelection');
+                lassoSet.add(polyData.ids[i]);
+            if (state.crossFilter) { state.spatialFilter = lassoSet; recomputeCrossFilter(); }
+            else { state.selectedCells = new Set([...state.selectedCells, ...lassoSet]); state.selVersion++; notify('cellSelection'); }
           }
         } else {
           const coords = [...state.lassoRing, state.lassoRing[0]];
