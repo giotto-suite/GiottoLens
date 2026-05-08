@@ -52,6 +52,9 @@ export const state = {
   lassoActive:  false,
   rectStart:    null,
   rectPreview:  null,
+  rulerStart:   null,
+  rulerEnd:     null,
+  rulerLocked:  false,
   selectedCells: new Set(),
   selVersion:   0,
 

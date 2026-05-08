@@ -7,6 +7,34 @@ import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
+function dataToScreen(dx, dy) {
+  const rect  = document.getElementById('deck-canvas').getBoundingClientRect();
+  const vs    = state.currentViewState;
+  const scale = Math.pow(2, vs.zoom);
+  const [cx, cy] = vs.target;
+  return [
+    rect.left + rect.width  / 2 + (dx - cx) * scale,
+    rect.top  + rect.height / 2 - (dy - cy) * scale,
+  ];
+}
+
+function rulerDist(a, b) {
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  return d >= 1000 ? `${(d / 1000).toFixed(3)} mm` : `${d.toFixed(1)} μm`;
+}
+
+function updateRulerLabel() {
+  const label = document.getElementById('ruler-label');
+  if (!label || !state.rulerStart || !state.rulerEnd) return;
+  const mid = [(state.rulerStart[0] + state.rulerEnd[0]) / 2,
+               (state.rulerStart[1] + state.rulerEnd[1]) / 2];
+  const [sx, sy] = dataToScreen(mid[0], mid[1]);
+  label.style.left = `${sx + 8}px`;
+  label.style.top  = `${sy - 10}px`;
+  label.textContent = rulerDist(state.rulerStart, state.rulerEnd);
+  label.classList.add('visible');
+}
+
 function canvasToData(clientX, clientY) {
   const rect  = document.getElementById('deck-canvas').getBoundingClientRect();
   const vs    = state.currentViewState;
@@ -50,6 +78,10 @@ function setMode(m) {
   state.lassoActive = false;
   state.rectStart  = null;
   state.rectPreview = null;
+  state.rulerStart  = null;
+  state.rulerEnd    = null;
+  state.rulerLocked = false;
+  document.getElementById('ruler-label')?.classList.remove('visible');
   state.deckgl.setProps({ controller: (m === 'lasso' || m === 'rect' || m === 'freehand')
     ? { dragPan: false, doubleClickZoom: false }
     : { doubleClickZoom: false } });
@@ -245,6 +277,23 @@ async function main() {
   let lassoLastPx   = null;
 
   canvas.addEventListener('click', e => {
+    if (state.mode === 'ruler') {
+      const pt = canvasToData(e.clientX, e.clientY);
+      if (!state.rulerStart || state.rulerLocked) {
+        // start fresh measurement
+        state.rulerStart  = pt;
+        state.rulerEnd    = pt;
+        state.rulerLocked = false;
+        document.getElementById('ruler-label')?.classList.remove('visible');
+      } else {
+        // lock end point
+        state.rulerEnd    = pt;
+        state.rulerLocked = true;
+        updateRulerLabel();
+      }
+      renderLayers(state.currentViewState);
+      return;
+    }
     if (state.mode !== 'poly') return;
     const r = document.getElementById('deck-canvas').getBoundingClientRect();
     const picked = state.deckgl.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
@@ -279,6 +328,16 @@ async function main() {
   });
 
   canvas.addEventListener('mousemove', e => {
+    const coords = canvasToData(e.clientX, e.clientY);
+    const coordEl = document.getElementById('cursor-coords');
+    if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
+
+    if (state.mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
+      state.rulerEnd = coords;
+      updateRulerLabel();
+      renderLayers(state.currentViewState);
+    }
+
     if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
       const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
       if (Math.hypot(dx, dy) < (state.mode === 'freehand' ? 20 : 5)) return;
@@ -331,6 +390,11 @@ async function main() {
     }
   });
 
+  canvas.addEventListener('mouseleave', () => {
+    const coordEl = document.getElementById('cursor-coords');
+    if (coordEl) coordEl.textContent = '';
+  });
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       state.drawRing   = [];
@@ -347,6 +411,7 @@ async function main() {
         && document.activeElement?.id !== 'annot-name') {
       state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotId);
       state.selectedAnnotId = null;
+      state.onAnnotSelect?.(null);
       syncAnnotationsToR();
       renderLayers(state.currentViewState);
       e.preventDefault();

@@ -182,5 +182,21 @@ export function renderLayers(viewState) {
     }));
   }
 
+  // Ruler
+  if (state.rulerStart && state.rulerEnd) {
+    layers.push(new deck.PathLayer({
+      id: 'ruler-line',
+      data: [[state.rulerStart, state.rulerEnd]], getPath: d => d,
+      getColor: [255, 255, 100], getWidth: 1.5,
+      widthUnits: 'pixels', widthMinPixels: 1,
+    }));
+    layers.push(new deck.ScatterplotLayer({
+      id: 'ruler-points',
+      data: [state.rulerStart, state.rulerEnd], getPosition: d => d,
+      getFillColor: [255, 255, 100, 255],
+      getRadius: 3, radiusUnits: 'pixels',
+    }));
+  }
+
   state.deckgl.setProps({ layers });
 }
