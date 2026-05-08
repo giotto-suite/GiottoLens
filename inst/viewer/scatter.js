@@ -242,7 +242,7 @@ function _getOverlay(canvas) {
   if (!svg) {
     svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.classList.add('umap-lasso-svg');
-    svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+    svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
     canvas.parentElement.appendChild(svg);
   }
   return svg;
