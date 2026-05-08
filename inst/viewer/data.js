@@ -242,7 +242,7 @@ function buildPolygonData() {
 
 // ── Cell metadata coloring ────────────────────────────────────────────────────
 export async function buildMetaColors() {
-  if (!state.metaCol) { state.metaColors = null; return; }
+  if (!state.metaCol) { state.metaColors = null; state.metaLegend = null; return; }
   try {
     const tbl = await state.polyConn.query(
       `SELECT cell_ID, "${state.metaCol}" AS val FROM cell_meta`
@@ -264,10 +264,10 @@ export async function buildMetaColors() {
         const ids = batch.getChildAt(0), vals = batch.getChildAt(1);
         for (let i = 0; i < batch.numRows; i++) {
           const t = Math.max(0, Math.min(1, (vals.get(i) - min) / range));
-          // low=blue, high=red
           colors.set(ids.get(i), [Math.round(t*255), 0, Math.round((1-t)*255), 220]);
         }
       }
+      state.metaLegend = { type: 'continuous', min, max };
     } else {
       const cats = new Map();
       for (const batch of tbl.batches) {
@@ -278,6 +278,7 @@ export async function buildMetaColors() {
           colors.set(ids.get(i), [...cats.get(v), 220]);
         }
       }
+      state.metaLegend = { type: 'categorical', items: [...cats.entries()].map(([label, color]) => ({ label, color })) };
     }
     state.metaColors = colors;
   } catch (e) {

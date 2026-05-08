@@ -8,6 +8,10 @@ export function renderLayers(viewState) {
   const inOverview     = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
   const polyZoneOk     = viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
 
+  const selCountEl = document.getElementById('sel-count');
+  if (selCountEl) selCountEl.textContent = state.selectedCells.size > 0
+    ? `${state.selectedCells.size.toLocaleString()} selected` : '';
+
   // Overview density bins
   if (inOverview && state.showOverview && state.alphaOverview > 0 && state.overviewBins) {
     const h = state.manifest.layers.transcripts.overview.cell_size / 2;

@@ -243,6 +243,11 @@ async function main() {
   });
   updateScalebar(initialViewState);
 
+  // ── Collapsible panel sections ────────────────────────────────────────────
+  document.querySelectorAll('.section-hd').forEach(hd =>
+    hd.addEventListener('click', () => hd.closest('[id]').classList.toggle('section-collapsed'))
+  );
+
   // ── Annotation popup ─────────────────────────────────────────────────────
   const $annotPopup = document.getElementById('annot-popup');
   const $annotName  = document.getElementById('annot-name');
@@ -609,10 +614,32 @@ async function main() {
   makeLayerControl('show-annotations', 'alpha-annotations', 'val-annotations',
     v => state.showAnnotations = v, v => state.alphaAnnotations = v);
 
+  // ── Metadata color legend ────────────────────────────────────────────────
+  function renderMetaLegend() {
+    const el = document.getElementById('meta-legend');
+    if (!el) return;
+    if (!state.metaLegend) { el.innerHTML = ''; return; }
+    if (state.metaLegend.type === 'continuous') {
+      const { min, max } = state.metaLegend;
+      el.innerHTML =
+        `<div class="legend-gradient"></div>` +
+        `<div class="legend-labels"><span>${min.toFixed(2)}</span><span>${max.toFixed(2)}</span></div>`;
+    } else {
+      const items = state.metaLegend.items.slice(0, 30);
+      el.innerHTML = items.map(({ label, color }) =>
+        `<div class="legend-item">` +
+        `<span class="legend-dot" style="background:rgb(${color[0]},${color[1]},${color[2]})"></span>` +
+        `<span class="legend-label">${label}</span></div>`
+      ).join('') + (state.metaLegend.items.length > 30
+        ? `<div class="legend-overflow">+${state.metaLegend.items.length - 30} more</div>` : '');
+    }
+  }
+
   // Metadata column selector
   document.getElementById('meta-col-select')?.addEventListener('change', async e => {
     state.metaCol = e.target.value || null;
     await buildMetaColors();
+    renderMetaLegend();
     renderLayers(state.currentViewState);
   });
 
@@ -633,7 +660,7 @@ async function main() {
         state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
       document.getElementById('meta-panel').style.display = '';
     }
-    if (state.metaCol) { await buildMetaColors(); renderLayers(state.currentViewState); }
+    if (state.metaCol) { await buildMetaColors(); renderMetaLegend(); renderLayers(state.currentViewState); }
   });
 
   onMessage('color_cells',    data => { /* TODO: annotation phase */ console.log('color_cells', data); });

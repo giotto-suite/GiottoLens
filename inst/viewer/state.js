@@ -67,4 +67,5 @@ export const state = {
   metaCols:    [],    // [{name, numeric}] populated when metadata is loaded
   metaCol:     null,  // active coloring column
   metaColors:  null,  // Map<cell_ID, [r,g,b,a]> built async
+  metaLegend:  null,  // {type:'categorical',items:[{label,color}]} | {type:'continuous',min,max}
 };

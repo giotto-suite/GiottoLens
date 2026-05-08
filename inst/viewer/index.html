@@ -16,8 +16,8 @@
       pointer-events: none; user-select: none;
     }
     #status { position: absolute; top: 12px; right: 276px; color: #6b7280; font-size: 12px; }
-    #tx-sample    { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: #6b7280; font-size: 11px; }
-    #cursor-coords { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: #6b7280; font-size: 11px; font-family: monospace; }
+    #tx-sample, #sel-count, #cursor-coords { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: #6b7280; font-size: 11px; }
+    #cursor-coords { font-family: monospace; }
     #ruler-label {
       position: absolute; display: none; pointer-events: none;
       background: rgba(17,24,39,0.85); border: 1px solid #374151; border-radius: 4px;
@@ -68,6 +68,14 @@
     }
     #panel-header { padding: 12px 12px 8px; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
     #panel-header h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .section-hd { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+    .section-collapsed .section-hd { margin-bottom: 0 !important; }
+    .section-hd:hover { color: #d1d5db; }
+    .section-chevron { width: 13px; height: 13px; transition: transform 0.15s; flex-shrink: 0; }
+    .section-collapsed .section-chevron { transform: rotate(-90deg); }
+    .section-body { overflow: hidden; }
+    .section-collapsed .section-body { display: none; }
+    .section-collapsed + #gene-list { display: none; }
     #gene-search {
       width: 100%; padding: 5px 8px;
       background: #1f2937; border: 1px solid #374151; border-radius: 4px;
@@ -118,6 +126,15 @@
 
     #meta-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
     #meta-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    #meta-legend { margin-top: 6px; max-height: 140px; overflow-y: auto; }
+    #meta-legend::-webkit-scrollbar { width: 4px; }
+    #meta-legend::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .legend-label { font-size: 11px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .legend-overflow { font-size: 10px; color: #4b5563; padding-top: 2px; }
+    .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
+    .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; font-family: monospace; }
     #meta-col-select {
       flex: 1; padding: 4px 6px; background: #1f2937;
       border: 1px solid #374151; border-radius: 4px;
@@ -180,7 +197,7 @@
 </head>
 <body>
   <canvas id="deck-canvas"></canvas>
-  <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="cursor-coords"></span></div>
+  <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="sel-count"></span><span id="cursor-coords"></span></div>
   <div id="toolbar">
     <button class="tool-btn active" data-mode="pan" title="pan"><i data-lucide="hand"></i></button>
     <button class="tool-btn" data-mode="ruler" title="ruler"><i data-lucide="ruler"></i></button>
@@ -234,52 +251,60 @@
 
   <div id="panel">
     <div id="panel-header">
-      <h3>Transcripts</h3>
-      <input id="gene-search" type="text" placeholder="search genes…" autocomplete="off" spellcheck="false">
-      <div id="panel-actions">
-        <button id="btn-color-all">color all</button>
-        <button id="btn-palette">muted</button>
-        <button id="btn-clear">clear</button>
+      <h3 class="section-hd" data-target="transcripts-body">Transcripts<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="transcripts-body" class="section-body">
+        <input id="gene-search" type="text" placeholder="search genes…" autocomplete="off" spellcheck="false">
+        <div id="panel-actions">
+          <button id="btn-color-all">color all</button>
+          <button id="btn-palette">muted</button>
+          <button id="btn-clear">clear</button>
+        </div>
       </div>
-      <div id="sel-count"></div>
     </div>
     <div id="gene-list"></div>
     <div id="annot-panel" style="display:none">
-      <h3>Annotations</h3>
-      <div id="annot-list"></div>
+      <h3 class="section-hd" data-target="annot-body">Annotations<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="annot-body" class="section-body">
+        <div id="annot-list"></div>
+      </div>
     </div>
     <div id="meta-panel" style="display:none">
-      <h3>Cells</h3>
-      <div class="alpha-row">
-        <label>color by</label>
-        <select id="meta-col-select"><option value="">none</option></select>
+      <h3 class="section-hd" data-target="meta-body">Cells<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="meta-body" class="section-body">
+        <div class="alpha-row">
+          <label>color by</label>
+          <select id="meta-col-select"><option value="">none</option></select>
+        </div>
+        <div id="meta-legend"></div>
       </div>
     </div>
     <div id="alpha-panel">
-      <h3>Opacity</h3>
-      <div class="alpha-row">
-        <input type="checkbox" id="show-overview" checked>
-        <label>density</label>
-        <input type="range" id="alpha-overview" min="0" max="100" value="80">
-        <span class="alpha-val" id="val-overview">80</span>
-      </div>
-      <div class="alpha-row">
-        <input type="checkbox" id="show-poly" checked>
-        <label>cells</label>
-        <input type="range" id="alpha-poly" min="0" max="100" value="60">
-        <span class="alpha-val" id="val-poly">60</span>
-      </div>
-      <div class="alpha-row">
-        <input type="checkbox" id="show-tx">
-        <label>transcripts</label>
-        <input type="range" id="alpha-tx" min="0" max="100" value="70">
-        <span class="alpha-val" id="val-tx">70</span>
-      </div>
-      <div class="alpha-row">
-        <input type="checkbox" id="show-annotations" checked>
-        <label>annotations</label>
-        <input type="range" id="alpha-annotations" min="0" max="100" value="60">
-        <span class="alpha-val" id="val-annotations">60</span>
+      <h3 class="section-hd" data-target="opacity-body">Opacity<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="opacity-body" class="section-body">
+        <div class="alpha-row">
+          <input type="checkbox" id="show-overview" checked>
+          <label>density</label>
+          <input type="range" id="alpha-overview" min="0" max="100" value="80">
+          <span class="alpha-val" id="val-overview">80</span>
+        </div>
+        <div class="alpha-row">
+          <input type="checkbox" id="show-poly" checked>
+          <label>cells</label>
+          <input type="range" id="alpha-poly" min="0" max="100" value="60">
+          <span class="alpha-val" id="val-poly">60</span>
+        </div>
+        <div class="alpha-row">
+          <input type="checkbox" id="show-tx">
+          <label>transcripts</label>
+          <input type="range" id="alpha-tx" min="0" max="100" value="70">
+          <span class="alpha-val" id="val-tx">70</span>
+        </div>
+        <div class="alpha-row">
+          <input type="checkbox" id="show-annotations" checked>
+          <label>annotations</label>
+          <input type="range" id="alpha-annotations" min="0" max="100" value="60">
+          <span class="alpha-val" id="val-annotations">60</span>
+        </div>
       </div>
     </div>
   </div>
