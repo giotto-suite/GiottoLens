@@ -6,6 +6,8 @@ import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
 import { loadMetaIntoMosaic, initMosaicPanels } from './mosaic.js';
+import { renderScatter, refreshScatterColors } from './scatter.js';
+import { onCoord, notify } from './coordination.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
 function dataToScreen(dx, dy) {
@@ -77,18 +79,7 @@ function fitToAnnotation(annot) {
   renderLayers(newVS);
 }
 
-function syncAnnotationsToR() {
-  sendToR('annotations_update', {
-    annotations: state.annotations.map(a => ({
-      id: a.id, type: a.type, name: a.name ?? '',
-      geojson: JSON.stringify({
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [a.coords] }
-      })
-    }))
-  });
-  state.onAnnotsChange?.();
-}
+function syncAnnotationsToR() { notify('annotations'); }
 
 function setMode(m) {
   state.mode = m;
@@ -244,6 +235,25 @@ async function main() {
   });
   updateScalebar(initialViewState);
 
+  document.getElementById('btn-fit-spatial')?.addEventListener('click', () => {
+    state.deckgl.setProps({ viewState: initialViewState });
+    state.currentViewState = initialViewState;
+    updateScalebar(initialViewState);
+    updateTiles(initialViewState);
+  });
+
+  // ── Coordination handlers ─────────────────────────────────────────────────
+  onCoord('cellSelection', () => {
+    sendToR('cell_selection', { ids: [...state.selectedCells] });
+    renderLayers(state.currentViewState);
+    renderScatter();
+  });
+  onCoord('metaColors', () => {
+    renderMetaLegend();
+    refreshScatterColors();
+    renderLayers(state.currentViewState);
+  });
+
   // ── Split.js layout ──────────────────────────────────────────────────────
   const mainSplit = Split(['#spatial-pane', '#stats-column'], {
     sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
@@ -284,16 +294,17 @@ async function main() {
   const $annotName  = document.getElementById('annot-name');
   const $annotType  = document.getElementById('annot-type');
 
-  state.onAnnotSelect = (id) => {
+  onCoord('annotSelect', () => {
+    const id = state.selectedAnnotId;
     if (id) {
       const annot = state.annotations.find(a => a.id === id);
-      if ($annotName)  $annotName.value       = annot?.name ?? '';
-      if ($annotType)  $annotType.textContent  = annot?.type ?? '';
+      if ($annotName) $annotName.value      = annot?.name ?? '';
+      if ($annotType) $annotType.textContent = annot?.type ?? '';
       $annotPopup?.classList.add('visible');
     } else {
       $annotPopup?.classList.remove('visible');
     }
-  };
+  });
 
   $annotName?.addEventListener('input', () => {
     if (!state.selectedAnnotId) return;
@@ -332,14 +343,14 @@ async function main() {
       row.querySelector('.annot-row-del').addEventListener('click', e => {
         e.stopPropagation();
         state.annotations = state.annotations.filter(x => x.id !== a.id);
-        if (state.selectedAnnotId === a.id) { state.selectedAnnotId = null; state.onAnnotSelect?.(null); }
+        if (state.selectedAnnotId === a.id) { state.selectedAnnotId = null; notify('annotSelect'); }
         syncAnnotationsToR();
         renderLayers(state.currentViewState);
       });
       row.addEventListener('click', () => {
         const newId = a.id === state.selectedAnnotId ? null : a.id;
         state.selectedAnnotId = newId;
-        state.onAnnotSelect?.(newId);
+        notify('annotSelect');
         renderLayers(state.currentViewState);
       });
       list.appendChild(row);
@@ -347,7 +358,15 @@ async function main() {
     lucide.createIcons({ nodes: list.querySelectorAll('[data-lucide]') });
   }
 
-  state.onAnnotsChange = renderAnnotList;
+  onCoord('annotations', () => {
+    sendToR('annotations_update', {
+      annotations: state.annotations.map(a => ({
+        id: a.id, type: a.type, name: a.name ?? '',
+        geojson: JSON.stringify({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [a.coords] } })
+      }))
+    });
+    renderAnnotList();
+  });
 
   // ── Toolbar mode buttons ──────────────────────────────────────────────────
   function toggleGroup(groupId, otherGroupId) {
@@ -369,16 +388,14 @@ async function main() {
   document.getElementById('tool-clear-sel')?.addEventListener('click', () => {
     state.selectedCells.clear();
     state.selVersion++;
-    sendToR('cell_selection', { ids: [] });
-    renderLayers(state.currentViewState);
+    notify('cellSelection');
   });
 
   document.getElementById('tool-invert-sel')?.addEventListener('click', () => {
     if (!state.allPolyIds.size) return;
     state.selectedCells = new Set([...state.allPolyIds].filter(id => !state.selectedCells.has(id)));
     state.selVersion++;
-    sendToR('cell_selection', { ids: [...state.selectedCells] });
-    renderLayers(state.currentViewState);
+    notify('cellSelection');
   });
 
   const $metaSelPanel = document.getElementById('meta-sel-panel');
@@ -411,8 +428,7 @@ async function main() {
     const ids = result.toArray().map(r => String(r.cell_ID));
     state.selectedCells = new Set(ids);
     state.selVersion++;
-    sendToR('cell_selection', { ids });
-    renderLayers(state.currentViewState);
+    notify('cellSelection');
   });
 
   // ── Canvas annotation / lasso events ─────────────────────────────────────
@@ -493,9 +509,9 @@ async function main() {
               newSel.add(polyData.ids[i]);
           state.selectedCells = newSel;
           state.selVersion++;
+          notify('cellSelection');
         }
       }
-      renderLayers(state.currentViewState);
     }
 
     if (state.mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
@@ -520,8 +536,7 @@ async function main() {
   window.addEventListener('mouseup', () => {
     if (state.mode === 'brush' && state.brushDown) {
       state.brushDown = false;
-      sendToR('cell_selection', { ids: [...state.selectedCells] });
-      renderLayers(state.currentViewState);
+      notify('cellSelection');
     }
     if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
       state.lassoActive = false;
@@ -537,7 +552,7 @@ async function main() {
                 newSel.add(polyData.ids[i]);
             state.selectedCells = newSel;
             state.selVersion++;
-            sendToR('cell_selection', { ids: [...newSel] });
+            notify('cellSelection');
           }
         } else {
           const coords = [...state.lassoRing, state.lassoRing[0]];
@@ -574,7 +589,7 @@ async function main() {
       state.rectStart  = null;
       state.rectPreview = null;
       state.selectedAnnotId = null;
-      state.onAnnotSelect?.(null);
+      notify('annotSelect');
       if (state.mode !== 'pan') setMode('pan');
       else renderLayers(state.currentViewState);
     }
@@ -586,7 +601,7 @@ async function main() {
         && document.activeElement?.id !== 'annot-name') {
       state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotId);
       state.selectedAnnotId = null;
-      state.onAnnotSelect?.(null);
+      notify('annotSelect');
       syncAnnotationsToR();
       renderLayers(state.currentViewState);
       e.preventDefault();
@@ -670,8 +685,7 @@ async function main() {
   document.getElementById('meta-col-select')?.addEventListener('change', async e => {
     state.metaCol = e.target.value || null;
     await buildMetaColors();
-    renderMetaLegend();
-    renderLayers(state.currentViewState);
+    notify('metaColors');
   });
 
   // R → viewer message handlers
@@ -691,7 +705,7 @@ async function main() {
         state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
       document.getElementById('meta-panel').style.display = '';
     }
-    if (state.metaCol) { await buildMetaColors(); renderMetaLegend(); renderLayers(state.currentViewState); }
+    if (state.metaCol) { await buildMetaColors(); notify('metaColors'); }
 
     await loadMetaIntoMosaic(fullUrl);
     initMosaicPanels(state.metaCols);

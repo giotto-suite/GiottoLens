@@ -1,7 +1,7 @@
 import * as vg from 'https://esm.sh/@uwdata/vgplot';
 import { state }        from './state.js';
-import { renderLayers } from './render.js';
-import { sendToR }      from './comms.js';
+import { loadScatterData, initScatterDeck, renderScatter, resetScatterView } from './scatter.js';
+import { notify } from './coordination.js';
 
 export { vg };
 
@@ -9,12 +9,23 @@ export { vg };
 export const mc  = vg.coordinator();
 mc.databaseConnector(vg.wasmConnector());
 
-export const sel = vg.Selection.crossfilter();
+export let sel = vg.Selection.crossfilter();
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 export async function loadMetaIntoMosaic(url) {
   await mc.exec(
     `CREATE OR REPLACE TABLE cell_meta AS SELECT * FROM read_parquet('${url}')`
+  );
+  // Stride-sampled view for scatter display — stride on Morton-sorted data
+  // gives spatially representative coverage; full table used for bridge queries
+  const countRes = await mc.query('SELECT COUNT(*)::INT AS n FROM cell_meta');
+  const n      = countRes.toArray()[0].n;
+  const stride = Math.max(1, Math.floor(n / 20000));
+  await mc.exec(
+    `CREATE OR REPLACE VIEW cell_meta_scatter AS
+     SELECT * FROM (
+       SELECT *, row_number() OVER () AS _rn FROM cell_meta
+     ) t WHERE _rn % ${stride} = 0`
   );
 }
 
@@ -27,18 +38,15 @@ async function runBridge() {
   if (!clauses.length) {
     state.selectedCells = new Set();
     state.selVersion++;
-    sendToR('cell_selection', { ids: [] });
-    renderLayers(state.currentViewState);
+    notify('cellSelection');
     return;
   }
   try {
     const where = clauses.map(c => `(${c.predicate})`).join(' AND ');
     const result = await mc.query(`SELECT cell_ID FROM cell_meta WHERE ${where}`);
-    const ids = result?.toArray().map(r => String(r.cell_ID)) ?? [];
-    state.selectedCells = new Set(ids);
+    state.selectedCells = new Set(result?.toArray().map(r => String(r.cell_ID)) ?? []);
     state.selVersion++;
-    sendToR('cell_selection', { ids });
-    renderLayers(state.currentViewState);
+    notify('cellSelection');
   } catch(e) {
     console.warn('[GiottoLens bridge]', e);
   }
@@ -97,8 +105,8 @@ function setTitle(bodyId, title) {
   if (h) h.textContent = title;
 }
 
-// ── Scatter panel ─────────────────────────────────────────────────────────────
-export function initScatterPanel(bodyId, metaCols) {
+// ── Scatter panel (deck.gl) ───────────────────────────────────────────────────
+export async function initScatterPanel(bodyId, metaCols) {
   const cols    = metaCols.map(c => c.name);
   const dims    = cols.filter(c => /umap|tsne|pca/i.test(c));
   const numCols = metaCols.filter(c => c.numeric).map(c => c.name);
@@ -111,44 +119,71 @@ export function initScatterPanel(bodyId, metaCols) {
     { key: 'y',     label: 'y',     options: cols },
     { key: 'color', label: 'color', options: [{ value: '', label: 'none' }, ...cols.map(c => ({ value: c, label: c }))] },
   ]);
-
   if (xDef)     ctrls.x.value     = xDef;
   if (yDef)     ctrls.y.value     = yDef;
   if (colorDef) ctrls.color.value = colorDef;
 
-  const render = () => renderScatter(bodyId, ctrls.x.value, ctrls.y.value, ctrls.color.value || null);
-  Object.values(ctrls).forEach(s => s.addEventListener('change', render));
-  render();
-}
+  // Mode toggle buttons — same style as the spatial toolbar
+  let umapMode = 'pan';
+  const ctrlBar = document.getElementById(bodyId)?.querySelector('.stats-controls');
+  if (ctrlBar) {
+    const sep = document.createElement('span');
+    sep.style.cssText = 'width:1px;height:14px;background:#374151;margin:0 4px;flex-shrink:0;align-self:center;';
+    ctrlBar.appendChild(sep);
+    ['pan', 'lasso'].forEach(m => {
+      const btn = document.createElement('button');
+      btn.className = 'tool-btn' + (m === 'pan' ? ' active' : '');
+      btn.style.fontSize = '10px';
+      btn.title = m;
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide', m === 'pan' ? 'hand' : 'lasso');
+      btn.appendChild(icon);
+      btn.addEventListener('click', () => {
+        umapMode = m;
+        ctrlBar.querySelectorAll('.tool-btn').forEach(b =>
+          b.classList.toggle('active', b === btn));
+        document.getElementById(bodyId)?.querySelector('canvas')?._setMode?.(m);
+      });
+      ctrlBar.appendChild(btn);
+    });
+    // Clear selection button
+    const sep2 = document.createElement('span');
+    sep2.style.cssText = 'width:1px;height:14px;background:#374151;margin:0 4px;flex-shrink:0;align-self:center;';
+    ctrlBar.appendChild(sep2);
 
-function renderScatter(bodyId, x, y, color) {
+    [
+      { icon: 'circle-x',   title: 'clear selection', fn: () => {
+          state.selectedCells = new Set();
+          state.selVersion++;
+          notify('cellSelection');
+          try { sel.update({ source: 'umap-clear', predicate: null }); } catch(_) {}
+        }},
+      { icon: 'maximize-2', title: 'zoom to fit',      fn: () => resetScatterView() },
+    ].forEach(({ icon, title, fn }) => {
+      const btn = document.createElement('button');
+      btn.className = 'tool-btn'; btn.title = title;
+      const i = document.createElement('i');
+      i.setAttribute('data-lucide', icon);
+      btn.appendChild(i);
+      btn.addEventListener('click', fn);
+      ctrlBar.appendChild(btn);
+    });
+
+    lucide.createIcons({ nodes: ctrlBar.querySelectorAll('[data-lucide]') });
+  }
+
   const area = getOrCreateChartArea(bodyId);
-  if (!area) return;
   setTitle(bodyId, 'scatter');
-  area.innerHTML = '';
 
-  const w = Math.max(area.clientWidth  || 0, 240);
-  const h = Math.max(area.clientHeight || 0, 200);
+  const reloadData = async () => {
+    await loadScatterData(ctrls.x.value, ctrls.y.value, ctrls.color.value || null);
+    initScatterDeck(area.id || (area.id = `${bodyId}-deck`));
+    document.getElementById(bodyId)?.querySelector('canvas')?._setMode?.(umapMode);
+  };
 
-  const marks = [
-    vg.dot(vg.from('cell_meta', { filterBy: sel }), {
-      x,
-      y,
-      fill: color ?? '#60a5fa',
-      fillOpacity: 0.65,
-      r: 2,
-    }),
-    vg.intervalXY({ as: sel }),
-  ];
+  ['x','y','color'].forEach(k => ctrls[k].addEventListener('change', reloadData));
 
-  const el = vg.plot(...marks, vg.width(w), vg.height(h),
-    vg.style({ color: '#9ca3af', background: 'transparent' }));
-  area.appendChild(el);
-  attachBridge(el);
-
-  new ResizeObserver(() => {
-    if (area.clientWidth > 0) el.setAttribute('width', area.clientWidth);
-  }).observe(area);
+  await reloadData();
 }
 
 // ── Distribution panel ────────────────────────────────────────────────────────
@@ -196,7 +231,8 @@ function renderDist(bodyId, col, metaCols) {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
-export function initMosaicPanels(metaCols) {
-  initScatterPanel('stats-body-1', metaCols);
+export async function initMosaicPanels(metaCols) {
+  sel = vg.Selection.crossfilter();  // fresh selection on every (re-)init
+  await initScatterPanel('stats-body-1', metaCols);
   initDistPanel('stats-body-2', metaCols);
 }

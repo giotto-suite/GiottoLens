@@ -1,6 +1,7 @@
 import { state } from './state.js';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from './constants.js';
 import { getCachedTxData, getCachedPolyData } from './data.js';
+import { notify } from './coordination.js';
 
 export function renderLayers(viewState) {
   if (!state.deckgl || !viewState) return;
@@ -66,7 +67,7 @@ export function renderLayers(viewState) {
           if (id != null && state.metaColors) return state.metaColors.get(id) ?? [160, 160, 160, 180];
           return [255, 255, 255, 200];
         },
-        getRadius: 3, radiusUnits: 'pixels', radiusMinPixels: 1,
+        getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
         opacity: state.alphaPoly,
         updateTriggers: { getFillColor: [state.selVersion, state.metaCol] },
       }));
@@ -87,7 +88,7 @@ export function renderLayers(viewState) {
           getFillColor: [255, 220, 50, 180],
           getLineColor: [255, 220, 50, 255],
           stroked: true, getLineWidth: 1, lineWidthUnits: 'pixels',
-          getRadius: 5, radiusUnits: 'pixels', radiusMinPixels: 2,
+          getRadius: 3, radiusUnits: 'pixels', radiusMinPixels: 1,
           updateTriggers: { data: state.selVersion },
         }));
     }
@@ -136,7 +137,7 @@ export function renderLayers(viewState) {
       onClick: ({ object }) => {
         const newId = object?.id === state.selectedAnnotId ? null : object?.id;
         state.selectedAnnotId = newId;
-        state.onAnnotSelect?.(newId);
+        notify('annotSelect');
         renderLayers(viewState);
       },
       updateTriggers: {
