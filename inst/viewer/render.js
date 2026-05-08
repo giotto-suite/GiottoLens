@@ -182,6 +182,21 @@ export function renderLayers(viewState) {
     }));
   }
 
+  // Brush cursor
+  if (state.mode === 'brush' && state.brushPos) {
+    const r = state.brushRadius / Math.pow(2, viewState.zoom);
+    layers.push(new deck.ScatterplotLayer({
+      id: 'brush-cursor',
+      data: [state.brushPos], getPosition: d => d,
+      getFillColor: [100, 200, 255, state.brushDown ? 30 : 10],
+      getLineColor: [100, 200, 255, 180],
+      stroked: true, filled: true,
+      getLineWidth: 1.5, lineWidthUnits: 'pixels',
+      getRadius: r,
+      updateTriggers: { getFillColor: state.brushDown, getRadius: state.brushRadius },
+    }));
+  }
+
   // Ruler
   if (state.rulerStart && state.rulerEnd) {
     layers.push(new deck.PathLayer({

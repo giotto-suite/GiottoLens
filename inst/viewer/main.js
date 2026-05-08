@@ -100,14 +100,16 @@ function setMode(m) {
   state.rulerEnd    = null;
   state.rulerLocked = false;
   document.getElementById('ruler-label')?.classList.remove('visible');
-  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'rect' || m === 'freehand')
+  state.brushDown = false;
+  state.brushPos  = null;
+  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'rect' || m === 'freehand' || m === 'brush')
     ? { dragPan: false, doubleClickZoom: false }
     : { doubleClickZoom: false } });
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m)
   );
   document.getElementById('btn-group-draw')?.classList.toggle('active', ['poly','rect','freehand'].includes(m));
-  document.getElementById('btn-group-select')?.classList.toggle('active', ['lasso'].includes(m));
+  document.getElementById('btn-group-select')?.classList.toggle('active', ['lasso','brush'].includes(m));
   renderLayers(state.currentViewState);
 }
 
@@ -335,8 +337,51 @@ async function main() {
     renderLayers(state.currentViewState);
   });
 
+  document.getElementById('tool-invert-sel')?.addEventListener('click', () => {
+    if (!state.allPolyIds.size) return;
+    state.selectedCells = new Set([...state.allPolyIds].filter(id => !state.selectedCells.has(id)));
+    state.selVersion++;
+    sendToR('cell_selection', { ids: [...state.selectedCells] });
+    renderLayers(state.currentViewState);
+  });
+
+  const $metaSelPanel = document.getElementById('meta-sel-panel');
+  document.getElementById('tool-meta-sel')?.addEventListener('click', () => {
+    if (!$metaSelPanel) return;
+    const open = $metaSelPanel.classList.toggle('visible');
+    if (open) {
+      const sel = document.getElementById('meta-sel-col');
+      if (sel) {
+        sel.innerHTML = state.metaCols.length
+          ? state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('')
+          : '<option value="">no metadata loaded</option>';
+      }
+    }
+  });
+
+  document.getElementById('meta-sel-apply')?.addEventListener('click', async () => {
+    const col = document.getElementById('meta-sel-col')?.value;
+    const op  = document.getElementById('meta-sel-op')?.value ?? '=';
+    const val = document.getElementById('meta-sel-val')?.value ?? '';
+    if (!col || !state.metaCols.length) return;
+    const colInfo = state.metaCols.find(c => c.name === col);
+    const valExpr = (colInfo?.numeric && op !== 'LIKE')
+      ? val
+      : `'${val.replace(/'/g, "''")}'`;
+    const opExpr  = op === 'LIKE' ? `LIKE '%${val.replace(/'/g, "''")}%'` : `${op} ${valExpr}`;
+    const result  = await state.polyConn.query(
+      `SELECT cell_ID FROM cell_meta WHERE "${col}" ${opExpr}`
+    );
+    const ids = result.toArray().map(r => String(r.cell_ID));
+    state.selectedCells = new Set(ids);
+    state.selVersion++;
+    sendToR('cell_selection', { ids });
+    renderLayers(state.currentViewState);
+  });
+
   // ── Canvas annotation / lasso events ─────────────────────────────────────
   const canvas = document.getElementById('deck-canvas');
+
   let lassoDragged  = false;
   let lassoLastPx   = null;
 
@@ -380,7 +425,10 @@ async function main() {
   });
 
   canvas.addEventListener('mousedown', e => {
-    if (state.mode === 'lasso' || state.mode === 'freehand') {
+    if (state.mode === 'brush') {
+      state.brushDown = true;
+      state.brushPos  = canvasToData(e.clientX, e.clientY);
+    } else if (state.mode === 'lasso' || state.mode === 'freehand') {
       lassoDragged = false;
       lassoLastPx  = [e.clientX, e.clientY];
       state.lassoActive = true;
@@ -395,6 +443,24 @@ async function main() {
     const coords = canvasToData(e.clientX, e.clientY);
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
+
+    if (state.mode === 'brush') {
+      state.brushPos = coords;
+      if (state.brushDown) {
+        const r = state.brushRadius / Math.pow(2, state.currentViewState.zoom);
+        const polyData = getCachedPolyData();
+        if (polyData?.ids) {
+          const cents = polyData.centroids;
+          const newSel = new Set(state.selectedCells);
+          for (let i = 0; i < polyData.ids.length; i++)
+            if (polyData.ids[i] != null && Math.hypot(cents[i*2] - coords[0], cents[i*2+1] - coords[1]) <= r)
+              newSel.add(polyData.ids[i]);
+          state.selectedCells = newSel;
+          state.selVersion++;
+        }
+      }
+      renderLayers(state.currentViewState);
+    }
 
     if (state.mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
       state.rulerEnd = coords;
@@ -416,6 +482,11 @@ async function main() {
   });
 
   window.addEventListener('mouseup', () => {
+    if (state.mode === 'brush' && state.brushDown) {
+      state.brushDown = false;
+      sendToR('cell_selection', { ids: [...state.selectedCells] });
+      renderLayers(state.currentViewState);
+    }
     if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
       state.lassoActive = false;
       if (lassoDragged && state.lassoRing.length >= 3) {
@@ -470,6 +541,10 @@ async function main() {
       state.onAnnotSelect?.(null);
       if (state.mode !== 'pan') setMode('pan');
       else renderLayers(state.currentViewState);
+    }
+    if (state.mode === 'brush' && document.activeElement?.id !== 'annot-name') {
+      if (e.key === '[') { state.brushRadius = Math.max(8,   state.brushRadius - 5); renderLayers(state.currentViewState); }
+      if (e.key === ']') { state.brushRadius = Math.min(300, state.brushRadius + 5); renderLayers(state.currentViewState); }
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedAnnotId
         && document.activeElement?.id !== 'annot-name') {

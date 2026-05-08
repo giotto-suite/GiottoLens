@@ -165,7 +165,10 @@ export async function loadTile(layerName, tile, onLoad) {
     } else {
       state.cache.set(key, data);
       if (layerName === 'transcripts') invalidateTx();
-      if (layerName === 'polygons')    invalidatePoly();
+      if (layerName === 'polygons') {
+        invalidatePoly();
+        if (data?.ids) data.ids.forEach(id => { if (id != null) state.allPolyIds.add(id); });
+      }
     }
   } catch (e) {
     console.warn(`Failed to load tile ${key}:`, e);

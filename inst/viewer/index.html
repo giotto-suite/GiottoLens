@@ -26,6 +26,26 @@
     }
     #ruler-label.visible { display: block; }
 
+    #meta-sel-panel {
+      position: absolute; left: 12px; bottom: 60px;
+      background: rgba(17,24,39,0.92); border: 1px solid #1f2937; border-radius: 6px;
+      padding: 8px 10px; display: none; flex-direction: column; gap: 6px;
+      pointer-events: all; z-index: 10; min-width: 200px;
+    }
+    #meta-sel-panel.visible { display: flex; }
+    .meta-sel-row { display: flex; gap: 6px; }
+    .meta-sel-row select, .meta-sel-row input {
+      flex: 1; padding: 4px 6px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
+    }
+    .meta-sel-row select:focus, .meta-sel-row input:focus { border-color: #4b5563; }
+    #meta-sel-apply {
+      padding: 4px 10px; background: #1e3a5f; border: 1px solid #3b82f6;
+      border-radius: 4px; color: #93c5fd; font-size: 11px; cursor: pointer; white-space: nowrap;
+    }
+    #meta-sel-apply:hover { background: #1e4a7f; }
+
     #annot-popup {
       position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
       background: rgba(17,24,39,0.92); border: 1px solid #1f2937; border-radius: 6px;
@@ -178,6 +198,9 @@
       <button class="tool-btn tool-group-btn" id="btn-group-select" title="select"><i data-lucide="mouse-pointer-2"></i></button>
       <div class="tool-submenu">
         <button class="tool-btn" data-mode="lasso" title="lasso"><i data-lucide="lasso"></i></button>
+        <button class="tool-btn" data-mode="brush" title="brush select (scroll to resize)"><i data-lucide="paintbrush-2"></i></button>
+        <button class="tool-btn" id="tool-invert-sel" title="invert selection"><i data-lucide="flip-horizontal-2"></i></button>
+        <button class="tool-btn" id="tool-meta-sel" title="select by metadata"><i data-lucide="filter"></i></button>
         <button class="tool-btn" id="tool-clear-sel" title="clear selection"><i data-lucide="circle-x"></i></button>
       </div>
     </div>
@@ -187,6 +210,22 @@
     <span id="scalebar-label"></span>
   </div>
   <div id="ruler-label"></div>
+  <div id="meta-sel-panel">
+    <div class="meta-sel-row">
+      <select id="meta-sel-col"></select>
+      <select id="meta-sel-op">
+        <option value="=">=</option>
+        <option value="!=">≠</option>
+        <option value=">">&gt;</option>
+        <option value="<">&lt;</option>
+        <option value="LIKE">contains</option>
+      </select>
+    </div>
+    <div class="meta-sel-row">
+      <input id="meta-sel-val" type="text" placeholder="value…" autocomplete="off" spellcheck="false">
+      <button id="meta-sel-apply">select</button>
+    </div>
+  </div>
   <div id="annot-popup">
     <span id="annot-type"></span>
     <input id="annot-name" type="text" placeholder="name…" autocomplete="off" spellcheck="false">

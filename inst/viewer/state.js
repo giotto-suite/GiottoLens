@@ -56,8 +56,12 @@ export const state = {
   rulerStart:   null,
   rulerEnd:     null,
   rulerLocked:  false,
+  brushDown:    false,
+  brushPos:     null,
+  brushRadius:  30,
   selectedCells: new Set(),
   selVersion:   0,
+  allPolyIds:   new Set(),
 
   // Cell metadata
   metaCols:    [],    // [{name, numeric}] populated when metadata is loaded
