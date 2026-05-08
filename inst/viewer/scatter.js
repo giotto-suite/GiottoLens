@@ -158,7 +158,7 @@ export function createScatterPanel(bodyId, metaCols) {
     canvas.addEventListener('mousemove', e => {
       if (!lassoActive || mode !== 'lasso') return;
       const dx = e.clientX-lastPx[0], dy = e.clientY-lastPx[1];
-      if (Math.hypot(dx,dy) < 20) return;
+      if (Math.hypot(dx,dy) < 5) return;
       lastPx = [e.clientX, e.clientY]; dragged = true;
       ring.push(_toData(canvas, e.clientX, e.clientY, getVS));
       _drawLasso(canvas, ring, getVS());
@@ -182,8 +182,8 @@ export function createScatterPanel(bodyId, metaCols) {
         }
         try {
           const active = [...state.selectedCells].map(id => `'${id}'`).join(',');
-          if (active) sel.update({ source: canvas, predicate: `cell_ID IN (${active})` });
-          else        sel.update({ source: canvas, predicate: null });
+          if (active) sel.update({ source: 'scatter-lasso', predicate: `cell_ID IN (${active})` });
+          else        sel.update({ source: 'scatter-lasso', predicate: null });
         } catch(_) {}
       }
       ring = [];
@@ -261,7 +261,10 @@ export function createScatterPanel(bodyId, metaCols) {
     const sep2 = sep.cloneNode(); bar.appendChild(sep2);
     [['circle-x','clear', () => {
         clearFilters();
-        try { sel.update({ source:'scatter-clear', predicate:null }); } catch(_) {}
+        try {
+          sel.update({ source:'scatter-lasso', predicate:null });
+          sel.update({ source:'spatial', predicate:null });
+        } catch(_) {}
       }],
      ['maximize-2','zoom to fit', () => { if (_deck && _homeVS) _deck.setProps({ viewState:{..._homeVS} }); }]
     ].forEach(([icon, title, fn]) => {

@@ -5,7 +5,7 @@ import { geneSelectionKey, getManifestOverviewBins, updateGeneOverview } from '.
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
-import { loadMetaIntoMosaic, initMosaicPanels } from './mosaic.js';
+import { loadMetaIntoMosaic, initMosaicPanels, sel } from './mosaic.js';
 import { onCoord, notify, recomputeCrossFilter, clearFilters } from './coordination.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
@@ -258,6 +258,7 @@ async function main() {
       // Drop filter state but keep the current selectedCells as-is
       state.spatialFilter = null;
       state.scatterFilter = null;
+      try { sel.update({ source: 'spatial', predicate: null }); } catch(_) {}
     }
   });
 
@@ -539,7 +540,13 @@ async function main() {
   window.addEventListener('mouseup', () => {
     if (state.mode === 'brush' && state.brushDown) {
       state.brushDown = false;
-      if (state.crossFilter) recomputeCrossFilter(); else notify('cellSelection');
+      if (state.crossFilter) {
+        recomputeCrossFilter();
+        try {
+          const active = state.spatialFilter ? [...state.spatialFilter].map(id => `'${id}'`).join(',') : '';
+          sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
+        } catch(_) {}
+      } else notify('cellSelection');
     }
     if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
       state.lassoActive = false;
@@ -553,8 +560,14 @@ async function main() {
             for (let i = 0; i < polyData.ids.length; i++)
               if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
                 lassoSet.add(polyData.ids[i]);
-            if (state.crossFilter) { state.spatialFilter = lassoSet; recomputeCrossFilter(); }
-            else { state.selectedCells = new Set([...state.selectedCells, ...lassoSet]); state.selVersion++; notify('cellSelection'); }
+            if (state.crossFilter) {
+              state.spatialFilter = lassoSet;
+              recomputeCrossFilter();
+              try {
+                const active = [...lassoSet].map(id => `'${id}'`).join(',');
+                sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
+              } catch(_) {}
+            } else { state.selectedCells = new Set([...state.selectedCells, ...lassoSet]); state.selVersion++; notify('cellSelection'); }
           }
         } else {
           const coords = [...state.lassoRing, state.lassoRing[0]];
