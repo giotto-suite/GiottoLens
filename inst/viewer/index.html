@@ -15,7 +15,6 @@
       border-radius: 5px; padding: 3px 10px;
       pointer-events: none; user-select: none;
     }
-    #status { position: absolute; top: 12px; right: 276px; color: #6b7280; font-size: 12px; }
     #tx-sample, #sel-count, #cursor-coords { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: #6b7280; font-size: 11px; }
     #cursor-coords { font-family: monospace; }
     #ruler-label {
@@ -149,9 +148,53 @@
     .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
     .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
 
+    #main-layout {
+      position: absolute; top: 0; left: 0; bottom: 0; right: 260px;
+      display: flex; overflow: hidden;
+    }
+    #spatial-pane { position: relative; overflow: hidden; min-width: 150px; }
+    #stats-column {
+      display: flex; flex-direction: column; overflow: hidden;
+      background: #0d1117; border-left: 1px solid #1f2937; min-width: 0;
+    }
+    .stats-pane {
+      display: flex; flex-direction: column; flex: 1; overflow: hidden;
+      min-height: 32px; border-bottom: 1px solid #1f2937;
+    }
+    .stats-pane:last-child { border-bottom: none; }
+    .stats-pane.stats-collapsed { flex: 0 0 32px; }
+    .stats-pane-header {
+      height: 32px; flex-shrink: 0; display: flex; align-items: center;
+      justify-content: space-between; padding: 0 10px;
+      border-bottom: 1px solid #1f2937; user-select: none; cursor: default;
+    }
+    .stats-pane.stats-collapsed .stats-pane-header { border-bottom: none; }
+    .stats-pane-title { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stats-pane-body { flex: 1; overflow: auto; position: relative; min-height: 0; }
+    .stats-collapse-btn {
+      background: none; border: none; padding: 2px 3px; color: #4b5563;
+      cursor: pointer; display: flex; align-items: center;
+    }
+    .stats-collapse-btn:hover { color: #9ca3af; }
+    .stats-collapse-btn svg { width: 13px; height: 13px; transition: transform 0.15s; }
+    .stats-collapsed .stats-collapse-btn svg { transform: rotate(180deg); }
+    .stats-pane-body { display: flex; flex-direction: column; }
+    .stats-controls { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; border-bottom: 1px solid #1f2937; }
+    .stats-ctrl-wrap { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.04em; }
+    .stats-ctrl-sel {
+      padding: 2px 4px; background: #1f2937; border: 1px solid #374151; border-radius: 3px;
+      color: #9ca3af; font-size: 10px; font-family: monospace; outline: none; max-width: 100px;
+    }
+    .stats-ctrl-sel:focus { border-color: #4b5563; }
+    .stats-chart-area { flex: 1; overflow: hidden; min-height: 0; }
+    .gutter { background: #1f2937; background-clip: padding-box; transition: background 0.1s; }
+    .gutter:hover { background: #374151; }
+    .gutter.gutter-horizontal { cursor: col-resize; }
+    #status { position: absolute; top: 12px; right: 12px; color: #6b7280; font-size: 12px; }
+
     #toolbar {
       position: absolute; bottom: 20px;
-      left: calc((100vw - 260px) / 2); transform: translateX(-50%);
+      left: 50%; transform: translateX(-50%);
       display: flex; align-items: center; gap: 3px;
       background: rgba(17,24,39,0.88); border: 1px solid #374151; border-radius: 6px;
       padding: 4px; pointer-events: all; user-select: none; z-index: 10;
@@ -196,9 +239,11 @@
   </style>
 </head>
 <body>
-  <canvas id="deck-canvas"></canvas>
-  <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="sel-count"></span><span id="cursor-coords"></span></div>
-  <div id="toolbar">
+  <div id="main-layout">
+    <div id="spatial-pane">
+      <canvas id="deck-canvas"></canvas>
+      <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="sel-count"></span><span id="cursor-coords"></span></div>
+      <div id="toolbar">
     <button class="tool-btn active" data-mode="pan" title="pan"><i data-lucide="hand"></i></button>
     <button class="tool-btn" data-mode="ruler" title="ruler"><i data-lucide="ruler"></i></button>
     <div class="tool-sep"></div>
@@ -221,13 +266,15 @@
         <button class="tool-btn" id="tool-clear-sel" title="clear selection"><i data-lucide="circle-x"></i></button>
       </div>
     </div>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" id="btn-stats-toggle" title="toggle stats panels"><i data-lucide="bar-chart-2"></i></button>
   </div>
-  <div id="scalebar">
-    <div id="scalebar-bar"></div>
-    <span id="scalebar-label"></span>
-  </div>
-  <div id="ruler-label"></div>
-  <div id="meta-sel-panel">
+      <div id="scalebar">
+        <div id="scalebar-bar"></div>
+        <span id="scalebar-label"></span>
+      </div>
+      <div id="ruler-label"></div>
+      <div id="meta-sel-panel">
     <div class="meta-sel-row">
       <select id="meta-sel-col"></select>
       <select id="meta-sel-op">
@@ -246,8 +293,28 @@
   <div id="annot-popup">
     <span id="annot-type"></span>
     <input id="annot-name" type="text" placeholder="name…" autocomplete="off" spellcheck="false">
-  </div>
-  <div id="status">initializing…</div>
+    </div>
+      <div id="status">initializing…</div>
+    </div><!-- /spatial-pane -->
+
+    <div id="stats-column">
+      <div class="stats-pane" id="stats-pane-1">
+        <div class="stats-pane-header">
+          <span class="stats-pane-title">Panel 1</span>
+          <button class="stats-collapse-btn" title="collapse"><i data-lucide="chevron-up"></i></button>
+        </div>
+        <div class="stats-pane-body" id="stats-body-1"></div>
+      </div>
+      <div class="stats-pane" id="stats-pane-2">
+        <div class="stats-pane-header">
+          <span class="stats-pane-title">Panel 2</span>
+          <button class="stats-collapse-btn" title="collapse"><i data-lucide="chevron-up"></i></button>
+        </div>
+        <div class="stats-pane-body" id="stats-body-2"></div>
+      </div>
+    </div><!-- /stats-column -->
+
+  </div><!-- /main-layout -->
 
   <div id="panel">
     <div id="panel-header">
@@ -311,6 +378,7 @@
 
   <script src="https://unpkg.com/deck.gl@9.1.0/dist.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
   <script type="module" src="./main.js"></script>
   <script>document.addEventListener('DOMContentLoaded', () => lucide.createIcons())</script>
 </body>

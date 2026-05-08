@@ -64,15 +64,30 @@ Send a typed message to the viewer
 \subsection{Method \code{push_metadata()}}{
 Push cell metadata to the viewer for polygon coloring
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_metadata(x, cols = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_metadata(
+  x,
+  cols = NULL,
+  dimreds = NULL,
+  dims = 1:2,
+  spat_unit = "cell",
+  feat_type = "rna"
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{x}}{A giotto object or a data.frame/data.table with a cell_ID column}
+\item{\code{x}}{A giotto object, or a data.frame / output of [prep_meta()]}
 
-\item{\code{cols}}{Character vector of columns to include (NULL = all)}
+\item{\code{cols}}{Columns to include (NULL = all; ignored when x is a data.frame)}
+
+\item{\code{dimreds}}{Dimension reduction names to include, e.g. `c("umap","tsne")`}
+
+\item{\code{dims}}{Axes to pull from each reduction (default `1:2`)}
+
+\item{\code{spat_unit}}{Spatial unit key (default `"cell"`)}
+
+\item{\code{feat_type}}{Feature type key for dim reds (default `"rna"`)}
 }
 \if{html}{\out{</div>}}
 }

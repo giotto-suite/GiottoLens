@@ -1,31 +1,44 @@
-# ── serve_lens() ─────────────────────────────────────────────────────────────
+# ── launch_lens() ────────────────────────────────────────────────────────────
 
-#' Set up the GiottoLens data directory
+#' Launch the GiottoLens viewer
 #'
-#' Derives all paths from the GiottoDisk store objects, copies viewer files,
-#' and generates the manifest.  The HTTP server is started by [launch_lens()].
+#' Sets up data files, exports the manifest, starts a combined HTTP + WebSocket
+#' server via httpuv, and opens the viewer.  Static files and parquet data are
+#' served via httpuv's C++ static path handler (concurrent, Range-aware, never
+#' blocks R's event loop).  The WebSocket runs on the same port so the RStudio
+#' viewer pane can connect without cross-port restrictions.
 #'
-#' @param gpoints    giottoPoints object (optional)
-#' @param gpolygons  giottoPolygon object (optional)
-#' @param port       Port for the combined HTTP + WebSocket server (default: 3000)
-#' @param url_prefix Override the URL prefix (default: `http://localhost:{port}`)
-#' @return An [LensServer] configuration object
+#' @param x          A giotto object **or** a giottoPoints store.
+#' @param gpolygons  giottoPolygon store.  Ignored when `x` is a giotto object.
+#' @param feat_type  Feature type key when `x` is a giotto object (default `"rna"`).
+#' @param spat_unit  Spatial unit key when `x` is a giotto object (default `"cell"`).
+#' @param port       Port for the HTTP + WebSocket server (default: 3000).
+#' @param url_prefix Override the base URL (default: `http://localhost:{port}`).
+#' @param open       Open browser / viewer pane automatically (default: `TRUE`).
+#' @return An [LensViewer] object; call `$close()` to stop the server.
 #' @export
-serve_lens <- function(
-    gpoints    = NULL,
+launch_lens <- function(
+    x          = NULL,
     gpolygons  = NULL,
+    feat_type  = "rna",
+    spat_unit  = "cell",
     port       = 3000L,
-    url_prefix = paste0("http://localhost:", port)
+    url_prefix = paste0("http://localhost:", port),
+    open       = TRUE
 ) {
+    if (inherits(x, "giotto")) {
+        gpoints   <- x@feat_info[[feat_type]]
+        gpolygons <- x@spatial_info[[spat_unit]]
+    } else {
+        gpoints <- x
+    }
     serve_root <- .derive_serve_root(gpoints, gpolygons)
-    lens_dir  <- file.path(serve_root, "lens")
+    lens_dir   <- file.path(serve_root, "lens")
     dir.create(lens_dir, recursive = TRUE, showWarnings = FALSE)
 
     viewer_src   <- .viewer_src_dir()
     viewer_files <- list.files(viewer_src, full.names = TRUE)
     copied <- file.copy(viewer_files, lens_dir, overwrite = TRUE)
-    message("Copied ", sum(copied), "/", length(copied),
-            " viewer files to: ", lens_dir)
     if (!all(copied))
         warning("Some viewer files failed to copy: ",
                 paste(basename(viewer_files[!copied]), collapse = ", "))
@@ -38,67 +51,24 @@ serve_lens <- function(
         url_prefix = url_prefix
     )
 
-    LensServer$new(serve_root = serve_root, port = port, url_prefix = url_prefix)
-}
-
-
-# ── launch_lens() ────────────────────────────────────────────────────────────
-
-#' Open the GiottoLens viewer
-#'
-#' Starts a combined HTTP + WebSocket server via httpuv — no Node.js required.
-#' Static files and parquet data are served using httpuv's C++ static path
-#' handler (concurrent, Range-aware, never blocks R's event loop).  The
-#' WebSocket runs on the same port so the RStudio viewer pane can connect.
-#'
-#' @param server An [LensServer] object returned by [serve_lens()]
-#' @param open   Open browser / viewer pane automatically
-#' @return An [LensViewer] object; call `$close()` to stop the server
-#' @export
-launch_lens <- function(server, open = TRUE) {
-    if (!inherits(server, "LensServer"))
-        stop("Pass the LensServer returned by serve_lens()")
-
-    viewer <- LensViewer$new(serve_root  = server$serve_root,
-                               port        = server$port,
-                               url_prefix  = server$url_prefix)
-    url <- paste0(server$url_prefix, "/lens/")
+    viewer <- LensViewer$new(serve_root = serve_root,
+                               port       = port,
+                               url_prefix = url_prefix)
+    url <- paste0(url_prefix, "/lens/")
     if (open) utils::browseURL(url)
     message("Viewer: ", url)
     invisible(viewer)
 }
 
-
-# ── LensServer ───────────────────────────────────────────────────────────────
-
-#' Configuration object returned by [serve_lens()]
+#' @rdname launch_lens
+#' @description `serve_lens()` is a deprecated alias for [launch_lens()] kept
+#'   for backward compatibility.
 #' @export
-LensServer <- R6::R6Class("LensServer",
-    public = list(
-        #' @field url_prefix Base URL
-        url_prefix = NULL,
-        #' @field port       Server port
-        port       = NULL,
-        #' @field serve_root Root directory being served
-        serve_root = NULL,
+serve_lens <- function(...) {
+    .Deprecated("launch_lens")
+    launch_lens(...)
+}
 
-        initialize = function(serve_root, port, url_prefix) {
-            self$serve_root <- serve_root
-            self$port       <- port
-            self$url_prefix <- url_prefix
-        },
-
-        #' @description Shorthand for launch_lens(server)
-        open = function(open = TRUE) launch_lens(self, open = open),
-
-        print = function(...) {
-            cat("LensServer\n")
-            cat("  url:  ", self$url_prefix, "\n")
-            cat("  root: ", self$serve_root, "\n")
-            invisible(self)
-        }
-    )
-)
 
 
 # ── LensViewer ───────────────────────────────────────────────────────────────
@@ -145,23 +115,28 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Push cell metadata to the viewer for polygon coloring
-        #' @param x      A giotto object or a data.frame/data.table with a cell_ID column
-        #' @param cols   Character vector of columns to include (NULL = all)
-        push_metadata = function(x, cols = NULL) {
+        #' @param x         A giotto object, or a data.frame / output of [prep_meta()]
+        #' @param cols      Columns to include (NULL = all; ignored when x is a data.frame)
+        #' @param dimreds   Dimension reduction names to include, e.g. `c("umap","tsne")`
+        #' @param dims      Axes to pull from each reduction (default `1:2`)
+        #' @param spat_unit Spatial unit key (default `"cell"`)
+        #' @param feat_type Feature type key for dim reds (default `"rna"`)
+        push_metadata = function(x, cols = NULL, dimreds = NULL, dims = 1:2,
+                                 spat_unit = "cell", feat_type = "rna") {
             if (is.null(private$ws)) {
                 warning("LensViewer: no viewer connected yet")
                 return(invisible(self))
             }
             if (inherits(x, "giotto")) {
-                if (!requireNamespace("GiottoClass", quietly = TRUE))
-                    stop("GiottoClass is required to push metadata from a giotto object")
-                meta <- as.data.frame(GiottoClass::pDataDT(x))
+                meta <- prep_meta(x, cols = cols, dimreds = dimreds, dims = dims,
+                                  spat_unit = spat_unit, feat_type = feat_type)
             } else {
                 meta <- as.data.frame(x)
             }
             id_col <- if ("cell_ID" %in% names(meta)) "cell_ID" else names(meta)[1]
-            if (!is.null(cols))
-                meta <- meta[, unique(c(id_col, intersect(cols, names(meta)))), drop = FALSE]
+            # Sanitise column names: dots and other special chars break SQL identifiers
+            names(meta) <- gsub("[^A-Za-z0-9_]", "_", names(meta))
+            id_col      <- gsub("[^A-Za-z0-9_]", "_", id_col)
             meta_dir <- file.path(private$root, "lens", "metadata")
             dir.create(meta_dir, recursive = TRUE, showWarnings = FALSE)
             path <- file.path(meta_dir, "cell_meta.parquet")
@@ -169,15 +144,15 @@ LensViewer <- R6::R6Class("LensViewer",
             # Classify each column so JS doesn't have to guess
             data_cols <- setdiff(names(meta), id_col)
             col_types  <- vapply(data_cols, function(cn) {
-                x <- meta[[cn]]
-                if (is.factor(x) || is.character(x) || is.logical(x)) return("categorical")
-                if (is.integer(x)) return("categorical")   # cluster IDs etc.
+                v <- meta[[cn]]
+                if (is.factor(v) || is.character(v) || is.logical(v)) return("categorical")
+                if (is.integer(v)) return("categorical")
                 "continuous"
             }, character(1L))
-            self$send("load_metadata", list(
-                url   = "/lens/metadata/cell_meta.parquet",
-                types = as.list(col_types)   # named: col → "categorical"|"continuous"
-            ))
+            meta_msg <- list(url = "/lens/metadata/cell_meta.parquet",
+                             types = as.list(col_types))
+            private$cached_meta <- meta_msg
+            self$send("load_metadata", meta_msg)
             message("LensViewer: pushed metadata — ",
                     nrow(meta), " cells, ",
                     ncol(meta) - 1L, " column(s): ",
@@ -212,10 +187,11 @@ LensViewer <- R6::R6Class("LensViewer",
     ),
 
     private = list(
-        root   = NULL,
-        ws     = NULL,
-        server = NULL,
-        cbs    = list(),
+        root        = NULL,
+        ws          = NULL,
+        server      = NULL,
+        cbs         = list(),
+        cached_meta = NULL,
 
         start_server = function() {
             priv <- private
@@ -235,6 +211,14 @@ LensViewer <- R6::R6Class("LensViewer",
 
                         onWSOpen = function(ws) {
                             priv$ws <- ws
+                            # Re-push cached metadata so a browser reload or new tab
+                            # gets the same data without calling push_metadata() again
+                            if (!is.null(priv$cached_meta))
+                                ws$send(jsonlite::toJSON(
+                                    list(type = "load_metadata",
+                                         data = priv$cached_meta),
+                                    auto_unbox = TRUE, null = "null"
+                                ))
                             ws$onMessage(function(binary, msg) {
                                 tryCatch({
                                     parsed <- jsonlite::fromJSON(msg,

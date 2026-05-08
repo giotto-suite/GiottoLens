@@ -2,21 +2,46 @@
 % Please edit documentation in R/launch.R
 \name{launch_lens}
 \alias{launch_lens}
-\title{Open the GiottoLens viewer}
+\alias{serve_lens}
+\title{Launch the GiottoLens viewer}
 \usage{
-launch_lens(server, open = TRUE)
+launch_lens(
+  x = NULL,
+  gpolygons = NULL,
+  feat_type = "rna",
+  spat_unit = "cell",
+  port = 3000L,
+  url_prefix = paste0("http://localhost:", port),
+  open = TRUE
+)
+
+serve_lens(...)
 }
 \arguments{
-\item{server}{An [LensServer] object returned by [serve_lens()]}
+\item{x}{A giotto object **or** a giottoPoints store.}
 
-\item{open}{Open browser / viewer pane automatically}
+\item{gpolygons}{giottoPolygon store.  Ignored when `x` is a giotto object.}
+
+\item{feat_type}{Feature type key when `x` is a giotto object (default `"rna"`).}
+
+\item{spat_unit}{Spatial unit key when `x` is a giotto object (default `"cell"`).}
+
+\item{port}{Port for the HTTP + WebSocket server (default: 3000).}
+
+\item{url_prefix}{Override the base URL (default: `http://localhost:{port}`).}
+
+\item{open}{Open browser / viewer pane automatically (default: `TRUE`).}
 }
 \value{
-An [LensViewer] object; call `$close()` to stop the server
+An [LensViewer] object; call `$close()` to stop the server.
 }
 \description{
-Starts a combined HTTP + WebSocket server via httpuv — no Node.js required.
-Static files and parquet data are served using httpuv's C++ static path
-handler (concurrent, Range-aware, never blocks R's event loop).  The
-WebSocket runs on the same port so the RStudio viewer pane can connect.
+Sets up data files, exports the manifest, starts a combined HTTP + WebSocket
+server via httpuv, and opens the viewer.  Static files and parquet data are
+served via httpuv's C++ static path handler (concurrent, Range-aware, never
+blocks R's event loop).  The WebSocket runs on the same port so the RStudio
+viewer pane can connect without cross-port restrictions.
+
+`serve_lens()` is a deprecated alias for [launch_lens()] kept
+  for backward compatibility.
 }

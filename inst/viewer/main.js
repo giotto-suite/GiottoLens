@@ -5,6 +5,7 @@ import { geneSelectionKey, getManifestOverviewBins, updateGeneOverview } from '.
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
+import { loadMetaIntoMosaic, initMosaicPanels } from './mosaic.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
 function dataToScreen(dx, dy) {
@@ -242,6 +243,36 @@ async function main() {
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
   updateScalebar(initialViewState);
+
+  // ── Split.js layout ──────────────────────────────────────────────────────
+  const mainSplit = Split(['#spatial-pane', '#stats-column'], {
+    sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
+    onDragEnd: () => {
+      window.dispatchEvent(new Event('resize'));
+      if (state.currentViewState) updateScalebar(state.currentViewState);
+    },
+  });
+
+  let statsOpen = true;
+  let lastStatsSizes = [65, 35];
+  document.getElementById('btn-stats-toggle')?.addEventListener('click', () => {
+    statsOpen = !statsOpen;
+    if (statsOpen) {
+      mainSplit.setSizes(lastStatsSizes);
+    } else {
+      lastStatsSizes = mainSplit.getSizes();
+      mainSplit.setSizes([100, 0]);
+    }
+    window.dispatchEvent(new Event('resize'));
+    document.getElementById('btn-stats-toggle')?.classList.toggle('active', statsOpen);
+  });
+  document.getElementById('btn-stats-toggle')?.classList.add('active');
+
+  document.querySelectorAll('.stats-collapse-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.stats-pane').classList.toggle('stats-collapsed');
+    });
+  });
 
   // ── Collapsible panel sections ────────────────────────────────────────────
   document.querySelectorAll('.section-hd').forEach(hd =>
@@ -661,6 +692,9 @@ async function main() {
       document.getElementById('meta-panel').style.display = '';
     }
     if (state.metaCol) { await buildMetaColors(); renderMetaLegend(); renderLayers(state.currentViewState); }
+
+    await loadMetaIntoMosaic(fullUrl);
+    initMosaicPanels(state.metaCols);
   });
 
   onMessage('color_cells',    data => { /* TODO: annotation phase */ console.log('color_cells', data); });
