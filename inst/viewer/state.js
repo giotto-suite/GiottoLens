@@ -39,6 +39,7 @@ export const state = {
   annotations:      [],
   selectedAnnotId:  null,
   onAnnotSelect:    null,
+  onAnnotsChange:   null,
 
   // Data caches
   txBuild:    null, txDirty:    true,
