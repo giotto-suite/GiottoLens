@@ -6,7 +6,7 @@ import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
 import { initComms, onMessage, sendToR } from './comms.js';
 import { loadMetaIntoMosaic, initMosaicPanels, sel } from './mosaic.js';
-import { onCoord, notify, recomputeCrossFilter, clearFilters } from './coordination.js';
+import { onCoord, notify, recomputeCrossFilter, clearFilters, sqlIds } from './coordination.js';
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
 function dataToScreen(dx, dy) {
@@ -543,7 +543,7 @@ async function main() {
       if (state.crossFilter) {
         recomputeCrossFilter();
         try {
-          const active = state.spatialFilter ? [...state.spatialFilter].map(id => `'${id}'`).join(',') : '';
+          const active = state.spatialFilter ? sqlIds(state.spatialFilter) : '';
           sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
         } catch(_) {}
       } else notify('cellSelection');
@@ -564,7 +564,7 @@ async function main() {
               state.spatialFilter = lassoSet;
               recomputeCrossFilter();
               try {
-                const active = [...lassoSet].map(id => `'${id}'`).join(',');
+                const active = sqlIds(lassoSet);
                 sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
               } catch(_) {}
             } else { state.selectedCells = new Set([...state.selectedCells, ...lassoSet]); state.selVersion++; notify('cellSelection'); }

@@ -1,7 +1,7 @@
 import { state }  from './state.js';
 import { PALETTE } from './constants.js';
 import { sel, mc } from './mosaic.js';
-import { notify, onCoord, recomputeCrossFilter, clearFilters } from './coordination.js';
+import { notify, onCoord, recomputeCrossFilter, clearFilters, sqlIds } from './coordination.js';
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 // Each call creates an independent scatter panel with its own deck.gl instance,
@@ -181,7 +181,7 @@ export function createScatterPanel(bodyId, metaCols) {
           notify('cellSelection');
         }
         try {
-          const active = [...state.selectedCells].map(id => `'${id}'`).join(',');
+          const active = sqlIds(state.selectedCells);
           if (active) sel.update({ source: 'scatter-lasso', predicate: `cell_ID IN (${active})` });
           else        sel.update({ source: 'scatter-lasso', predicate: null });
         } catch(_) {}

@@ -32,6 +32,10 @@ export function clearFilters() {
   notify('cellSelection');
 }
 
+export function sqlIds(ids) {
+  return [...ids].map(id => `'${String(id).replace(/'/g, "''")}'`).join(',');
+}
+
 export function notify(type) {
   (_handlers[type] ?? []).forEach(h => {
     try { h(); } catch(e) { console.warn('[coord]', type, e); }
