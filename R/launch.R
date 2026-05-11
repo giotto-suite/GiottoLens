@@ -170,6 +170,25 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Push polygon overlays from R into the viewer.
+        #'   Polygons are rendered as a semi-transparent layer above the overview
+        #'   and below cell outlines.  Useful for spatial domains, tissue regions,
+        #'   or any custom geometry in the same coordinate space as the data.
+        #' @param x      A `terra::SpatVector`, `sf` object, or character vector
+        #'   of WKT strings — all with POLYGON/MULTIPOLYGON geometries in the
+        #'   same coordinate space as the spatial data.
+        #' @param names  Optional character vector of names (one per row).
+        #'   Falls back to an `x$name` column if present, else blank.
+        push_polygons = function(x, names = NULL) {
+            if (is.null(private$ws)) {
+                warning("LensViewer: no viewer connected yet")
+                return(invisible(self))
+            }
+            polys <- .prep_overlay_polys(x, names)
+            self$send("push_polygons", list(polygons = polys))
+            invisible(self)
+        },
+
         #' @description Register a callback for a viewer message type
         on = function(type, callback) {
             private$cbs[[type]] <- callback
@@ -297,3 +316,51 @@ LensViewer <- R6::R6Class("LensViewer",
 }
 
 .random_port <- function() sample(49152L:65535L, 1L)
+
+# Convert polygon input to a list of {id, name, coords} for push_polygons.
+# Accepts terra SpatVector (preferred), sf object, or WKT character vector.
+.prep_overlay_polys <- function(x, poly_names) {
+    # ── Normalise to terra SpatVector ─────────────────────────────────────────
+    if (inherits(x, "SpatVector")) {
+        sv <- x
+    } else if (inherits(x, c("sf", "sfc"))) {
+        if (!requireNamespace("terra", quietly = TRUE))
+            stop("Package 'terra' is required for push_polygons()")
+        sv <- terra::vect(x)
+    } else if (is.character(x)) {
+        if (!length(x)) return(list())
+        if (!requireNamespace("terra", quietly = TRUE))
+            stop("Package 'terra' is required for push_polygons()")
+        sv <- Reduce(rbind, lapply(x, function(w) terra::vect(w, crs = "local")))
+    } else {
+        stop("x must be a terra SpatVector, sf object, ",
+             "or character vector of WKT strings")
+    }
+
+    if (terra::geomtype(sv) != "polygons")
+        stop("x must contain polygon geometries")
+
+    # ── Attribute columns (id / name) ─────────────────────────────────────────
+    n   <- nrow(sv)
+    df  <- terra::values(sv)
+    nms <- if (!is.null(poly_names)) as.character(poly_names)
+           else if ("name" %in% names(df)) as.character(df[["name"]])
+           else rep("", n)
+
+    # ── Extract exterior ring of first polygon part per geometry ──────────────
+    # terra::geom() returns a matrix: geom, part, x, y, hole
+    # hole == 0 → exterior ring; part == 1 → first part of multipolygon
+    gmat <- terra::geom(sv)
+    lapply(seq_len(n), function(i) {
+        ring  <- gmat[gmat[, "geom"] == i &
+                      gmat[, "part"] == 1 &
+                      gmat[, "hole"] == 0, , drop = FALSE]
+        # unname() so jsonlite serialises scalars, not {"x":...} objects
+        xs <- unname(ring[, "x"])
+        ys <- unname(ring[, "y"])
+        list(
+            name   = nms[[i]],
+            coords = lapply(seq_len(nrow(ring)), function(j) list(xs[[j]], ys[[j]]))
+        )
+    })
+}

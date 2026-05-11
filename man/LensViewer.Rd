@@ -34,6 +34,7 @@ directly.
 \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
 \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
 \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
+\item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
 \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
 \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
 \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
@@ -108,6 +109,31 @@ Push a selection of cell IDs to the viewer.
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{ids}}{Character vector of cell IDs to select (empty vector clears).}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-push_polygons"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-push_polygons}{}}}
+\subsection{Method \code{push_polygons()}}{
+Push polygon overlays from R into the viewer.
+  Polygons are rendered as a semi-transparent layer above the overview
+  and below cell outlines.  Useful for spatial domains, tissue regions,
+  or any custom geometry in the same coordinate space as the data.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_polygons(x, names = NULL)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{x}}{A `terra::SpatVector`, `sf` object, or character vector
+of WKT strings — all with POLYGON/MULTIPOLYGON geometries in the
+same coordinate space as the spatial data.}
+
+\item{\code{names}}{Optional character vector of names (one per row).
+Falls back to an `x$name` column if present, else blank.}
 }
 \if{html}{\out{</div>}}
 }

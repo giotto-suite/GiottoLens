@@ -854,6 +854,16 @@ async function main() {
     renderLayers(state.currentViewState);
   });
 
+  onMessage('push_polygons', ({ polygons }) => {
+    const incoming = (polygons ?? []).map(p => ({
+      id: generateAnnotId(), type: 'polygon',
+      name: p.name ?? '', coords: p.coords,
+    }));
+    state.annotations = [...state.annotations, ...incoming];
+    notify('annotations');
+    renderLayers(state.currentViewState);
+  });
+
   onMessage('color_cells',    data => { /* TODO: annotation phase */ console.log('color_cells', data); });
   onMessage('highlight_genes', genes => {
     genes.forEach(g => {
