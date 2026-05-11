@@ -37,7 +37,7 @@ export function visibleTiles(viewState, tiles) {
 
 // ── Polygon tile fetch ────────────────────────────────────────────────────────
 async function _fetchPolyWithId(url, idCol) {
-  const gjSel = state.spatialLoaded ? 'ST_AsGeoJSON(geom) AS gj' : 'geom';
+  const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
   const sel   = `${idCol} AS _id, x_index, y_index, ${gjSel}`;
   const tbl   = await state.polyConn.query(`SELECT ${sel} FROM read_parquet('${url}')`);
   const polys = [], cx = [], ids = [];
@@ -54,7 +54,7 @@ async function _fetchPolyWithId(url, idCol) {
 }
 
 async function _fetchPolyNoId(url) {
-  const gjSel = state.spatialLoaded ? 'ST_AsGeoJSON(geom) AS gj' : 'geom';
+  const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
   const tbl   = await state.polyConn.query(`SELECT x_index, y_index, ${gjSel} FROM read_parquet('${url}')`);
   const polys = [], cx = [], ids = [];
   for (const batch of tbl.batches) {
@@ -69,21 +69,11 @@ async function _fetchPolyNoId(url) {
 }
 
 function _parsePolyGeom(raw, id, polys) {
-  if (state.spatialLoaded) {
-    try {
-      const gj    = JSON.parse(raw);
-      const rings = gj.type === 'Polygon'      ? gj.coordinates
-                  : gj.type === 'MultiPolygon' ? gj.coordinates[0]
-                  : null;
-      if (rings) polys.push({ polygon: rings, id });
-    } catch (_) {}
-  } else {
-    let bytes = null;
-    if (raw instanceof Uint8Array) bytes = raw;
-    else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
-    else if (raw?.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
-    if (bytes) { const rings = decodeWKBPolygon(bytes); if (rings) polys.push({ polygon: rings, id }); }
-  }
+  let bytes = null;
+  if (raw instanceof Uint8Array)  bytes = raw;
+  else if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
+  else if (raw?.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+  if (bytes) { const rings = decodeWKBPolygon(bytes); if (rings) polys.push({ polygon: rings, id }); }
 }
 
 export async function fetchPolygonTile(url) {
