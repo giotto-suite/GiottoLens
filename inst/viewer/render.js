@@ -177,13 +177,23 @@ export function renderLayers(viewState) {
     }));
   }
 
+  // Completed tx-lasso ring (persists while txlasso mode active)
+  if (state.txLassoRing?.length >= 2) {
+    layers.push(new deck.PathLayer({
+      id: 'tx-lasso-completed',
+      data: [[...state.txLassoRing, state.txLassoRing[0]]], getPath: d => d,
+      getColor: [255, 255, 100], getWidth: 1.5,
+      widthUnits: 'pixels', widthMinPixels: 1,
+    }));
+  }
+
   // Lasso ring in progress
   if (state.lassoRing.length >= 2) {
     layers.push(new deck.PathLayer({
       id: 'lasso-ring',
       data: [[...state.lassoRing, state.lassoRing[0]]], getPath: d => d,
-      getColor: [100, 200, 255], getWidth: 2,
-      widthUnits: 'pixels', widthMinPixels: 1,
+      getColor: state.mode === 'txlasso' ? [255, 255, 100] : [100, 200, 255],
+      getWidth: 1.5, widthUnits: 'pixels', widthMinPixels: 1,
     }));
   }
 

@@ -54,6 +54,7 @@ export const state = {
   rulerStart:   null,
   rulerEnd:     null,
   rulerLocked:  false,
+  txLassoRing:  null,
   brushDown:    false,
   brushPos:     null,
   brushRadius:  30,

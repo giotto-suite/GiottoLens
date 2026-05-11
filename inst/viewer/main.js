@@ -25,6 +25,26 @@ function rulerDist(a, b) {
   return d >= 1000 ? `${(d / 1000).toFixed(3)} mm` : `${d.toFixed(1)} μm`;
 }
 
+function updateTxConnector() {
+  const line  = document.getElementById('tx-connector-line');
+  const panel = document.getElementById('tx-lasso-panel');
+  if (!line || !panel || !state.txLassoRing?.length || !panel.classList.contains('visible')) {
+    line?.setAttribute('display', 'none');
+    return;
+  }
+  const ring = state.txLassoRing;
+  const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+  const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+  const [sx, sy] = dataToScreen(cx, cy);
+  const rect = panel.getBoundingClientRect();
+  const paneRect = document.getElementById('spatial-pane').getBoundingClientRect();
+  line.setAttribute('x1', sx - paneRect.left);
+  line.setAttribute('y1', sy - paneRect.top);
+  line.setAttribute('x2', rect.left - paneRect.left);
+  line.setAttribute('y2', rect.top  - paneRect.top);
+  line.setAttribute('display', '');
+}
+
 function updateRulerLabel() {
   const label = document.getElementById('ruler-label');
   if (!label || !state.rulerStart || !state.rulerEnd) return;
@@ -87,13 +107,9 @@ function setMode(m) {
   state.lassoActive = false;
   state.rectStart  = null;
   state.rectPreview = null;
-  state.rulerStart  = null;
-  state.rulerEnd    = null;
-  state.rulerLocked = false;
-  document.getElementById('ruler-label')?.classList.remove('visible');
   state.brushDown = false;
   state.brushPos  = null;
-  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'rect' || m === 'freehand' || m === 'brush')
+  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'txlasso' || m === 'rect' || m === 'freehand' || m === 'brush')
     ? { dragPan: false, doubleClickZoom: false }
     : { doubleClickZoom: false } });
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
@@ -101,6 +117,7 @@ function setMode(m) {
   );
   document.getElementById('btn-group-draw')?.classList.toggle('active', ['poly','rect','freehand'].includes(m));
   document.getElementById('btn-group-select')?.classList.toggle('active', ['lasso','brush'].includes(m));
+  document.getElementById('btn-group-measure')?.classList.toggle('active', ['ruler','txlasso'].includes(m));
   renderLayers(state.currentViewState);
 }
 
@@ -176,8 +193,11 @@ function updateScalebar(viewState) {
 }
 
 function onViewStateChange({ viewState }) {
+  state.currentViewState = viewState;
   state.deckgl.setProps({ viewState });
   updateScalebar(viewState);
+  updateRulerLabel();
+  updateTxConnector();
   clearTimeout(state.tileTimer);
   state.tileTimer = setTimeout(() => updateTiles(viewState), 150);
 }
@@ -377,23 +397,32 @@ async function main() {
   });
 
   // ── Toolbar mode buttons ──────────────────────────────────────────────────
-  function toggleGroup(groupId, otherGroupId) {
-    const grp   = document.getElementById(groupId);
-    const other = document.getElementById(otherGroupId);
+  function toggleGroup(groupId, ...otherIds) {
+    const grp = document.getElementById(groupId);
     const opening = !grp.classList.contains('open');
-    other?.classList.remove('open');
+    otherIds.forEach(id => document.getElementById(id)?.classList.remove('open'));
     grp.classList.toggle('open', opening);
   }
 
   document.getElementById('btn-group-draw')?.addEventListener('click', () =>
-    toggleGroup('group-draw', 'group-select'));
+    toggleGroup('group-draw', 'group-select', 'group-measure'));
   document.getElementById('btn-group-select')?.addEventListener('click', () =>
-    toggleGroup('group-select', 'group-draw'));
+    toggleGroup('group-select', 'group-draw', 'group-measure'));
+  document.getElementById('btn-group-measure')?.addEventListener('click', () =>
+    toggleGroup('group-measure', 'group-draw', 'group-select'));
 
   document.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
     btn.addEventListener('click', () => setMode(btn.dataset.mode))
   );
   document.getElementById('tool-clear-sel')?.addEventListener('click', () => clearFilters());
+  document.getElementById('tool-clear-measure')?.addEventListener('click', () => {
+    state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
+    document.getElementById('ruler-label')?.classList.remove('visible');
+    state.txLassoRing = null;
+    document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+    updateTxConnector();
+    renderLayers(state.currentViewState);
+  });
 
   document.getElementById('tool-invert-sel')?.addEventListener('click', () => {
     if (!state.allPolyIds.size) return;
@@ -433,6 +462,83 @@ async function main() {
     state.selectedCells = new Set(ids);
     state.selVersion++;
     notify('cellSelection');
+  });
+
+  // ── Transcript lasso ──────────────────────────────────────────────────────
+  async function _runTxLasso(ring) {
+    const panel  = document.getElementById('tx-lasso-panel');
+    const title  = document.getElementById('tx-lasso-title');
+    const list   = document.getElementById('tx-lasso-results');
+    if (!panel) return;
+
+    state.txLassoRing = ring;
+    renderLayers(state.currentViewState);
+
+    title.textContent = 'querying…';
+    list.innerHTML = '';
+    panel.classList.add('visible');
+    updateTxConnector();
+
+    try {
+      const txLayer = state.manifest?.layers?.transcripts;
+      if (!txLayer?.tiles?.length) { title.textContent = 'no transcript data'; return; }
+
+      let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+      for (const [x, y] of ring) {
+        if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+        if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+      }
+
+      const overlapping = txLayer.tiles.filter(t =>
+        t.xmax > xmin && t.xmin < xmax && t.ymax > ymin && t.ymin < ymax
+      );
+      if (!overlapping.length) { title.textContent = '0 transcripts'; return; }
+
+      const urls   = overlapping.map(t => `'${t.url}'`).join(', ');
+      const result = await state.conn.query(
+        `SELECT feat_ID, x_index, y_index FROM read_parquet([${urls}])
+         WHERE x_index BETWEEN ${xmin} AND ${xmax}
+           AND y_index BETWEEN ${ymin} AND ${ymax}`
+      );
+
+      const counts = new Map();
+      const closed = [...ring, ring[0]];
+      for (const batch of result.batches) {
+        const fs = batch.getChildAt(0), xs = batch.getChildAt(1), ys = batch.getChildAt(2);
+        for (let i = 0; i < batch.numRows; i++) {
+          if (pointInPolygon(closed, xs.get(i), ys.get(i))) {
+            const g = fs.get(i);
+            counts.set(g, (counts.get(g) ?? 0) + 1);
+          }
+        }
+      }
+
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const total  = sorted.reduce((s, [, n]) => s + n, 0);
+      const top    = sorted.slice(0, 50);
+      const maxN   = top[0]?.[1] ?? 1;
+
+      title.textContent = `${total.toLocaleString()} transcripts · ${sorted.length} genes`;
+      list.innerHTML = top.map(([gene, n]) =>
+        `<div class="tx-gene-row">
+          <span class="tx-gene-name" title="${gene}">${gene}</span>
+          <div class="tx-gene-bar-wrap"><div class="tx-gene-bar" style="width:${(n/maxN*100).toFixed(1)}%"></div></div>
+          <span class="tx-gene-count">${n.toLocaleString()}</span>
+        </div>`
+      ).join('');
+      requestAnimationFrame(updateTxConnector);
+    } catch(e) {
+      title.textContent = 'query failed';
+      requestAnimationFrame(updateTxConnector);
+      console.warn('[txlasso]', e);
+    }
+  }
+
+  document.getElementById('tx-lasso-close')?.addEventListener('click', () => {
+    state.txLassoRing = null;
+    document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+    updateTxConnector();
+    renderLayers(state.currentViewState);
   });
 
   // ── Canvas annotation / lasso events ─────────────────────────────────────
@@ -484,7 +590,12 @@ async function main() {
     if (state.mode === 'brush') {
       state.brushDown = true;
       state.brushPos  = canvasToData(e.clientX, e.clientY);
-    } else if (state.mode === 'lasso' || state.mode === 'freehand') {
+    } else if (state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') {
+      if (state.mode === 'txlasso') {
+        state.txLassoRing = null;
+        document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+        updateTxConnector();
+      }
       lassoDragged = false;
       lassoLastPx  = [e.clientX, e.clientY];
       state.lassoActive = true;
@@ -524,7 +635,7 @@ async function main() {
       renderLayers(state.currentViewState);
     }
 
-    if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
+    if ((state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') && state.lassoActive) {
       const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
       if (Math.hypot(dx, dy) < (state.mode === 'freehand' ? 20 : 5)) return;
       lassoLastPx  = [e.clientX, e.clientY];
@@ -548,10 +659,15 @@ async function main() {
         } catch(_) {}
       } else notify('cellSelection');
     }
-    if ((state.mode === 'lasso' || state.mode === 'freehand') && state.lassoActive) {
+    if ((state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') && state.lassoActive) {
       state.lassoActive = false;
       if (lassoDragged && state.lassoRing.length >= 3) {
-        if (state.mode === 'lasso') {
+        if (state.mode === 'txlasso') {
+          const ring = state.lassoRing;
+          state.lassoRing = [];
+          renderLayers(state.currentViewState);
+          _runTxLasso(ring);
+        } else if (state.mode === 'lasso') {
           const polyData = getCachedPolyData();
           if (polyData?.ids) {
             const ring  = state.lassoRing;
