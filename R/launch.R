@@ -160,6 +160,16 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Push a selection of cell IDs to the viewer.
+        #'   If cross-filter mode is active it will be turned off so the
+        #'   pushed selection is shown directly without intersection.
+        #' @param ids Character vector of cell IDs to select (empty vector clears).
+        set_selection = function(ids) {
+            self$selection <- as.character(ids)
+            self$send("set_selection", list(ids = as.list(as.character(ids))))
+            invisible(self)
+        },
+
         #' @description Register a callback for a viewer message type
         on = function(type, callback) {
             private$cbs[[type]] <- callback

@@ -33,6 +33,7 @@ directly.
 \item \href{#method-LensViewer-new}{\code{LensViewer$new()}}
 \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
 \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
+\item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
 \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
 \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
 \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
@@ -88,6 +89,25 @@ Push cell metadata to the viewer for polygon coloring
 \item{\code{spat_unit}}{Spatial unit key (default `"cell"`)}
 
 \item{\code{feat_type}}{Feature type key for dim reds (default `"rna"`)}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_selection"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_selection}{}}}
+\subsection{Method \code{set_selection()}}{
+Push a selection of cell IDs to the viewer.
+  If cross-filter mode is active it will be turned off so the
+  pushed selection is shown directly without intersection.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{LensViewer$set_selection(ids)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{ids}}{Character vector of cell IDs to select (empty vector clears).}
 }
 \if{html}{\out{</div>}}
 }

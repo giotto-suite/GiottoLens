@@ -842,6 +842,18 @@ async function main() {
     initMosaicPanels(state.metaCols);
   });
 
+  onMessage('set_selection', ({ ids }) => {
+    if (state.crossFilter) {
+      state.crossFilter = false;
+      state.spatialFilter = null;
+      state.scatterFilter = null;
+      document.getElementById('btn-crossfilter')?.classList.remove('active');
+    }
+    state.selectedCells = new Set(ids ?? []);
+    state.selVersion++;
+    renderLayers(state.currentViewState);
+  });
+
   onMessage('color_cells',    data => { /* TODO: annotation phase */ console.log('color_cells', data); });
   onMessage('highlight_genes', genes => {
     genes.forEach(g => {
