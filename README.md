@@ -102,13 +102,21 @@ launch_lens()                   deck.gl 9 (OrthographicView, Y-up)
 ```r
 # After editing R files:
 devtools::load_all()
+```
 
-# After editing inst/viewer/ JS files:
-devtools::install()   # inst/ changes require reinstall
-library(GiottoLens)
+```bash
+# After editing inst/viewer-src/ JS files:
+cd inst/viewer-src
+npm install       # first time only
+npm run build     # outputs to inst/viewer/
+```
 
+```r
+devtools::load_all()
 viewer <- launch_lens(gpoints, gpolygons)
 ```
+
+Commit `inst/viewer/` after rebuilding — it is the pre-built artifact that ships with the package.
 
 ## License
 
