@@ -1,0 +1,24 @@
+{
+  "name": "giottolens-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "1.29.0",
+    "@luma.gl/core": "9.3.3",
+    "@luma.gl/engine": "9.3.3",
+    "@luma.gl/webgl": "9.3.3",
+    "@uwdata/vgplot": "0.25.0",
+    "deck.gl": "9.3.2",
+    "hyparquet": "1.25.8",
+    "lucide": "1.14.0",
+    "split.js": "1.6.5"
+  },
+  "devDependencies": {
+    "vite": "5.4.0"
+  }
+}
