@@ -12,7 +12,8 @@ launch_lens(
   spat_unit = "cell",
   port = 3000L,
   url_prefix = paste0("http://localhost:", port),
-  open = TRUE
+  open = TRUE,
+  clean = FALSE
 )
 
 serve_lens(...)
@@ -31,6 +32,10 @@ serve_lens(...)
 \item{url_prefix}{Override the base URL (default: `http://localhost:{port}`).}
 
 \item{open}{Open browser / viewer pane automatically (default: `TRUE`).}
+
+\item{clean}{Delete the lens directory before copying viewer files
+(default: `FALSE`).  Use `TRUE` when switching package versions to
+guarantee a fresh deployment without stale assets.}
 }
 \value{
 An [LensViewer] object; call `$close()` to stop the server.

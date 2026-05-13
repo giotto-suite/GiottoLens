@@ -250,9 +250,16 @@ LensViewer <- R6::R6Class("LensViewer",
                     app  = list(
                         # C++ file handler: concurrent, Range-aware, no R event loop
                         staticPaths = list(
-                            "/" = httpuv::staticPath(private$root,
-                                                     indexhtml   = TRUE,
-                                                     fallthrough = FALSE)
+                            "/" = httpuv::staticPath(
+                                private$root,
+                                indexhtml   = TRUE,
+                                fallthrough = FALSE,
+                                headers = list(
+                                    "Cache-Control"                = "no-cache",
+                                    "Cross-Origin-Opener-Policy"   = "same-origin",
+                                    "Cross-Origin-Embedder-Policy" = "credentialless"
+                                )
+                            )
                         ),
 
                         onWSOpen = function(ws) {

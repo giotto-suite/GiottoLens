@@ -166,7 +166,7 @@ function updateTiles(viewState) {
         Math.hypot((b.xmin+b.xmax)/2 - cx, (b.ymin+b.ymax)/2 - cy)
       )
       .slice(0, MAX_TRANSCRIPT_TILES - txPending)
-      .forEach(t => loadTile('transcripts', t, vs => renderLayers(vs)));
+      .forEach(t => loadTile('transcripts', t, vs => { renderLayers(vs); updateTiles(vs); }));
   }
 
   if (!txAboveThresh && state.showOverview) {

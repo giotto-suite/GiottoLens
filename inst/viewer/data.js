@@ -1,4 +1,5 @@
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+import { parquetReadObjects } from 'https://cdn.jsdelivr.net/npm/hyparquet@1/+esm';
 import { state } from './state.js';
 import { PALETTE, PALETTES } from './constants.js';
 
@@ -35,11 +36,25 @@ export function visibleTiles(viewState, tiles) {
   );
 }
 
+// Disable content-encoding on all parquet fetches so browsers don't try to
+// decompress raw parquet bytes as gzip (ERR_CONTENT_DECODING_FAILED).
+const _RAW = { 'Accept-Encoding': 'identity' };
+
+// ── Parquet fetch helper ──────────────────────────────────────────────────────
+let _parqSeq = 0;
+async function _loadParquet(url) {
+  const name = `_p${++_parqSeq}`;
+  const buf = new Uint8Array(await fetch(url, { headers: _RAW }).then(r => r.arrayBuffer()));
+  await state.db.registerFileBuffer(name, buf);
+  return name;
+}
+function _dropParquet(name) { state.db.dropFile(name).catch(() => {}); }
+
 // ── Polygon tile fetch ────────────────────────────────────────────────────────
-async function _fetchPolyWithId(url, idCol) {
+async function _fetchPolyWithId(name, idCol) {
   const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
   const sel   = `${idCol} AS _id, x_index, y_index, ${gjSel}`;
-  const tbl   = await state.polyConn.query(`SELECT ${sel} FROM read_parquet('${url}')`);
+  const tbl   = await state.polyConn.query(`SELECT ${sel} FROM read_parquet('${name}')`);
   const polys = [], cx = [], ids = [];
   for (const batch of tbl.batches) {
     const idB = batch.getChildAt(0), xs = batch.getChildAt(1), ys = batch.getChildAt(2), gs = batch.getChildAt(3);
@@ -53,9 +68,9 @@ async function _fetchPolyWithId(url, idCol) {
   return { polys, centroids: new Float32Array(cx), ids };
 }
 
-async function _fetchPolyNoId(url) {
+async function _fetchPolyNoId(name) {
   const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
-  const tbl   = await state.polyConn.query(`SELECT x_index, y_index, ${gjSel} FROM read_parquet('${url}')`);
+  const tbl   = await state.polyConn.query(`SELECT x_index, y_index, ${gjSel} FROM read_parquet('${name}')`);
   const polys = [], cx = [], ids = [];
   for (const batch of tbl.batches) {
     const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
@@ -77,16 +92,20 @@ function _parsePolyGeom(raw, id, polys) {
 }
 
 export async function fetchPolygonTile(url) {
-  const idCol = state.manifest?.layers?.polygons?.id_col;
-  if (idCol) {
-    try {
-      return await _fetchPolyWithId(url, idCol);
-    } catch (_) {
-      // Column not found in parquet — disable for all future tiles and fall through
-      state.manifest.layers.polygons.id_col = null;
+  const name = await _loadParquet(url);
+  try {
+    const idCol = state.manifest?.layers?.polygons?.id_col;
+    if (idCol) {
+      try {
+        return await _fetchPolyWithId(name, idCol);
+      } catch (_) {
+        state.manifest.layers.polygons.id_col = null;
+      }
     }
+    return await _fetchPolyNoId(name);
+  } finally {
+    _dropParquet(name);
   }
-  return _fetchPolyNoId(url);
 }
 
 function decodeWKBPolygon(wkb) {
@@ -121,21 +140,84 @@ function readWKBRings(v, off, le) {
   return rings.length ? rings : null;
 }
 
-// ── Transcript tile fetch ─────────────────────────────────────────────────────
-export async function fetchTranscriptTile(url) {
-  const tbl = await state.conn.query(`SELECT x_index, y_index, feat_ID FROM read_parquet('${url}')`);
-  const n   = tbl.numRows;
-  const pos = new Float32Array(n * 2);
-  const geneIdxs = new Uint16Array(n);
-  let off = 0;
-  for (const batch of tbl.batches) {
-    const xs = batch.getChildAt(0), ys = batch.getChildAt(1), fs = batch.getChildAt(2);
-    for (let i = 0; i < batch.numRows; i++) {
-      pos[off*2]    = xs.get(i);
-      pos[off*2+1]  = ys.get(i);
-      geneIdxs[off] = state.geneIndex.get(fs.get(i)) ?? 0;
-      off++;
+// ── LZ4 decompressor for hyparquet ───────────────────────────────────────────
+// Parquet LZ4 codec uses "LZ4 Hadoop" format: 4-byte BE uncompressed size +
+// 4-byte BE compressed size + raw LZ4 block. hyparquet passes the full page
+// bytes with no pre-stripping.
+function _lz4BlockDecompress(src, dstSize) {
+  const dst = new Uint8Array(dstSize);
+  let si = 0, di = 0;
+  while (si < src.length) {
+    const tok = src[si++];
+    let litLen = tok >>> 4;
+    if (litLen === 15) { let x; do { x = src[si++]; litLen += x; } while (x === 255); }
+    for (let k = 0; k < litLen; k++) dst[di++] = src[si++];
+    if (si >= src.length) break;
+    const offset = src[si] | (src[si + 1] << 8); si += 2;
+    let matchLen = (tok & 0xf) + 4;
+    if ((tok & 0xf) === 15) { let x; do { x = src[si++]; matchLen += x; } while (x === 255); }
+    let mp = di - offset;
+    for (let k = 0; k < matchLen; k++) dst[di++] = dst[mp++];
+  }
+  return dst;
+}
+const _lz4Compressors = {
+  LZ4: (input, outputLength) => {
+    const v = new DataView(input.buffer, input.byteOffset, input.byteLength);
+    const data = v.getUint32(0, false) === outputLength ? input.subarray(8) : input;
+    return _lz4BlockDecompress(data, outputLength);
+  }
+};
+
+// ── Range buffer ──────────────────────────────────────────────────────────────
+// asyncBufferFromUrl makes a HEAD request to get file size, which hangs in
+// Positron's webview. Instead, issue a GET range request for the last 8 bytes:
+// the 206 response includes Content-Range: bytes X-Y/Total, giving us the size
+// without a HEAD. Falls back to full download if range requests aren't supported.
+async function _rangeBuffer(url) {
+  // Probe with bytes=0-0: universally supported, and the Content-Range response
+  // header gives the total file size without a HEAD request or negative offset.
+  const probe = await fetch(url, { headers: { Range: 'bytes=0-0', ..._RAW } });
+  if (probe.status === 206) {
+    const cr = probe.headers.get('content-range') ?? '';
+    const byteLength = parseInt(cr.split('/')[1]);
+    await probe.body?.cancel();
+    if (byteLength > 0) {
+      return {
+        byteLength,
+        slice: async (start, end) => {
+          const e = end ?? byteLength;
+          const rng = await fetch(url, { headers: { Range: `bytes=${start}-${e - 1}`, ..._RAW } });
+          return rng.arrayBuffer();
+        }
+      };
     }
+  }
+  // Server doesn't support range requests — full download fallback
+  const ab = probe.status === 200
+    ? await probe.arrayBuffer()
+    : await fetch(url, { headers: _RAW }).then(x => x.arrayBuffer());
+  return { byteLength: ab.byteLength, slice: (s, e) => ab.slice(s, e) };
+}
+
+// ── Transcript tile fetch ─────────────────────────────────────────────────────
+// Uses hyparquet with HTTP range requests — downloads only the 3 needed
+// columns instead of the full ~26 MB file (which contains hundreds of gene
+// expression columns). Fully parallel; bypasses DuckDB WASM entirely.
+export async function fetchTranscriptTile(url) {
+  const file = await _rangeBuffer(url);
+  const rows = await parquetReadObjects({
+    file,
+    columns:     ['x_index', 'y_index', 'feat_ID'],
+    compressors: _lz4Compressors,
+  });
+  const n = rows?.length ?? 0;
+  const pos      = new Float32Array(n * 2);
+  const geneIdxs = new Uint16Array(n);
+  for (let i = 0; i < n; i++) {
+    pos[i * 2]     = rows[i].x_index;
+    pos[i * 2 + 1] = rows[i].y_index;
+    geneIdxs[i]    = state.geneIndex.get(rows[i].feat_ID) ?? 0;
   }
   return { pos, geneIdxs };
 }
