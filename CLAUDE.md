@@ -3,15 +3,18 @@
 ## What this is
 A static spatial biology viewer for GiottoDisk-backed data. Two R functions launch a local HTTP server and open a deck.gl + DuckDB WASM viewer in the browser with bidirectional R communication via WebSocket.
 
-## CDN package versions (main branch — no build step)
-| Package | Version | CDN |
-|---|---|---|
-| `@duckdb/duckdb-wasm` | 1.29.0 | jsdelivr |
-| `hyparquet` | 1.25.8 (`@1`) | jsdelivr |
-| `deck.gl` | 9.1.0 | unpkg |
-| `@uwdata/vgplot` | 0.25.0 | esm.sh |
-| `lucide` | 1.14.0 | unpkg |
-| `split.js` | 1.6.5 | jsdelivr |
+## npm dependencies (pinned in `inst/viewer-src/package.json`)
+| Package | Version |
+|---|---|
+| `@duckdb/duckdb-wasm` | 1.29.0 |
+| `hyparquet` | 1.25.8 |
+| `deck.gl` | 9.3.2 |
+| `@luma.gl/core` / `engine` / `webgl` | 9.3.3 |
+| `@uwdata/vgplot` | 0.25.0 |
+| `lucide` | 1.14.0 |
+| `split.js` | 1.6.5 |
+
+The DuckDB WASM binary (40 MB) is committed to `inst/viewer/assets/` and served locally — no CDN needed at runtime.
 
 ## Package structure
 ```
@@ -20,33 +23,54 @@ GiottoLens/
 │   ├── export.R      # export_manifest() — generates manifest.json from GiottoDisk stores
 │   └── launch.R      # serve_lens(), launch_lens(), LensServer, LensViewer R6 classes
 ├── inst/
-│   └── viewer/       # ALL viewer JS/HTML files live here (not viewer/ at root)
+│   ├── viewer-src/   # Vite source — edit JS here, then npm run build
+│   │   ├── index.html
+│   │   ├── main.js       # bootstrap, updateTiles, event wiring
+│   │   ├── state.js      # single shared mutable state object
+│   │   ├── constants.js  # zoom thresholds, palette, limits
+│   │   ├── data.js       # DuckDB connections, tile fetching, caching
+│   │   ├── overview.js   # density grid, gene overview queries
+│   │   ├── render.js     # renderLayers() only
+│   │   ├── panel.js      # gene list UI
+│   │   ├── scatter.js    # scatter plot panels
+│   │   ├── annotations.js
+│   │   ├── mosaic.js     # vgplot/Mosaic coordination
+│   │   ├── coordination.js
+│   │   ├── input.js
+│   │   ├── ui.js
+│   │   ├── comms.js      # WebSocket to R
+│   │   ├── package.json
+│   │   └── vite.config.js
+│   └── viewer/       # built output — committed to git, served at runtime
 │       ├── index.html
-│       ├── main.js       # bootstrap, updateTiles, event wiring
-│       ├── state.js      # single shared mutable state object
-│       ├── constants.js  # zoom thresholds, palette, limits
-│       ├── data.js       # DuckDB connections, tile fetching, caching
-│       ├── overview.js   # density grid, gene overview queries
-│       ├── render.js     # renderLayers() only
-│       ├── panel.js      # gene list UI
-│       └── comms.js      # WebSocket to R
+│       └── assets/   # hashed JS bundle + DuckDB WASM
 └── DESCRIPTION
 ```
 
 ## Development workflow
 ```r
 # After editing R files:
-devtools::load_all()   # for R-only changes
-
-# After editing inst/viewer/ JS files:
-devtools::install()    # must reinstall for inst/ changes to take effect
-library(GiottoLens)
-
-# Launch:
-server <- serve_lens(gpoints, gpolygons)   # starts npx serve via processx
-viewer <- launch_lens(server)               # opens browser + WebSocket
-server$stop()                                # kill HTTP server (also auto-stops on session exit)
+devtools::load_all()
 ```
+
+```bash
+# After editing inst/viewer-src/ JS files:
+cd inst/viewer-src
+npm install          # first time only
+npm run build        # outputs to inst/viewer/
+```
+```r
+devtools::load_all() # picks up the new inst/viewer/ build
+```
+
+```r
+# Launch:
+server <- serve_lens(gpoints, gpolygons)   # starts httpuv server
+viewer <- launch_lens(server)               # opens browser + WebSocket
+server$stop()                               # kill HTTP server (also auto-stops on session exit)
+```
+
+**Remember to commit `inst/viewer/` after rebuilding** — it is the built artifact that ships with the package. `inst/viewer-src/node_modules/` is gitignored.
 
 ## Key conventions
 

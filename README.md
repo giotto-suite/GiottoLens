@@ -88,11 +88,11 @@ R side                          Browser
 ──────                          ───────
 launch_lens()                   deck.gl 9 (OrthographicView, Y-up)
   └─ httpuv (port 3000)         DuckDB WASM (3 connections)
-      ├─ HTTP staticPath  ──►   inst/viewer/  (no build step)
+      ├─ HTTP staticPath  ──►   inst/viewer/  (Vite bundle + DuckDB WASM)
       └─ WebSocket        ◄──►  comms.js  (selection, annotations)
 ```
 
-- **No build toolchain** — the viewer is plain ES modules served directly from `inst/viewer/`
+- **Self-contained** — all JS and the DuckDB WASM binary are bundled into `inst/viewer/`; no CDN or internet access required at runtime
 - **Data** — GiottoDisk hive-partitioned parquet tiles; DuckDB uses HTTP range requests against the parquet footer for sub-tile queries
 - **Coordinates** — local micron space; `OrthographicView` with `flipY: false` (Y-up, matching GiottoDisk storage convention)
 - **Manifest** — `lens/manifest.json` generated at export time contains tile bounding boxes, gene list, and pre-computed overview data; fetched once at startup
