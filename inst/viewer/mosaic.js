@@ -1,4 +1,4 @@
-import * as vg from 'https://esm.sh/@uwdata/vgplot';
+import * as vg from 'https://esm.sh/@uwdata/vgplot@0.25.0';
 import { state }        from './state.js';
 import { createScatterPanel } from './scatter.js';
 import { notify, onCoord } from './coordination.js';
