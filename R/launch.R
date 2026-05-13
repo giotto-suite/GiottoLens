@@ -43,7 +43,7 @@ launch_lens <- function(
 
     viewer_src   <- .viewer_src_dir()
     viewer_files <- list.files(viewer_src, full.names = TRUE)
-    copied <- file.copy(viewer_files, lens_dir, overwrite = TRUE)
+    copied <- file.copy(viewer_files, lens_dir, overwrite = TRUE, recursive = TRUE)
     if (!all(copied))
         warning("Some viewer files failed to copy: ",
                 paste(basename(viewer_files[!copied]), collapse = ", "))
@@ -58,7 +58,7 @@ launch_lens <- function(
     existing     <- list.files(lens_dir, full.names = FALSE)
     stale        <- setdiff(existing, viewer_names)
     stale        <- stale[!grepl("^manifest\\.json$|^metadata$", stale)]
-    if (length(stale)) file.remove(file.path(lens_dir, stale))
+    if (length(stale)) unlink(file.path(lens_dir, stale), recursive = TRUE)
 
     export_manifest(
         gpoints    = gpoints,
