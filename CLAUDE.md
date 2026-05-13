@@ -3,6 +3,16 @@
 ## What this is
 A static spatial biology viewer for GiottoDisk-backed data. Two R functions launch a local HTTP server and open a deck.gl + DuckDB WASM viewer in the browser with bidirectional R communication via WebSocket.
 
+## CDN package versions (main branch — no build step)
+| Package | Version | CDN |
+|---|---|---|
+| `@duckdb/duckdb-wasm` | 1.29.0 | jsdelivr |
+| `hyparquet` | 1.25.8 (`@1`) | jsdelivr |
+| `deck.gl` | 9.1.0 | unpkg |
+| `@uwdata/vgplot` | 0.25.0 | esm.sh |
+| `lucide` | 1.14.0 | unpkg |
+| `split.js` | 1.6.5 | jsdelivr |
+
 ## Package structure
 ```
 GiottoLens/
@@ -54,9 +64,26 @@ server$stop()                                # kill HTTP server (also auto-stops
 - All shared state lives in `state.js` as a single exported object — mutate via `state.foo = bar`
 - `loadTile()` takes an `onLoad` callback to avoid circular imports between `data.js` and `render.js`
 - `panel.js` uses `setToggleCallback()` for the same reason
-- DuckDB uses 3 connections: `conn` (transcripts), `overviewConn` (gene overview), `polyConn` (polygons)
+- DuckDB uses 3 connections: `conn` (transcripts — legacy, unused for tile loads), `overviewConn` (gene overview), `polyConn` (polygons + metadata)
 - Polygon geometry: `ST_AsGeoJSON(geom)` directly — DuckDB spatial auto-promotes GeoParquet GEOMETRY columns, do NOT use `ST_GeomFromWKB()`
 - Data caches: `txDirty/txBuild` and `polyDirty/polyBuild` — invalidate when tiles load/evict
+
+**Transcript tile loading — hyparquet, not DuckDB:**
+Transcript parquet files contain hundreds of gene expression columns (~20–35 MB each). We only need `x_index`, `y_index`, `feat_ID`. DuckDB could do column-selective range reads but requires `crossOriginIsolated = true` (SharedArrayBuffer + `Atomics.wait()`), which Positron's Electron webview never sets even with COOP/COEP headers. Instead, `fetchTranscriptTile` uses hyparquet (`parquetReadObjects`) with a custom `_rangeBuffer` that:
+1. Probes with `Range: bytes=0-0` (not HEAD, not `bytes=-8`) to get total size from `Content-Range`
+2. Makes targeted range requests for only the 3 column byte ranges (~5 MB vs ~26 MB)
+3. Passes `Accept-Encoding: identity` on all parquet fetches to prevent gzip encoding corrupting range responses
+4. Includes an inline LZ4 Hadoop decompressor (`_lz4BlockDecompress` + `_lz4Compressors`) — GiottoDisk writes LZ4-compressed parquet; hyparquet has no built-in LZ4 support
+Falls back to full download if server returns 200 instead of 206. Polygon tiles still use DuckDB + `registerFileBuffer` (needed for WKB geometry decoding via spatial extension).
+
+**Why not DuckDB for transcripts in Positron:**
+`crossOriginIsolated = false` in Positron's webview → DuckDB worker can't use `Atomics.wait()` → falls back to full-file HTTP read (allocates one contiguous malloc block per file) → crashes on large tiles. COOP/COEP headers don't fix this in Electron-based viewers.
+
+**httpuv server (R/launch.R):**
+- `Cache-Control: no-cache` + COOP/COEP headers on all staticPath responses
+- COOP: `same-origin`, COEP: `credentialless` (enables SharedArrayBuffer on main thread; doesn't fix Positron but needed for browser)
+- `.stamp_index()` injects a per-launch UID into `index.html` so its ETag changes every launch, preventing stale browser cache
+- Stale viewer file pruning: after copying, removes any files in lens/ not present in inst/viewer/
 
 ## Common mistakes to avoid
 - Do not use `ST_GeomFromWKB(geom)` — `geom` is already GEOMETRY type from GeoParquet metadata
