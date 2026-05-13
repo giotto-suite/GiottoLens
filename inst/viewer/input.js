@@ -4,38 +4,9 @@ import { getCachedPolyData }  from './data.js';
 import { notify, recomputeCrossFilter, sqlIds, clearFilters } from './coordination.js';
 import { sel }                from './mosaic.js';
 import { generateAnnotId, syncAnnotationsToR } from './annotations.js';
+import { clientToWorld, worldToClient, pointInPolygon } from './ui.js';
 
-// ── Coordinate helpers ────────────────────────────────────────────────────────
-function dataToScreen(dx, dy) {
-  const rect  = document.getElementById('deck-canvas').getBoundingClientRect();
-  const vs    = state.currentViewState;
-  const scale = Math.pow(2, vs.zoom);
-  const [cx, cy] = vs.target;
-  return [
-    rect.left + rect.width  / 2 + (dx - cx) * scale,
-    rect.top  + rect.height / 2 - (dy - cy) * scale,
-  ];
-}
-
-function canvasToData(clientX, clientY) {
-  const rect  = document.getElementById('deck-canvas').getBoundingClientRect();
-  const vs    = state.currentViewState;
-  const scale = Math.pow(2, vs.zoom);
-  const [cx, cy] = vs.target;
-  const x = cx + (clientX - rect.left - rect.width  / 2) / scale;
-  const y = cy - (clientY - rect.top  - rect.height / 2) / scale;
-  return [x, y];
-}
-
-function pointInPolygon(ring, x, y) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i], [xj, yj] = ring[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
-      inside = !inside;
-  }
-  return inside;
-}
+let _canvas = null; // set in initInput, used by exported functions above initInput scope
 
 function rulerDist(a, b) {
   const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -47,7 +18,7 @@ export function updateRulerLabel() {
   if (!label || !state.rulerStart || !state.rulerEnd) return;
   const mid = [(state.rulerStart[0] + state.rulerEnd[0]) / 2,
                (state.rulerStart[1] + state.rulerEnd[1]) / 2];
-  const [sx, sy] = dataToScreen(mid[0], mid[1]);
+  const [sx, sy] = worldToClient(mid[0], mid[1], _canvas, state.currentViewState);
   label.style.left = `${sx + 8}px`;
   label.style.top  = `${sy - 10}px`;
   label.textContent = rulerDist(state.rulerStart, state.rulerEnd);
@@ -64,7 +35,7 @@ export function updateTxConnector() {
   const ring = state.txLassoRing;
   const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length;
   const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-  const [sx, sy] = dataToScreen(cx, cy);
+  const [sx, sy] = worldToClient(cx, cy, _canvas, state.currentViewState);
   const rect     = panel.getBoundingClientRect();
   const paneRect = document.getElementById('spatial-pane').getBoundingClientRect();
   line.setAttribute('x1', sx - paneRect.left);
@@ -166,7 +137,8 @@ async function _runTxLasso(ring) {
 
 // ── Input initialization ──────────────────────────────────────────────────────
 export function initInput() {
-  const canvas = document.getElementById('deck-canvas');
+  _canvas = document.getElementById('deck-canvas');
+  const canvas = _canvas;
   let lassoDragged = false;
   let lassoLastPx  = null;
 
@@ -262,7 +234,7 @@ export function initInput() {
   // ── Canvas events ─────────────────────────────────────────────────────────
   canvas.addEventListener('click', e => {
     if (state.mode === 'ruler') {
-      const pt = canvasToData(e.clientX, e.clientY);
+      const pt = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
       if (!state.rulerStart || state.rulerLocked) {
         state.rulerStart  = pt;
         state.rulerEnd    = pt;
@@ -280,7 +252,7 @@ export function initInput() {
     const r      = canvas.getBoundingClientRect();
     const picked = state.deckgl.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
     if (picked?.layer?.id === 'annotations') return;
-    state.drawRing.push(canvasToData(e.clientX, e.clientY));
+    state.drawRing.push(clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState));
     renderLayers(state.currentViewState);
   });
 
@@ -300,7 +272,7 @@ export function initInput() {
   canvas.addEventListener('mousedown', e => {
     if (state.mode === 'brush') {
       state.brushDown = true;
-      state.brushPos  = canvasToData(e.clientX, e.clientY);
+      state.brushPos  = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
     } else if (state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') {
       if (state.mode === 'txlasso') {
         state.txLassoRing = null;
@@ -310,15 +282,15 @@ export function initInput() {
       lassoDragged = false;
       lassoLastPx  = [e.clientX, e.clientY];
       state.lassoActive = true;
-      state.lassoRing   = [canvasToData(e.clientX, e.clientY)];
+      state.lassoRing   = [clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState)];
     } else if (state.mode === 'rect') {
-      state.rectStart   = canvasToData(e.clientX, e.clientY);
+      state.rectStart   = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
       state.rectPreview = state.rectStart;
     }
   });
 
   canvas.addEventListener('mousemove', e => {
-    const coords  = canvasToData(e.clientX, e.clientY);
+    const coords  = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
 
@@ -351,10 +323,10 @@ export function initInput() {
       if (Math.hypot(dx, dy) < (state.mode === 'freehand' ? 20 : 5)) return;
       lassoLastPx = [e.clientX, e.clientY];
       lassoDragged = true;
-      state.lassoRing.push(canvasToData(e.clientX, e.clientY));
+      state.lassoRing.push(clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState));
       renderLayers(state.currentViewState);
     } else if (state.mode === 'rect' && state.rectStart) {
-      state.rectPreview = canvasToData(e.clientX, e.clientY);
+      state.rectPreview = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
       renderLayers(state.currentViewState);
     }
   });

@@ -2,6 +2,7 @@ import { state }  from './state.js';
 import { PALETTE } from './constants.js';
 import { sel, mc } from './mosaic.js';
 import { notify, onCoord, recomputeCrossFilter, clearFilters, sqlIds } from './coordination.js';
+import { clientToWorld, worldToClient, pointInPolygon } from './ui.js';
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 // Each call creates an independent scatter panel with its own deck.gl instance,
@@ -122,23 +123,6 @@ export function createScatterPanel(bodyId, metaCols) {
   }
 
   // ── Lasso + events ──────────────────────────────────────────────────────────
-  function _toData(canvas, clientX, clientY, getVS) {
-    const rect  = canvas.getBoundingClientRect();
-    const vs    = getVS();
-    const scale = Math.pow(2, vs.zoom);
-    const [cx, cy] = vs.target;
-    return [cx+(clientX-rect.left-rect.width/2)/scale, cy-(clientY-rect.top-rect.height/2)/scale];
-  }
-
-  function _pip(ring, x, y) {
-    let inside = false;
-    for (let i=0, j=ring.length-1; i<ring.length; j=i++) {
-      const [xi,yi]=ring[i], [xj,yj]=ring[j];
-      if ((yi>y)!==(yj>y) && x<((xj-xi)*(y-yi))/(yj-yi)+xi) inside=!inside;
-    }
-    return inside;
-  }
-
   function _attachEvents(canvas, getVS) {
     let mode = 'pan', ring = [], lastPx = null, dragged = false, lassoActive = false;
 
@@ -152,7 +136,7 @@ export function createScatterPanel(bodyId, metaCols) {
     canvas.addEventListener('mousedown', e => {
       if (mode !== 'lasso') return;
       dragged = false; lastPx = [e.clientX, e.clientY]; lassoActive = true;
-      ring = [_toData(canvas, e.clientX, e.clientY, getVS)];
+      ring = [clientToWorld(e.clientX, e.clientY, canvas, getVS())];
     });
 
     canvas.addEventListener('mousemove', e => {
@@ -160,7 +144,7 @@ export function createScatterPanel(bodyId, metaCols) {
       const dx = e.clientX-lastPx[0], dy = e.clientY-lastPx[1];
       if (Math.hypot(dx,dy) < 5) return;
       lastPx = [e.clientX, e.clientY]; dragged = true;
-      ring.push(_toData(canvas, e.clientX, e.clientY, getVS));
+      ring.push(clientToWorld(e.clientX, e.clientY, canvas, getVS()));
       _drawLasso(canvas, ring, getVS());
     });
 
@@ -171,7 +155,7 @@ export function createScatterPanel(bodyId, metaCols) {
         const closed = [...ring, ring[0]];
         const lassoSet = new Set();
         for (let i=0; i<_ids.length; i++)
-          if (_pip(closed, _pos[i*2], _pos[i*2+1])) lassoSet.add(_ids[i]);
+          if (pointInPolygon(closed, _pos[i*2], _pos[i*2+1])) lassoSet.add(_ids[i]);
         if (state.crossFilter) {
           state.scatterFilter = lassoSet;
           recomputeCrossFilter();
@@ -202,13 +186,12 @@ export function createScatterPanel(bodyId, metaCols) {
     return svg;
   }
   function _drawLasso(canvas, ring, vs) {
-    const svg = _getOverlay(canvas);
+    const svg  = _getOverlay(canvas);
     const rect = canvas.getBoundingClientRect();
-    const scale = Math.pow(2, vs.zoom), [cx,cy] = vs.target;
-    const pts = ring.map(([dx,dy]) => [
-      rect.width/2  + (dx-cx)*scale,
-      rect.height/2 - (dy-cy)*scale,
-    ]).map(([x,y]) => `${x},${y}`).join(' ');
+    const pts  = ring.map(([dx, dy]) => {
+      const [sx, sy] = worldToClient(dx, dy, canvas, vs);
+      return `${sx - rect.left},${sy - rect.top}`;
+    }).join(' ');
     svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="rgba(100,200,255,0.8)" stroke-width="1.5"/>`;
   }
   function _clearLasso(canvas) {

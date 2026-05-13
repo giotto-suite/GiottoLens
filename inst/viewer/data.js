@@ -51,33 +51,21 @@ async function _loadParquet(url) {
 function _dropParquet(name) { state.db.dropFile(name).catch(() => {}); }
 
 // ── Polygon tile fetch ────────────────────────────────────────────────────────
-async function _fetchPolyWithId(name, idCol) {
-  const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
-  const sel   = `${idCol} AS _id, x_index, y_index, ${gjSel}`;
-  const tbl   = await state.polyConn.query(`SELECT ${sel} FROM read_parquet('${name}')`);
+async function _fetchPoly(name, idCol) {
+  const gjSel   = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
+  const hasId   = idCol != null;
+  const selList = hasId ? `${idCol} AS _id, x_index, y_index, ${gjSel}` : `x_index, y_index, ${gjSel}`;
+  const tbl     = await state.polyConn.query(`SELECT ${selList} FROM read_parquet('${name}')`);
   const polys = [], cx = [], ids = [];
   for (const batch of tbl.batches) {
-    const idB = batch.getChildAt(0), xs = batch.getChildAt(1), ys = batch.getChildAt(2), gs = batch.getChildAt(3);
+    const off = hasId ? 1 : 0;
+    const idB = hasId ? batch.getChildAt(0) : null;
+    const xs  = batch.getChildAt(off), ys = batch.getChildAt(off + 1), gs = batch.getChildAt(off + 2);
     for (let i = 0; i < batch.numRows; i++) {
-      const id = idB.get(i);
+      const id = idB ? idB.get(i) : null;
       cx.push(xs.get(i), ys.get(i));
       ids.push(id);
       _parsePolyGeom(gs.get(i), id, polys);
-    }
-  }
-  return { polys, centroids: new Float32Array(cx), ids };
-}
-
-async function _fetchPolyNoId(name) {
-  const gjSel = state.spatialLoaded ? 'ST_AsWKB(geom) AS gj' : 'geom AS gj';
-  const tbl   = await state.polyConn.query(`SELECT x_index, y_index, ${gjSel} FROM read_parquet('${name}')`);
-  const polys = [], cx = [], ids = [];
-  for (const batch of tbl.batches) {
-    const xs = batch.getChildAt(0), ys = batch.getChildAt(1), gs = batch.getChildAt(2);
-    for (let i = 0; i < batch.numRows; i++) {
-      cx.push(xs.get(i), ys.get(i));
-      ids.push(null);
-      _parsePolyGeom(gs.get(i), null, polys);
     }
   }
   return { polys, centroids: new Float32Array(cx), ids };
@@ -97,12 +85,12 @@ export async function fetchPolygonTile(url) {
     const idCol = state.manifest?.layers?.polygons?.id_col;
     if (idCol && !state.polyIdColFailed) {
       try {
-        return await _fetchPolyWithId(name, idCol);
+        return await _fetchPoly(name, idCol);
       } catch (_) {
         state.polyIdColFailed = true;
       }
     }
-    return await _fetchPolyNoId(name);
+    return await _fetchPoly(name, null);
   } finally {
     _dropParquet(name);
   }

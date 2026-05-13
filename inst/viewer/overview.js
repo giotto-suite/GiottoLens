@@ -93,7 +93,7 @@ export function buildCompositeOverview() {
     if (!data) continue;
     const { col, row, n } = data;
     for (let i = 0; i < n.length; i++) {
-      const key = col[i] * 100000 + row[i];
+      const key = `${col[i]}_${row[i]}`;
       const ex  = cellSum.get(key);
       if (ex) ex.sum += n[i];
       else cellSum.set(key, { sum: n[i], col: col[i], row: row[i] });
