@@ -15,6 +15,9 @@
 #' @param port       Port for the HTTP + WebSocket server (default: 3000).
 #' @param url_prefix Override the base URL (default: `http://localhost:{port}`).
 #' @param open       Open browser / viewer pane automatically (default: `TRUE`).
+#' @param clean      Delete the lens directory before copying viewer files
+#'   (default: `FALSE`).  Use `TRUE` when switching package versions to
+#'   guarantee a fresh deployment without stale assets.
 #' @return An [LensViewer] object; call `$close()` to stop the server.
 #' @export
 launch_lens <- function(
@@ -24,7 +27,8 @@ launch_lens <- function(
     spat_unit  = "cell",
     port       = 3000L,
     url_prefix = paste0("http://localhost:", port),
-    open       = TRUE
+    open       = TRUE,
+    clean      = FALSE
 ) {
     if (inherits(x, "giotto")) {
         gpoints   <- x@feat_info[[feat_type]]
@@ -34,6 +38,7 @@ launch_lens <- function(
     }
     serve_root <- .derive_serve_root(gpoints, gpolygons)
     lens_dir   <- file.path(serve_root, "lens")
+    if (clean && dir.exists(lens_dir)) unlink(lens_dir, recursive = TRUE)
     dir.create(lens_dir, recursive = TRUE, showWarnings = FALSE)
 
     viewer_src   <- .viewer_src_dir()
@@ -42,6 +47,18 @@ launch_lens <- function(
     if (!all(copied))
         warning("Some viewer files failed to copy: ",
                 paste(basename(viewer_files[!copied]), collapse = ", "))
+
+    # Stamp a per-launch UID into index.html so its ETag changes every time,
+    # preventing the browser from serving a cached copy from a prior session.
+    .stamp_index(file.path(lens_dir, "index.html"))
+
+    # Remove stale viewer files left over from a previous install.
+    # Exclude manifest.json and metadata/ which are written at runtime.
+    viewer_names <- basename(viewer_files)
+    existing     <- list.files(lens_dir, full.names = FALSE)
+    stale        <- setdiff(existing, viewer_names)
+    stale        <- stale[!grepl("^manifest\\.json$|^metadata$", stale)]
+    if (length(stale)) file.remove(file.path(lens_dir, stale))
 
     export_manifest(
         gpoints    = gpoints,
@@ -316,6 +333,24 @@ LensViewer <- R6::R6Class("LensViewer",
 }
 
 .random_port <- function() sample(49152L:65535L, 1L)
+
+.stamp_index <- function(path) {
+    if (!file.exists(path)) return(invisible(NULL))
+    uid  <- paste0(format(Sys.time(), "%Y%m%dT%H%M%S"), "-",
+                   paste(sample(c(letters, 0:9), 6L), collapse = ""))
+    html <- readLines(path, warn = FALSE)
+    tag  <- sprintf('  <meta name="lens-build" content="%s">', uid)
+    idx  <- grep('<meta name="lens-build"', html, fixed = TRUE)
+    if (length(idx)) {
+        html[idx[[1L]]] <- tag
+    } else {
+        head_idx <- grep("<head>", html, fixed = TRUE)
+        if (length(head_idx))
+            html <- append(html, tag, after = head_idx[[1L]])
+    }
+    writeLines(html, path)
+    invisible(uid)
+}
 
 # Convert polygon input to a list of {id, name, coords} for push_polygons.
 # Accepts terra SpatVector (preferred), sf object, or WKT character vector.
