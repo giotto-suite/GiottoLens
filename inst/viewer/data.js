@@ -95,11 +95,11 @@ export async function fetchPolygonTile(url) {
   const name = await _loadParquet(url);
   try {
     const idCol = state.manifest?.layers?.polygons?.id_col;
-    if (idCol) {
+    if (idCol && !state.polyIdColFailed) {
       try {
         return await _fetchPolyWithId(name, idCol);
       } catch (_) {
-        state.manifest.layers.polygons.id_col = null;
+        state.polyIdColFailed = true;
       }
     }
     return await _fetchPolyNoId(name);

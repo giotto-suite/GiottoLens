@@ -16,6 +16,7 @@ export const state = {
   pending:   new Set(),
   cancelled: new Set(),
   failed:    new Set(),   // transcript tiles that errored — no retry
+  polyIdColFailed: false, // set true when id_col from manifest doesn't exist in parquet
 
   // Gene selection
   selectedGenes:    new Set(),
