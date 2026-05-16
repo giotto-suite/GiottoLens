@@ -2,6 +2,7 @@ import { state } from './state.js';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from './constants.js';
 import { getCachedTxData, getCachedPolyData } from './data.js';
 import { notify } from './coordination.js';
+import { showCellTooltip, hideCellTooltip } from './tooltip.js';
 import { SolidPolygonLayer, PolygonLayer, ScatterplotLayer, PathLayer } from 'deck.gl';
 
 export function renderLayers(viewState) {
@@ -35,6 +36,12 @@ export function renderLayers(viewState) {
   // Centroids always visible once tiles load; outlines replace them above polygon threshold
   if (state.showPoly && state.alphaPoly > 0) {
     const polyData = getCachedPolyData();
+    const onHoverCell = (info) => {
+      if (!info.picked || info.index < 0) { hideCellTooltip(); return; }
+      const id = info.object?.id ?? polyData?.ids?.[info.index];
+      if (id == null) { hideCellTooltip(); return; }
+      showCellTooltip(id, info.x, info.y);
+    };
     if (polyZoneOk && polyData?.polys?.length) {
       layers.push(new PolygonLayer({
         id: 'poly-outline',
@@ -51,6 +58,8 @@ export function renderLayers(viewState) {
         getLineWidth: d => d.id != null && state.selectedCells.has(d.id) ? 2 : 1,
         lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
         opacity: state.alphaPoly,
+        pickable: true,
+        onHover: onHoverCell,
         updateTriggers: {
           getFillColor: state.metaCol,
           getLineColor: state.selVersion,
@@ -70,6 +79,8 @@ export function renderLayers(viewState) {
         },
         getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
         opacity: state.alphaPoly,
+        pickable: true,
+        onHover: onHoverCell,
         updateTriggers: { getFillColor: [state.selVersion, state.metaCol] },
       }));
     }

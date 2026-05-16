@@ -5,6 +5,7 @@ import { notify, recomputeCrossFilter, sqlIds, clearFilters } from './coordinati
 import { sel }                from './mosaic.js';
 import { generateAnnotId, syncAnnotationsToR } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon } from './ui.js';
+import { hideCellTooltip } from './tooltip.js';
 
 let _canvas = null; // set in initInput, used by exported functions above initInput scope
 
@@ -269,7 +270,10 @@ export function initInput() {
     renderLayers(state.currentViewState);
   });
 
+  canvas.addEventListener('mouseleave', () => hideCellTooltip());
+
   canvas.addEventListener('mousedown', e => {
+    hideCellTooltip();
     if (state.mode === 'brush') {
       state.brushDown = true;
       state.brushPos  = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
@@ -399,7 +403,27 @@ export function initInput() {
     if (coordEl) coordEl.textContent = '';
   });
 
+  function _scatterToPan() {
+    document.querySelectorAll('#stats-column canvas').forEach(c => {
+      if (typeof c._setMode !== 'function') return;
+      c._setMode('pan');
+      c.closest('.stats-pane-body')?.querySelector('.tool-btn[title="pan"]')
+        ?.classList.add('active');
+      c.closest('.stats-pane-body')?.querySelector('.tool-btn[title="lasso"]')
+        ?.classList.remove('active');
+    });
+  }
+
   document.addEventListener('keydown', e => {
+    const inInput = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+
+    if (e.code === 'Space' && !e.repeat && !inInput) {
+      e.preventDefault();
+      if (state.mode !== 'pan') setMode('pan');
+      _scatterToPan();
+      return;
+    }
+
     if (e.key === 'Escape') {
       state.drawRing    = [];
       state.lassoRing   = [];
@@ -408,15 +432,28 @@ export function initInput() {
       state.rectPreview = null;
       state.selectedAnnotId = null;
       notify('annotSelect');
+      _scatterToPan();
       if (state.mode !== 'pan') setMode('pan');
       else renderLayers(state.currentViewState);
     }
-    if (state.mode === 'brush' && document.activeElement?.id !== 'annot-name') {
+    if (!inInput) {
+      if (e.key === 'c') {
+        clearFilters();
+      }
+      if (e.key === 'x') {
+        state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
+        document.getElementById('ruler-label')?.classList.remove('visible');
+        state.txLassoRing = null;
+        document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+        updateTxConnector();
+        renderLayers(state.currentViewState);
+      }
+    }
+    if (state.mode === 'brush' && !inInput) {
       if (e.key === '[') { state.brushRadius = Math.max(8,   state.brushRadius - 5); renderLayers(state.currentViewState); }
       if (e.key === ']') { state.brushRadius = Math.min(300, state.brushRadius + 5); renderLayers(state.currentViewState); }
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedAnnotId
-        && document.activeElement?.id !== 'annot-name') {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedAnnotId && !inInput) {
       state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotId);
       state.selectedAnnotId = null;
       notify('annotSelect');
@@ -425,4 +462,5 @@ export function initInput() {
       e.preventDefault();
     }
   });
+
 }

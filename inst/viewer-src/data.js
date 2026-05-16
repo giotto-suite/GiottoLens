@@ -349,6 +349,35 @@ export async function buildMetaColors() {
   }
 }
 
+// Cache full cell_meta as a JS Map for instant hover lookup.
+// Called once after metadata is loaded. ~170k cells × ~20 cols is a few MB.
+export async function buildCellMetaCache() {
+  try {
+    const tbl = await state.polyConn.query(`SELECT * FROM cell_meta`);
+    const colNames = tbl.schema.fields.map(f => f.name);
+    const idColIdx = colNames.indexOf('cell_ID');
+    if (idColIdx < 0) { state.cellMetaCache = null; return; }
+    const cache = new Map();
+    for (const batch of tbl.batches) {
+      const cols = colNames.map((_, i) => batch.getChildAt(i));
+      for (let i = 0; i < batch.numRows; i++) {
+        const id = cols[idColIdx].get(i);
+        if (id == null) continue;
+        const row = {};
+        for (let c = 0; c < colNames.length; c++) {
+          if (c === idColIdx) continue;
+          row[colNames[c]] = cols[c].get(i);
+        }
+        cache.set(id, row);
+      }
+    }
+    state.cellMetaCache = cache;
+  } catch (e) {
+    console.warn('buildCellMetaCache failed:', e);
+    state.cellMetaCache = null;
+  }
+}
+
 function updateStatus() {
   const $s = document.getElementById('status');
   if ($s) $s.textContent = state.pending.size

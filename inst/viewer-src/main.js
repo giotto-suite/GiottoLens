@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { TRANSCRIPT_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
-import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, buildMetaColors } from './data.js';
+import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, buildMetaColors, buildCellMetaCache } from './data.js';
 import { geneSelectionKey, getManifestOverviewBins, updateGeneOverview } from './overview.js';
 import { renderLayers } from './render.js';
 import { renderGeneList, setToggleCallback } from './panel.js';
@@ -289,6 +289,7 @@ async function main() {
       document.getElementById('meta-panel').style.display = '';
     }
     if (state.metaCol) { await buildMetaColors(); notify('metaColors'); }
+    await buildCellMetaCache();
     await loadMetaIntoMosaic(fullUrl);
     initMosaicPanels(state.metaCols);
   });

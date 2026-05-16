@@ -130,6 +130,7 @@ export function createScatterPanel(bodyId, metaCols) {
 
     canvas._setMode = m => {
       mode = m;
+      if (m !== 'lasso') { lassoActive = false; ring = []; _clearLasso(canvas); }
       _deck?.setProps({ controller: m==='lasso'
         ? { dragPan:false, doubleClickZoom:false }
         : { doubleClickZoom:false } });
