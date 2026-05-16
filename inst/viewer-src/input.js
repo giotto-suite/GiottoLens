@@ -191,6 +191,19 @@ export function initInput() {
     }
   });
 
+  document.getElementById('btn-screenshot')?.addEventListener('click', () => {
+    if (!state.deckgl) return;
+    state.deckgl.redraw('screenshot');
+    const canvas = document.getElementById('deck-canvas');
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `giottolens-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
   // ── Meta-select panel ─────────────────────────────────────────────────────
   const $metaSelPanel = document.getElementById('meta-sel-panel');
   document.getElementById('tool-meta-sel')?.addEventListener('click', () => {
