@@ -158,7 +158,12 @@ LensViewer <- R6::R6Class("LensViewer",
             id_col      <- gsub("[^A-Za-z0-9_]", "_", id_col)
             meta_dir <- file.path(private$root, "lens", "metadata")
             dir.create(meta_dir, recursive = TRUE, showWarnings = FALSE)
-            path <- file.path(meta_dir, "cell_meta.parquet")
+            # A fresh file name per push: DuckDB WASM caches what it learned
+            # about a URL, so re-reading an overwritten file returns the old table
+            unlink(list.files(meta_dir, pattern = "^cell_meta.*\\.parquet$",
+                full.names = TRUE))
+            fname <- sprintf("cell_meta_%.0f.parquet", as.numeric(Sys.time()) * 1000)
+            path <- file.path(meta_dir, fname)
             arrow::write_parquet(meta, path)
             # Classify each column so JS doesn't have to guess
             data_cols <- setdiff(names(meta), id_col)
@@ -168,7 +173,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 if (is.integer(v)) return("categorical")
                 "continuous"
             }, character(1L))
-            meta_msg <- list(url = "/lens/metadata/cell_meta.parquet",
+            meta_msg <- list(url = paste0("/lens/metadata/", fname),
                              types = as.list(col_types))
             private$cached_meta <- meta_msg
             self$send("load_metadata", meta_msg)
