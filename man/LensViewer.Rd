@@ -4,184 +4,201 @@
 \alias{LensViewer}
 \title{Combined HTTP + WebSocket server returned by [launch_lens()]}
 \description{
-Combined HTTP + WebSocket server returned by [launch_lens()]
-
-Combined HTTP + WebSocket server returned by [launch_lens()]
-}
-\details{
 File serving uses httpuv's C++ `staticPath` handler — concurrent and
 Range-aware without touching R's event loop.  WebSocket messages (selection,
 annotations) are dispatched to the main R thread and update public fields
 directly.
 }
 \section{Public fields}{
-\if{html}{\out{<div class="r6-fields">}}
-\describe{
-\item{\code{port}}{Server port}
+  \if{html}{\out{<div class="r6-fields">}}
+  \describe{
+    \item{\code{port}}{Server port}
 
-\item{\code{url_prefix}}{Base URL}
+    \item{\code{url_prefix}}{Base URL}
 
-\item{\code{selection}}{Character vector of selected cell IDs; updated on each lasso}
+    \item{\code{selection}}{Character vector of selected cell IDs; updated on each lasso}
 
-\item{\code{annotations}}{List of GeoJSON strings from drawn polygons}
-}
-\if{html}{\out{</div>}}
+    \item{\code{annotations}}{List of GeoJSON strings from drawn polygons}
+  }
+  \if{html}{\out{</div>}}
 }
 \section{Methods}{
 \subsection{Public methods}{
-\itemize{
-\item \href{#method-LensViewer-new}{\code{LensViewer$new()}}
-\item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
-\item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
-\item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
-\item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
-\item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
-\item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
-\item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
-\item \href{#method-LensViewer-clone}{\code{LensViewer$clone()}}
-}
+  \itemize{
+    \item \href{#method-LensViewer-initialize}{\code{LensViewer$new()}}
+    \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
+    \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
+    \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
+    \item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
+    \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
+    \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
+    \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
+    \item \href{#method-LensViewer-clone}{\code{LensViewer$clone()}}
+  }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-new"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-new}{}}}
-\subsection{Method \code{new()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$new(serve_root, port, url_prefix)}\if{html}{\out{</div>}}
+\if{html}{\out{<a id="method-LensViewer-initialize"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-initialize}{}}}
+\subsection{\code{LensViewer$new()}}{
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$new(serve_root, port, url_prefix)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{port}}{Server port}
+      \item{\code{url_prefix}}{Base URL}
+    }
+    \if{html}{\out{</div>}}
+  }
 }
 
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-send"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-send}{}}}
-\subsection{Method \code{send()}}{
-Send a typed message to the viewer
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$send(type, data = NULL)}\if{html}{\out{</div>}}
+\subsection{\code{LensViewer$send()}}{
+  Send a typed message to the viewer
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$send(type, data = NULL)}
+    \if{html}{\out{</div>}}
+  }
 }
 
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-push_metadata"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-push_metadata}{}}}
-\subsection{Method \code{push_metadata()}}{
-Push cell metadata to the viewer for polygon coloring
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_metadata(
+\subsection{\code{LensViewer$push_metadata()}}{
+  Push cell metadata to the viewer for polygon coloring
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$push_metadata(
   x,
   cols = NULL,
   dimreds = NULL,
   dims = 1:2,
   spat_unit = "cell",
   feat_type = "rna"
-)}\if{html}{\out{</div>}}
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{x}}{A giotto object, or a data.frame / output of [prep_meta()]}
+      \item{\code{cols}}{Columns to include (NULL = all; ignored when x is a data.frame).
+A named list such as `list(leiden_clus = "categorical")` also sets
+each column's type; see [prep_meta()]}
+      \item{\code{dimreds}}{Dimension reduction names to include, e.g. `c("umap","tsne")`}
+      \item{\code{dims}}{Axes to pull from each reduction (default `1:2`)}
+      \item{\code{spat_unit}}{Spatial unit key (default `"cell"`)}
+      \item{\code{feat_type}}{Feature type key for dim reds (default `"rna"`)}
+    }
+    \if{html}{\out{</div>}}
+  }
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{x}}{A giotto object, or a data.frame / output of [prep_meta()]}
-
-\item{\code{cols}}{Columns to include (NULL = all; ignored when x is a data.frame)}
-
-\item{\code{dimreds}}{Dimension reduction names to include, e.g. `c("umap","tsne")`}
-
-\item{\code{dims}}{Axes to pull from each reduction (default `1:2`)}
-
-\item{\code{spat_unit}}{Spatial unit key (default `"cell"`)}
-
-\item{\code{feat_type}}{Feature type key for dim reds (default `"rna"`)}
-}
-\if{html}{\out{</div>}}
-}
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_selection"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_selection}{}}}
-\subsection{Method \code{set_selection()}}{
-Push a selection of cell IDs to the viewer.
+\subsection{\code{LensViewer$set_selection()}}{
+  Push a selection of cell IDs to the viewer.
   If cross-filter mode is active it will be turned off so the
   pushed selection is shown directly without intersection.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$set_selection(ids)}\if{html}{\out{</div>}}
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_selection(ids)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{ids}}{Character vector of cell IDs to select (empty vector clears).}
+    }
+    \if{html}{\out{</div>}}
+  }
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{ids}}{Character vector of cell IDs to select (empty vector clears).}
-}
-\if{html}{\out{</div>}}
-}
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-push_polygons"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-push_polygons}{}}}
-\subsection{Method \code{push_polygons()}}{
-Push polygon overlays from R into the viewer.
+\subsection{\code{LensViewer$push_polygons()}}{
+  Push polygon overlays from R into the viewer.
   Polygons are rendered as a semi-transparent layer above the overview
   and below cell outlines.  Useful for spatial domains, tissue regions,
   or any custom geometry in the same coordinate space as the data.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$push_polygons(x, names = NULL)}\if{html}{\out{</div>}}
-}
-
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{x}}{A `terra::SpatVector`, `sf` object, or character vector
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$push_polygons(x, names = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{x}}{A `terra::SpatVector`, `sf` object, or character vector
 of WKT strings — all with POLYGON/MULTIPOLYGON geometries in the
 same coordinate space as the spatial data.}
-
-\item{\code{names}}{Optional character vector of names (one per row).
+      \item{\code{names}}{Optional character vector of names (one per row).
 Falls back to an `x$name` column if present, else blank.}
+    }
+    \if{html}{\out{</div>}}
+  }
 }
-\if{html}{\out{</div>}}
-}
-}
+
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-on"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-on}{}}}
-\subsection{Method \code{on()}}{
-Register a callback for a viewer message type
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$on(type, callback)}\if{html}{\out{</div>}}
+\subsection{\code{LensViewer$on()}}{
+  Register a callback for a viewer message type
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$on(type, callback)}
+    \if{html}{\out{</div>}}
+  }
 }
 
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-close"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-close}{}}}
-\subsection{Method \code{close()}}{
-Stop the HTTP + WebSocket server
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$close()}\if{html}{\out{</div>}}
+\subsection{\code{LensViewer$close()}}{
+  Stop the HTTP + WebSocket server
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$close()}
+    \if{html}{\out{</div>}}
+  }
 }
 
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-print"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-print}{}}}
-\subsection{Method \code{print()}}{
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$print(...)}\if{html}{\out{</div>}}
+\subsection{\code{LensViewer$print()}}{
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$print(...)}
+    \if{html}{\out{</div>}}
+  }
 }
 
-}
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-clone"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-clone}{}}}
-\subsection{Method \code{clone()}}{
-The objects of this class are cloneable with this method.
-\subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{LensViewer$clone(deep = FALSE)}\if{html}{\out{</div>}}
+\subsection{\code{LensViewer$clone()}}{
+  The objects of this class are cloneable with this method.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$clone(deep = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{deep}}{Whether to make a deep clone.}
+    }
+    \if{html}{\out{</div>}}
+  }
 }
 
-\subsection{Arguments}{
-\if{html}{\out{<div class="arguments">}}
-\describe{
-\item{\code{deep}}{Whether to make a deep clone.}
-}
-\if{html}{\out{</div>}}
-}
-}
 }

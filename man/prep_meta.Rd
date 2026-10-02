@@ -16,8 +16,14 @@ prep_meta(
 \arguments{
 \item{x}{A giotto object.}
 
-\item{cols}{Character vector of metadata columns to include.
-`NULL` (default) includes all columns.}
+\item{cols}{Metadata columns to include. `NULL` (default) includes
+all columns. A character vector selects columns as they
+are. A named list or named character vector also sets how
+the viewer treats each column: names are the columns,
+values are `"categorical"` (alias `"factor"`) or
+`"continuous"` (alias `"numeric"`), e.g.
+`list(leiden_clus = "categorical", nr_feats = "continuous")`.
+Unnamed entries are kept without casting.}
 
 \item{dimreds}{Character vector of dimension reduction names or types
 (see `list_dim_reductions(g)`).  `NULL` skips all.}

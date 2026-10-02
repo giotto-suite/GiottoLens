@@ -133,7 +133,9 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Push cell metadata to the viewer for polygon coloring
         #' @param x         A giotto object, or a data.frame / output of [prep_meta()]
-        #' @param cols      Columns to include (NULL = all; ignored when x is a data.frame)
+        #' @param cols      Columns to include (NULL = all; ignored when x is a data.frame).
+        #'   A named list such as `list(leiden_clus = "categorical")` also sets
+        #'   each column's type; see [prep_meta()]
         #' @param dimreds   Dimension reduction names to include, e.g. `c("umap","tsne")`
         #' @param dims      Axes to pull from each reduction (default `1:2`)
         #' @param spat_unit Spatial unit key (default `"cell"`)

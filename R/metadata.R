@@ -9,8 +9,14 @@
 #' (e.g. `"umap"`, `"pca"`); the first match is used.
 #'
 #' @param x          A giotto object.
-#' @param cols       Character vector of metadata columns to include.
-#'                   `NULL` (default) includes all columns.
+#' @param cols       Metadata columns to include. `NULL` (default) includes
+#'                   all columns. A character vector selects columns as they
+#'                   are. A named list or named character vector also sets how
+#'                   the viewer treats each column: names are the columns,
+#'                   values are `"categorical"` (alias `"factor"`) or
+#'                   `"continuous"` (alias `"numeric"`), e.g.
+#'                   `list(leiden_clus = "categorical", nr_feats = "continuous")`.
+#'                   Unnamed entries are kept without casting.
 #' @param dimreds    Character vector of dimension reduction names or types
 #'                   (see `list_dim_reductions(g)`).  `NULL` skips all.
 #' @param dims       Integer vector of axes to pull from each reduction
@@ -35,8 +41,15 @@ prep_meta <- function(
     meta   <- as.data.frame(GiottoClass::pDataDT(x, spat_unit = spat_unit))
     id_col <- if ("cell_ID" %in% names(meta)) "cell_ID" else names(meta)[1L]
 
+    casts <- .parse_col_types(cols)
     if (!is.null(cols))
-        meta <- meta[, unique(c(id_col, intersect(cols, names(meta)))), drop = FALSE]
+        meta <- meta[, unique(c(id_col, intersect(names(casts), names(meta)))), drop = FALSE]
+    for (cn in intersect(names(casts)[!is.na(casts)], names(meta))) {
+        meta[[cn]] <- switch(casts[[cn]],
+            categorical = as.factor(meta[[cn]]),
+            continuous  = as.numeric(meta[[cn]])
+        )
+    }
 
     if (!is.null(dimreds)) {
         # Build lookup table: name → dim_type
@@ -99,4 +112,27 @@ prep_meta <- function(
     }
 
     meta
+}
+
+# `cols` -> named character vector of column -> viewer type (NA = no cast)
+.parse_col_types <- function(cols) {
+    if (is.null(cols)) return(NULL)
+    if (is.null(names(cols))) {
+        cols <- as.character(unlist(cols))
+        return(stats::setNames(rep(NA_character_, length(cols)), cols))
+    }
+    nms   <- names(cols)
+    vals  <- vapply(cols, function(v) as.character(v)[1L], character(1L))
+    plain <- !nzchar(nms)
+    nms[plain]  <- vals[plain]
+    vals[plain] <- NA_character_
+    aliases <- c(categorical = "categorical", factor = "categorical",
+                 continuous = "continuous", numeric = "continuous")
+    bad <- !is.na(vals) & !vals %in% names(aliases)
+    if (any(bad)) {
+        stop("[prep_meta] unknown column type(s): ",
+            paste0(nms[bad], " = \"", vals[bad], "\"", collapse = ", "),
+            "; use \"categorical\" or \"continuous\"", call. = FALSE)
+    }
+    stats::setNames(unname(aliases[vals]), nms)
 }
