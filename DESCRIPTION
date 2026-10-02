@@ -1,6 +1,6 @@
 Package: GiottoLens
 Title: Interactive Spatial Biology Viewer for GiottoDisk Data
-Version: 0.0.1
+Version: 0.0.2
 Authors@R: c(
 	person("Ruben", "Dries", email = "rubendries@gmail.com",
 		 role = c("aut", "cre"), comment = c(ORCID = "0000-0001-7650-7754")),
@@ -23,4 +23,4 @@ Suggests:
     GiottoClass,
     GiottoDisk
 Encoding: UTF-8
-RoxygenNote: 7.3.3
+Config/roxygen2/version: 8.0.0
