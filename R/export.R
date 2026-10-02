@@ -75,13 +75,22 @@ export_manifest <- function(
 }
 
 .tile_url <- function(store, tile_idx, serve_root, url_prefix) {
-    full <- file.path(
+    tile_dir <- file.path(
         store@path,
         paste0("source_id=", store@uid),
-        sprintf("tile_index=%03d", tile_idx),
-        "tile_index=000",
-        "part-0.parquet"
+        sprintf("tile_index=%03d", tile_idx)
     )
+    # GiottoDisk writes one tile_index level per tile; stores written before
+    # GiottoDisk#75 nest a second tile_index=000 level until they are rewritten
+    full <- file.path(tile_dir, "part-0.parquet")
+    if (!file.exists(full)) {
+        legacy <- file.path(tile_dir, "tile_index=000", "part-0.parquet")
+        if (!file.exists(legacy)) {
+            stop("[.tile_url] no tile parquet found under '", tile_dir, "'",
+                call. = FALSE)
+        }
+        full <- legacy
+    }
     rel <- sub(paste0(normalizePath(serve_root), "/?"), "", normalizePath(full))
     paste0(url_prefix, "/", rel)
 }

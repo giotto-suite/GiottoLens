@@ -14,7 +14,7 @@ A static, zero-infrastructure spatial biology viewer for GiottoDisk-backed data.
 GiottoDisk stores spatial data as hive-partitioned parquet:
 ```
 artifacts/
-├── {uid}/data/source_id={uid}/tile_index={NNN}/tile_index=000/part-0.parquet
+├── {uid}/data/source_id={uid}/tile_index={NNN}/part-0.parquet
 └── gene_overview/gene_overview.parquet
 ```
 
