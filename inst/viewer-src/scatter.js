@@ -1,5 +1,5 @@
 import { state }  from './state.js';
-import { PALETTE } from './constants.js';
+import { makeColorScale, isNumericMetaCol } from './data.js';
 import { sel, mc } from './mosaic.js';
 import { notify, onCoord, recomputeCrossFilter, clearFilters, sqlIds } from './coordination.js';
 import { clientToWorld, worldToClient, pointInPolygon } from './ui.js';
@@ -19,21 +19,25 @@ export function createScatterPanel(bodyId, metaCols) {
   let _colors  = null;    // Uint8Array [r,g,b,a, ...]
   let _homeVS  = null;
   let _colorCol = null;
-  let _catMap   = null;
+  let _vals     = null;   // per-point values of _colorCol, kept for repaints
+  let _scale    = null;
 
   // ── Color helpers ───────────────────────────────────────────────────────────
-  function _applyColors(rows) {
+  // Same column as the spatial panel → reuse its colors; otherwise color from
+  // this panel's own values. Repaints never re-query, so _vals must persist.
+  function _applyColors() {
     if (!_ids) return;
+    const out = new Uint8Array(_ids.length * 4); // new ref so deck.gl repaints
     const useMeta = _colorCol && _colorCol === state.metaCol && state.metaColors;
-    (rows ?? _ids.map((id) => ({ cell_ID: id, c: null }))).forEach((r, i) => {
-      const id = _ids[i];
+    for (let i = 0; i < _ids.length; i++) {
       let col;
-      if (useMeta)            col = state.metaColors.get(id) ?? [80, 80, 80, 180];
-      else if (_colorCol && _catMap) col = [...(_catMap.get(String(r?.c ?? 'NA')) ?? [160,160,160]), 200];
-      else                    col = [100, 180, 255, 200];
-      _colors[i*4]   = col[0]; _colors[i*4+1] = col[1];
-      _colors[i*4+2] = col[2]; _colors[i*4+3] = col[3] ?? 200;
-    });
+      if (useMeta)     col = state.metaColors.get(_ids[i]) ?? [80, 80, 80, 180];
+      else if (_scale) col = _scale.color(_vals[i]);
+      else             col = [100, 180, 255, 200];
+      out[i*4]   = col[0]; out[i*4+1] = col[1];
+      out[i*4+2] = col[2]; out[i*4+3] = col[3] ?? 200;
+    }
+    _colors = out;
   }
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -45,15 +49,11 @@ export function createScatterPanel(bodyId, metaCols) {
     const rows = (await state.polyConn.query(q)).toArray();
     const n    = rows.length;
     _pos    = new Float32Array(n * 2);
-    _colors = new Uint8Array(n * 4);
     _ids    = new Array(n);
-    _catMap = new Map();
-    if (colorCol) rows.forEach(r => {
-      const v = String(r.c ?? 'NA');
-      if (!_catMap.has(v)) _catMap.set(v, PALETTE[_catMap.size % PALETTE.length]);
-    });
     rows.forEach((r, i) => { _pos[i*2] = r.x; _pos[i*2+1] = r.y; _ids[i] = String(r.cell_ID); });
-    _applyColors(rows);
+    _vals   = colorCol ? rows.map(r => r.c) : null;
+    _scale  = colorCol ? makeColorScale(_vals, isNumericMetaCol(colorCol)) : null;
+    _applyColors();
   }
 
   // ── Layer building ──────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ export function createScatterPanel(bodyId, metaCols) {
 
   // ── Coordination handlers ───────────────────────────────────────────────────
   const _cleanupSel    = onCoord('cellSelection', _render);
-  const _cleanupColors = onCoord('metaColors', () => { _applyColors(null); _render(); });
+  const _cleanupColors = onCoord('metaColors', () => { _applyColors(); _render(); });
 
   // ── Public API ──────────────────────────────────────────────────────────────
   // Initialise synchronously (build controls) then load data async

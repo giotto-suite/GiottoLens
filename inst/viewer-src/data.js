@@ -303,46 +303,49 @@ function buildPolygonData() {
 }
 
 // ── Cell metadata coloring ────────────────────────────────────────────────────
+// Color scale for one metadata column, shared by the spatial and scatter
+// panels so a column gets the same colors wherever it is drawn.
+// Categories take palette slots in first-seen order of `values`.
+export function makeColorScale(values, numeric) {
+  if (numeric) {
+    let min = Infinity, max = -Infinity;
+    for (const v of values) if (v != null) { if (v < min) min = v; if (v > max) max = v; }
+    const range = max - min || 1;
+    return {
+      color: v => {
+        if (v == null) return [80, 80, 80, 180];
+        const t = Math.max(0, Math.min(1, (v - min) / range));
+        return [Math.round(t*255), 0, Math.round((1-t)*255), 220];
+      },
+      legend: { type: 'continuous', min, max },
+    };
+  }
+  const cats = new Map();
+  for (const v of values) {
+    const k = String(v ?? 'NA');
+    if (!cats.has(k)) cats.set(k, PALETTE[cats.size % PALETTE.length]);
+  }
+  return {
+    color: v => [...(cats.get(String(v ?? 'NA')) ?? [160, 160, 160]), 220],
+    legend: { type: 'categorical', items: [...cats.entries()].map(([label, color]) => ({ label, color })) },
+  };
+}
+
+export function isNumericMetaCol(name) {
+  return state.metaCols.find(c => c.name === name)?.numeric ?? false;
+}
+
 export async function buildMetaColors() {
   if (!state.metaCol) { state.metaColors = null; state.metaLegend = null; return; }
   try {
-    const tbl = await state.polyConn.query(
+    const rows = (await state.polyConn.query(
       `SELECT cell_ID, "${state.metaCol}" AS val FROM cell_meta`
-    );
-    const colInfo  = state.metaCols.find(c => c.name === state.metaCol);
-    const isNumeric = colInfo?.numeric ?? false;
+    )).toArray();
+    const scale  = makeColorScale(rows.map(r => r.val), isNumericMetaCol(state.metaCol));
     const colors = new Map();
-    if (isNumeric) {
-      let min = Infinity, max = -Infinity;
-      for (const batch of tbl.batches) {
-        const vals = batch.getChildAt(1);
-        for (let i = 0; i < batch.numRows; i++) {
-          const v = vals.get(i);
-          if (v !== null) { if (v < min) min = v; if (v > max) max = v; }
-        }
-      }
-      const range = max - min || 1;
-      for (const batch of tbl.batches) {
-        const ids = batch.getChildAt(0), vals = batch.getChildAt(1);
-        for (let i = 0; i < batch.numRows; i++) {
-          const t = Math.max(0, Math.min(1, (vals.get(i) - min) / range));
-          colors.set(ids.get(i), [Math.round(t*255), 0, Math.round((1-t)*255), 220]);
-        }
-      }
-      state.metaLegend = { type: 'continuous', min, max };
-    } else {
-      const cats = new Map();
-      for (const batch of tbl.batches) {
-        const ids = batch.getChildAt(0), vals = batch.getChildAt(1);
-        for (let i = 0; i < batch.numRows; i++) {
-          const v = String(vals.get(i) ?? 'NA');
-          if (!cats.has(v)) cats.set(v, PALETTE[cats.size % PALETTE.length]);
-          colors.set(ids.get(i), [...cats.get(v), 220]);
-        }
-      }
-      state.metaLegend = { type: 'categorical', items: [...cats.entries()].map(([label, color]) => ({ label, color })) };
-    }
+    for (const r of rows) colors.set(r.cell_ID, scale.color(r.val));
     state.metaColors = colors;
+    state.metaLegend = scale.legend;
   } catch (e) {
     console.warn('buildMetaColors failed:', e);
     state.metaColors = null;
