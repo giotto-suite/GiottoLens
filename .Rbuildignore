@@ -2,3 +2,7 @@
 ^\.Rproj\.user$
 ^inst/viewer-src$
 ^inst/viewer-src/
+^\.github$
+^CLAUDE\.md$
+^\.git$
+^vignettes/articles$

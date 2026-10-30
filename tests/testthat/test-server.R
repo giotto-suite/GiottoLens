@@ -1,0 +1,58 @@
+test_that(".parse_range handles the single-range forms", {
+    expect_null(.parse_range(NULL, 100))
+    expect_null(.parse_range("bytes=-", 100))
+    expect_null(.parse_range("items=0-1", 100))
+    expect_identical(.parse_range("bytes=0-0", 100), c(0, 0))
+    expect_identical(.parse_range("bytes=10-", 100), c(10, 99))
+    expect_identical(.parse_range("bytes=90-200", 100), c(90, 99))
+    expect_identical(.parse_range("bytes=-10", 100), c(90, 99))
+    expect_identical(.parse_range("bytes=100-120", 100), NA)
+    expect_identical(.parse_range("bytes=5-2", 100), NA)
+})
+
+test_that(".origin_allowed accepts local and same-host origins only", {
+    expect_true(.origin_allowed(NULL, "127.0.0.1:3000"))
+    expect_true(.origin_allowed("http://127.0.0.1:3000", "127.0.0.1:3000"))
+    expect_true(.origin_allowed("http://localhost:41234", "127.0.0.1:3000"))
+    expect_true(.origin_allowed("https://rs.example.org", "rs.example.org"))
+    expect_false(.origin_allowed("https://evil.example.com", "127.0.0.1:3000"))
+    expect_false(.origin_allowed("null", "127.0.0.1:3000"))
+    old_opt <- options(GiottoLens.allowed_origins = "proxy.example.org")
+    on.exit(options(old_opt), add = TRUE)
+    expect_true(.origin_allowed("https://proxy.example.org", "127.0.0.1:3000"))
+})
+
+test_that(".ws_allowed needs the token", {
+    req <- list(QUERY_STRING = "?token=abc", HTTP_HOST = "127.0.0.1:1")
+    expect_true(.ws_allowed(req, "abc"))
+    expect_false(.ws_allowed(req, "abd"))
+    expect_false(.ws_allowed(list(QUERY_STRING = ""), "abc"))
+})
+
+test_that(".data_response serves ranges and refuses paths outside a mount", {
+    root <- tempfile("mount")
+    dir.create(file.path(root, "sub"), recursive = TRUE)
+    on.exit(unlink(root, recursive = TRUE), add = TRUE)
+    writeBin(as.raw(0:99), file.path(root, "sub", "f.bin"))
+    writeBin(as.raw(1), file.path(dirname(root), "outside.bin"))
+    on.exit(unlink(file.path(dirname(root), "outside.bin")), add = TRUE)
+    mounts <- list(m = normalizePath(root))
+    req <- function(path, range = NULL, method = "GET")
+        list(PATH_INFO = path, HTTP_RANGE = range, REQUEST_METHOD = method)
+
+    r <- .data_response(req("/lens/data/m/sub/f.bin", "bytes=10-19"), mounts)
+    expect_identical(r$status, 206L)
+    expect_identical(r$body, as.raw(10:19))
+    expect_identical(r$headers[["Content-Range"]], "bytes 10-19/100")
+
+    full <- .data_response(req("/lens/data/m/sub/f.bin"), mounts)
+    expect_identical(full$status, 200L)
+    expect_identical(unname(full$body), normalizePath(file.path(root, "sub", "f.bin")))
+
+    expect_identical(.data_response(req("/lens/data/m/sub/f.bin", "bytes=200-"), mounts)$status, 416L)
+    expect_identical(.data_response(req("/lens/data/m/../outside.bin"), mounts)$status, 404L)
+    expect_identical(.data_response(req("/lens/data/m/%2e%2e/outside.bin"), mounts)$status, 404L)
+    expect_identical(.data_response(req("/lens/data/zz/sub/f.bin"), mounts)$status, 404L)
+    expect_identical(.data_response(req("/lens/data/m/sub"), mounts)$status, 404L)
+    expect_identical(.data_response(req("/lens/data/m/sub/f.bin", method = "POST"), mounts)$status, 405L)
+})

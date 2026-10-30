@@ -1,0 +1,48 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inst/viewer-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: inst/viewer-src/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # inst/viewer/ is committed and shipped; it must match the source
+      - run: npm run build
+      - run: git diff --exit-code -- ../viewer || (echo "::error::inst/viewer/ is stale; run npm run build and commit it" && exit 1)
+
+  R-CMD-check:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - run: echo "CHROMOTE_CHROME=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: |
+            any::rcmdcheck
+            github::giotto-suite/GiottoClass
+            github::giotto-suite/GiottoDisk
+      - uses: r-lib/actions/check-r-package@v2
+        with:
+          error-on: '"error"'
