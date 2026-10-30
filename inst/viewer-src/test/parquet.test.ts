@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { rangeBuffer, lz4BlockDecompress } from '../data/parquet.ts';
+import { rangeBuffer, readColumns, compressors } from '../data/parquet.ts';
+import fs from 'node:fs';
+import { parquetMetadataAsync } from 'hyparquet';
+import { decodePoints } from '../data/point-decode.ts';
 import { visibleTiles } from '../data/tiles.js';
 
 describe('visibleTiles', () => {
@@ -65,10 +68,39 @@ describe('rangeBuffer', () => {
   });
 });
 
-describe('lz4BlockDecompress', () => {
-  it('expands literals and a back-reference', () => {
-    // token: 3 literals, match length 4+2=6 at offset 3 → "abcabcabc"
-    const src = Uint8Array.from([0x32, 97, 98, 99, 3, 0]);
-    expect(new TextDecoder().decode(lz4BlockDecompress(src, 9))).toBe('abcabcabc');
+describe('codecs', () => {
+  const load = (f: string) => { const b = fs.readFileSync(new URL(`./fixtures/${f}`, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+  const genes = new Map([['A', 0], ['B', 1], ['C', 2], ['D', 3]]);
+
+  // arrow writes "lz4" as LZ4_RAW; GiottoDisk's zarr converter writes ZSTD
+  it('reads ZSTD, GZIP and LZ4_RAW like SNAPPY, in hyparquet and the point decoder', async () => {
+    const ref = await readColumns(load('codec-snappy.parquet'), ['x_index', 'y_index', 'feat_ID']);
+    for (const [file, codec] of [['codec-zstd.parquet', 'ZSTD'], ['codec-gzip.parquet', 'GZIP'], ['codec-lz4.parquet', 'LZ4_RAW']]) {
+      const ab = load(file);
+      const md: any = await parquetMetadataAsync(ab);
+      expect(md.row_groups[0].columns[0].meta_data.codec).toBe(codec);
+      const c = await readColumns(ab, ['x_index', 'y_index', 'feat_ID'], md);
+      expect(Array.from(c.x_index)).toEqual(Array.from(ref.x_index));
+      expect(Array.from(c.feat_ID)).toEqual(Array.from(ref.feat_ID));
+      const p = await decodePoints((a, b) => ab.slice(a, b), md, genes, 1);
+      expect(p.geneIdxs.length).toBe(ref.x_index.length);
+      for (let i = 0; i < p.geneIdxs.length; i += 37) {
+        expect(p.pos[2 * i]).toBeCloseTo(ref.x_index[i], 4);
+        expect(p.geneIdxs[i]).toBe(genes.get(ref.feat_ID[i]));
+      }
+    }
+  });
+
+  // Issue #2: Hadoop-framed LZ4 with more than one frame per page
+  it('decodes Hadoop LZ4 pages with several frames', () => {
+    // A literal-only LZ4 block: token (n << 4), then n bytes
+    const block = (s: string) => Uint8Array.from([s.length << 4, ...new TextEncoder().encode(s)]);
+    const frame = (s: string) => {
+      const b = block(s), out = new Uint8Array(8 + b.length), v = new DataView(out.buffer);
+      v.setUint32(0, s.length, false); v.setUint32(4, b.length, false); out.set(b, 8);
+      return out;
+    };
+    const page = Uint8Array.from([...frame('abc'), ...frame('defg')]);
+    expect(new TextDecoder().decode((compressors as any).LZ4(page, 7))).toBe('abcdefg');
   });
 });

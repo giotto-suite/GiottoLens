@@ -6,16 +6,13 @@
 // once per dictionary entry rather than once per row.
 //
 // Handles flat (non-nested) columns, PLAIN, dictionary or (numbers)
-// BYTE_STREAM_SPLIT encoded, in v1 or v2 data pages, SNAPPY, LZ4 or
-// uncompressed. Anything else throws
+// BYTE_STREAM_SPLIT encoded, in v1 or v2 data pages, with any codec in
+// data/parquet.ts `compressors`. Anything else throws
 // UnsupportedLayout and the caller falls back to hyparquet.
 // @ts-ignore: hyparquet internals have no type exports
 import { deserializeTCompactProtocol } from 'hyparquet/src/thrift.js';
 // @ts-ignore
 import { readRleBitPackedHybrid } from 'hyparquet/src/encoding.js';
-// @ts-ignore
-import { snappyUncompress } from 'hyparquet/src/snappy.js';
-import type { AsyncBuffer } from './parquet.ts';
 import { compressors } from './parquet.ts';
 
 export class UnsupportedLayout extends Error {}
@@ -45,9 +42,9 @@ function columnInfo(metadata: any, name: string): Column {
 
 function decompress(bytes: Uint8Array, size: number, codec: string): Uint8Array {
   if (codec === 'UNCOMPRESSED') return bytes;
-  if (codec === 'SNAPPY') { const out = new Uint8Array(size); snappyUncompress(bytes, out); return out; }
-  if (codec === 'LZ4') return compressors.LZ4(bytes, size);
-  throw new UnsupportedLayout(`codec ${codec}`);
+  const fn = (compressors as Record<string, ((b: Uint8Array, n: number) => Uint8Array) | undefined>)[codec];
+  if (!fn) throw new UnsupportedLayout(`codec ${codec}`);
+  return fn(bytes, size);
 }
 
 // Decoded dictionary: numbers for coordinates, gene indices for names

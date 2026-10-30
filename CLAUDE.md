@@ -14,14 +14,19 @@ Plans: `vignettes/articles/state_selection.md` and `plugins.md` (branch
 | `deck.gl` | 9.3.2 | rendering |
 | `@luma.gl/core` / `engine` / `webgl` | 9.3.3 | deck.gl peers |
 | `hyparquet` | 1.25.8 | all parquet reads (tiles, cells, metadata, panels) |
+| `hyparquet-compressors` / `hysnappy` | 1.1.2 / 1.1.1 | ZSTD, GZIP, LZ4; WASM SNAPPY |
 | `zustand` | 5.0.16 | store |
 | `vega` / `vega-lite` / `vega-embed` | 6.4.0 / 6.5.0 / 7.3.0 | histogram and pushed panels, loaded on demand |
 | `lucide` | 1.14.0 | icons |
 | `split.js` | 1.6.5 | layout |
 | dev: `vite` 5.4.0, `vitest` 2.1.9, `typescript` 5.9.3 | | build, tests, typecheck |
 
-`data/point-decode.ts` imports hyparquet internals (`hyparquet/src/thrift.js`, `encoding.js`,
-`snappy.js`); recheck it when bumping hyparquet.
+Codecs: `compressors` in `data/parquet.ts` (hyparquet-compressors + hysnappy WASM): SNAPPY,
+ZSTD, GZIP, LZ4_RAW, Hadoop LZ4. BROTLI is left out on purpose (size; R's arrow cannot
+write it).
+
+`data/point-decode.ts` imports hyparquet internals (`hyparquet/src/thrift.js`, `encoding.js`);
+recheck it when bumping hyparquet.
 
 No DuckDB-WASM and no Mosaic: both were removed (state_selection.md steps 4 and 8).
 

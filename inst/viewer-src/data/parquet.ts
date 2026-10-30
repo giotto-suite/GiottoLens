@@ -67,34 +67,24 @@ export async function rangeBuffer(url: string, byteLength?: number): Promise<Asy
   };
 }
 
-// ── LZ4 (Hadoop framing) ──────────────────────────────────────────────────────
-// hyparquet has no LZ4. Parquet's LZ4 codec frames a raw block as 4-byte BE
-// uncompressed size + 4-byte BE compressed size + block.
-function lz4BlockDecompress(src: Uint8Array, dstSize: number): Uint8Array {
-  const dst = new Uint8Array(dstSize);
-  let si = 0, di = 0;
-  while (si < src.length) {
-    const tok = src[si++];
-    let litLen = tok >>> 4;
-    if (litLen === 15) { let x; do { x = src[si++]; litLen += x; } while (x === 255); }
-    for (let k = 0; k < litLen; k++) dst[di++] = src[si++];
-    if (si >= src.length) break;
-    const offset = src[si] | (src[si + 1] << 8); si += 2;
-    let matchLen = (tok & 0xf) + 4;
-    if ((tok & 0xf) === 15) { let x; do { x = src[si++]; matchLen += x; } while (x === 255); }
-    let mp = di - offset;
-    for (let k = 0; k < matchLen; k++) dst[di++] = dst[mp++];
-  }
-  return dst;
-}
+// ── Codecs ───────────────────────────────────────────────────────────────────
+// hyparquet decodes only SNAPPY itself. GiottoDisk writes SNAPPY by default,
+// but its codec is an option, and its Xenium zarr converter writes ZSTD; arrow
+// writes "lz4" as LZ4_RAW. hyparquet-compressors covers ZSTD, GZIP, LZ4_RAW
+// and Hadoop-framed LZ4 (any number of frames), and its WASM SNAPPY is 2.6x
+// faster than hyparquet's JS one on Atera tiles. BROTLI is left out: R's arrow
+// cannot write it, and its decoder (with its dictionary) is most of the
+// package's size.
+import { decompressZstd, decompressLz4, decompressLz4Raw, gunzip } from 'hyparquet-compressors';
+// @ts-ignore: no type exports
+import { snappyUncompressor } from 'hysnappy';
 export const compressors = {
-  LZ4: (input: Uint8Array, outputLength: number) => {
-    const v = new DataView(input.buffer, input.byteOffset, input.byteLength);
-    const data = v.getUint32(0, false) === outputLength ? input.subarray(8) : input;
-    return lz4BlockDecompress(data, outputLength);
-  },
+  SNAPPY: snappyUncompressor(),
+  GZIP: (input: Uint8Array, length: number) => gunzip(input, new Uint8Array(length)),
+  ZSTD: (input: Uint8Array) => decompressZstd(input),
+  LZ4: decompressLz4,
+  LZ4_RAW: decompressLz4Raw,
 };
-export { lz4BlockDecompress };
 
 // Geometry columns stay WKB bytes; data/wkb.ts decodes them into flat arrays
 // instead of hyparquet building GeoJSON objects.
