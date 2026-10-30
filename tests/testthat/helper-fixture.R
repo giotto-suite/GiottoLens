@@ -99,9 +99,9 @@ ws_client <- function(url, origin = NULL) {
 }
 
 ws_url <- function(viewer, token = NULL) {
-    u <- sub("^http", "ws", sub("/lens/\\?token=.*$", "/lens/ws", viewer$url))
-    tok <- token %||% sub(".*token=", "", viewer$url)
-    paste0(u, "?token=", tok)
+    u <- sub("^http", "ws", paste0(viewer$url, "ws"))
+    if (!is.null(token)) u <- sub("/lens/[^/]+/", paste0("/lens/", token, "/"), u)
+    u
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x

@@ -5,7 +5,8 @@
 # viewer evaluates rules in the browser; this is the same evaluation in R,
 # over the cell centroids and the pushed metadata, so a rule set from R (or
 # read back from the viewer) resolves to cells without a browser. Keep it in
-# step with inst/viewer-src/selection/rules.ts.
+# step with inst/viewer-src/selection/rules.ts (adr/0001). Interactive
+# selection stays here and in the browser, not in spatRelate() (adr/0007).
 
 .rule_kinds <- c("polygon", "stroke", "range", "categories", "compare", "ids", "union",
     "cells")  # cells: R-side only, resolved to ids by .resolve_cells()
@@ -254,9 +255,11 @@ lens_union <- function(..., negate = FALSE) {
     if (isTRUE(rule$negate)) paste0("not (", s, ")") else s
 }
 
-# R code that recreates a rule with the lens_*() builders
+# R code that recreates a rule with the lens_*() builders. Every string is
+# escaped: labels come from the data or the browser, and the code may be run.
 .rule_code <- function(rule, cell_ids = NULL, ctx = NULL) {
     p <- rule$params
+    q <- function(x) encodeString(as.character(unlist(x)), quote = '"')
     neg <- if (isTRUE(rule$negate)) ", negate = TRUE" else ""
     num <- function(x) paste(format(as.numeric(x), digits = 8, trim = TRUE), collapse = ", ")
     ring_code <- function(r) {
@@ -269,14 +272,13 @@ lens_union <- function(..., negate = FALSE) {
             rings <- vapply(p$rings, ring_code, "")
             ring <- if (length(rings) == 1L) rings else sprintf("list(%s)", paste(rings, collapse = ", "))
             sp <- if (identical(rule$space, "spatial") || is.null(rule$space)) "" else
-                sprintf(', space = c(x = "%s", y = "%s")', rule$space$x, rule$space$y)
+                sprintf(", space = c(x = %s, y = %s)", q(rule$space$x), q(rule$space$y))
             sprintf("lens_polygon(%s%s%s)", ring, sp, neg)
         },
-        range = sprintf('lens_range("%s", %s, %s%s)', rule$space, num(p$min), num(p$max), neg),
-        categories = sprintf('lens_categories("%s", c(%s)%s)', rule$space,
-            paste0('"', unlist(p$values), '"', collapse = ", "), neg),
-        compare = sprintf('lens_compare("%s", "%s", %s%s)', rule$space, p$op,
-            encodeString(as.character(p$value), quote = '"'), neg),
+        range = sprintf("lens_range(%s, %s, %s%s)", q(rule$space), num(p$min), num(p$max), neg),
+        categories = sprintf("lens_categories(%s, c(%s)%s)", q(rule$space),
+            paste(q(p$values), collapse = ", "), neg),
+        compare = sprintf("lens_compare(%s, %s, %s%s)", q(rule$space), q(p$op), q(p$value), neg),
         union = sprintf("lens_union(%s%s)",
             paste(vapply(p$parts, .rule_code, "", cell_ids = cell_ids, ctx = ctx), collapse = ",\n    "), neg),
         # Brush strokes and cell lists have no builder: the cells they cover
@@ -284,7 +286,7 @@ lens_union <- function(..., negate = FALSE) {
             idx <- if (!is.null(ctx)) which(.eval_rule(rule, ctx))
             ids <- cell_ids[idx]
             if (!length(ids)) "NULL  # no cells"
-            else sprintf("lens_cells(c(%s))", paste0('"', ids, '"', collapse = ", "))
+            else sprintf("lens_cells(c(%s))", paste(q(ids), collapse = ", "))
         }
     )
 }

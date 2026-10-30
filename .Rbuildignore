@@ -6,3 +6,7 @@
 ^CLAUDE\.md$
 ^\.git$
 ^vignettes/articles$
+^AGENTS\.md$
+^adr$
+^\.claude$
+^SECURITY\.md$

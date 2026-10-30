@@ -26,8 +26,9 @@ viewer$selection                            # cells selected in the browser
 viewer$close()
 ```
 
-`launch_lens()` serves the viewer on `127.0.0.1` and a free port and opens it in the browser
-or viewer pane. Nothing is copied or written next to your data. Use `host = "0.0.0.0"` to
+`launch_lens()` serves the viewer on `127.0.0.1` and a free port, under a random path that
+changes every launch, and opens it in the browser or viewer pane. Treat `viewer$url` like a
+password while the viewer runs (see [SECURITY.md](SECURITY.md)). Nothing is copied or written next to your data. Use `host = "0.0.0.0"` to
 expose it to the network, and `url_prefix` when the browser reaches R through a proxy or port
 forward (for example R on an HPC node).
 
@@ -113,12 +114,12 @@ and the toolbar's rules button hides the strip.
 R                                    Browser
 launch_lens()                        deck.gl (OrthographicView, Y up)
   httpuv on 127.0.0.1                 zustand store: config + selection rules
-    /lens/          viewer bundle     rules → masks over all cells (typed arrays)
-    /lens/session/  manifest, cells,  hyparquet: Range reads of only the drawn columns
+  /lens/<token>/    viewer bundle     rules → masks over all cells (typed arrays)
+    session/        manifest, cells,  hyparquet + own decoder, in workers
                     metadata          Vega-Lite panels (loaded on demand)
-    /lens/files/    tile stores, whole
-    /lens/data/     the same, by Range
-    WebSocket (token) ◄────────────►  requests, selections, logs, errors
+    files/          tile stores, whole
+    data/           the same, by Range
+    ws              WebSocket ◄────►  requests, selections, logs, errors
 ```
 
 - **Self-contained:** the bundle ships in `inst/viewer/`; no CDN or internet access at runtime.
@@ -130,6 +131,10 @@ launch_lens()                        deck.gl (OrthographicView, Y up)
   points the zoom level draws are decoded.
 
 ## Development
+
+Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) (code map and
+invariants). Architecture is in `vignettes/articles/design.Rmd`, direction in
+`roadmap.Rmd`, and the reasons behind decisions in [`adr/`](adr/README.md).
 
 ```bash
 cd inst/viewer-src

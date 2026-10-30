@@ -10,13 +10,17 @@ const COLUMNS = ['x_index', 'y_index', 'feat_ID'];
 
 export interface TileRef { url: string; file?: string; bytes?: number }
 
-export async function decodeTranscriptTile(tile: TileRef, geneIndex: Map<string, number>, stride = 1) {
-  const { file, metadata } = await tileSource(tile, COLUMNS);
+// `signal` aborts the fetch and stops decoding at the next column block.
+export async function decodeTranscriptTile(tile: TileRef, geneIndex: Map<string, number>, stride = 1,
+    signal?: AbortSignal) {
+  const { file, metadata } = await tileSource(tile, COLUMNS, signal);
+  const read = (a: number, b?: number) => { signal?.throwIfAborted(); return file.slice(a, b); };
   try {
-    return await decodePoints((a, b) => file.slice(a, b), metadata, geneIndex, stride);
+    return await decodePoints(read, metadata, geneIndex, stride);
   } catch (e) {
     if (!(e instanceof UnsupportedLayout)) throw e;
   }
+  signal?.throwIfAborted();
   const cols = await readColumns(file, COLUMNS, metadata);
   const xs = cols.x_index ?? [], ys = cols.y_index ?? [], fs = cols.feat_ID ?? [];
   const m = Math.ceil(xs.length / stride);

@@ -1,7 +1,8 @@
 // Selection rules: what a selection *is*, independent of what is loaded.
 // Each source (spatial view, scatter, a histogram, metadata filter, R) holds
 // one rule. Rules evaluate to masks over all cells (Uint8Array, 1 = in);
-// masks are a cache, rules are what is saved and sent to R.
+// masks are a cache, rules are what is saved and sent to R. R/rules.R evaluates the
+// same rules; change both together (adr/0001).
 import { ringTester, segDist2, type Pt, type Ring } from './geometry.ts';
 import { tilesInBox, type Cells } from '../data/cells.ts';
 import type { Meta, MetaColumn } from '../data/meta.ts';

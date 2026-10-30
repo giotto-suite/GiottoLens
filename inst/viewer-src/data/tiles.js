@@ -22,8 +22,8 @@ export function visibleTiles(viewState, tiles, { width, height }) {
 // Outlines as flat arrays for deck.gl binary layers. Row r of the tile is cell
 // `tile.offset + r` (data/cells.ts), so no ID lookup is needed to colour or
 // select it.
-export async function fetchPolygonTile(tile) {
-  const cols = await readTileColumns(tile, ['geom']);
+export async function fetchPolygonTile(tile, signal) {
+  const cols = await readTileColumns(tile, ['geom'], signal);
   const polys = decodePolygons(cols.geom ?? []);
   return { ...polys, offset: tile.offset ?? 0 };
 }
@@ -44,32 +44,44 @@ const RETRY_MS = 10000;
 export const TX_STRIDES = [16, 4, 1, 1];
 export const txStride = () => TX_STRIDES[Math.min(3, Math.max(0, state.txZoomTier))];
 
+// A load is aborted (abortTiles()) when its tile leaves the view: its queued
+// or in-flight requests stop and it frees its place for tiles in view.
 export async function loadTile(layerName, tile, onLoad) {
   const key = `${layerName}:${tile.index}`;
   const stride = layerName === 'transcripts' ? txStride() : 1;
   const cached = state.cache.get(key);
   if ((cached && !(cached.stride > stride)) || state.pending.has(key)) return;
   if (Date.now() - (state.failed.get(key) ?? -Infinity) < RETRY_MS) return;
-  state.pending.add(key);
+  const ctl = new AbortController();
+  state.pending.set(key, ctl);
   updateStatus();
   try {
     const data = layerName === 'polygons'
-      ? await fetchPolygonTile(tile)
-      : await fetchTranscriptTile(tile, stride);
-    if (state.cancelled.has(key)) {
-      state.cancelled.delete(key);
-    } else {
-      state.cache.set(key, data);
-    }
+      ? await fetchPolygonTile(tile, ctl.signal)
+      : await fetchTranscriptTile(tile, stride, ctl.signal);
+    if (!ctl.signal.aborted) state.cache.set(key, data);
   } catch (e) {
-    console.warn(`Failed to load tile ${key}:`, e);
-    // Polygon tiles are few and always retried
-    if (layerName !== 'polygons') state.failed.set(key, Date.now());
+    if (!ctl.signal.aborted) {
+      console.warn(`Failed to load tile ${key}:`, e);
+      // Polygon tiles are few and always retried
+      if (layerName !== 'polygons') state.failed.set(key, Date.now());
+    }
   } finally {
-    state.pending.delete(key);
+    // The tile may have left the view and come back: a newer load owns the key
+    if (state.pending.get(key) === ctl) state.pending.delete(key);
     updateStatus();
-    onLoad(state.currentViewState);
+    if (!ctl.signal.aborted) onLoad(state.currentViewState);
   }
+}
+
+// Abort the loads of tiles not in `keep` (a Set of keys)
+export function abortTiles(keep) {
+  for (const [key, ctl] of state.pending) {
+    if (keep.has(key)) continue;
+    state.pending.delete(key);
+    ctl.abort();
+  }
+  updateStatus();
 }
 
 // ── Transcript draw buffers ───────────────────────────────────────────────────

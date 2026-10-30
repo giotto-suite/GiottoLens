@@ -1,0 +1,98 @@
+---
+title: "Roadmap"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Roadmap}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+Direction for GiottoLens. How the current viewer works is in the
+[design article](design.html); features land in the [NEWS](../../news/index.html) when
+implemented, and small known gaps are GitHub issues.
+
+## Panels from GiottoVisuals specs
+
+GiottoVisuals writes the plot spec, GiottoLens docks it as a panel, and the panel
+crossfilters with every other view. `push_panel()` already shows any Vega-Lite spec and
+links rows that carry a `cell_ID`. Next:
+
+1. **Docking.** More panes or tabs, placed by `push_panel()` and movable in the viewer,
+   instead of replacing one of the two stats panes.
+2. **Crossfilter into pushed panels.** Show the other sources only, as the built-in
+   histogram does, rather than dimming by the whole selection.
+3. **Brushes as typed rules.** A brush on a metadata column becomes a `range` or
+   `categories` rule rather than a list of cells, so R can evaluate and describe it.
+4. **Aggregate charts at scale.** Vega-Lite re-aggregates its rows on every change, which
+   slows near a million rows. For aggregate marks the viewer or R computes the aggregates from
+   the selection masks and Vega-Lite draws only those; GiottoVisuals marks such specs.
+5. **Per-cell data beyond metadata.** A shared per-cell store, filled from R on demand, for
+   gene-heavy panels (heatmaps, dot plots).
+
+Target panels: metadata histogram or bar, expression heatmap or dot plot of the selected
+cells, UMAP coloured by any `spatValues`. Done when one spec renders the same through ggplot,
+fastplotR and GiottoLens and a brush on it crossfilters the other views.
+
+## The large-data path
+
+Selections over cells stay in the browser up to about 10–20M cells; beyond that, and for
+queries over transcripts, the work runs in R next to the files.
+
+- **An interactive fast path in GiottoDisk.** Bare SQL meets the interactive target at cell
+  scale (sedona 6 ms, DuckDB 16 ms for a 170k-cell lasso) where `spatRelate()` takes 1.4 s of
+  per-call overhead. A prepared query handle (engine context and views built once, one SQL
+  statement per interaction returning integer cell indices) closes that gap. It lives in
+  GiottoDisk so a lasso in the viewer and the same polygon in a script stay identical.
+- **A warm background worker** (mirai) holding that handle, so queries and tile serving do not
+  wait on, or block, the R console.
+- **Aggregates, not IDs, at transcript scale.** Counts per gene and densities inside a region;
+  selections stay rules that R resolves lazily.
+- **Rule evaluation in R for the viewer** as a second implementation of the browser's, with
+  the browser holding per-tile masks instead of full-length ones above the size threshold.
+- **A rule schema** (JSON Schema) shared by the browser and R.
+
+## Data delivery
+
+- **Coarse transcript tiers.** Zoomed-out loads are bound by bytes, not decoding. Restore
+  per-gene density bins first (sparse gene × bin counts at two or three sizes, built per tile),
+  then a subsample tier stored at the start of each tile (COPC-style), so mid zoom reads only
+  that part.
+- **Lean viewer tiles** (x, y and a gene index) as a cache or a GiottoDisk write option: one
+  small request per tile on any server.
+- **Manifest byte offsets** for the drawn columns, removing the footer request per tile.
+- **Curve-ordered tile numbering**, so neighbouring tiles are neighbours in space.
+- **Range serving off R's main thread** for remote viewing through R (a background process
+  or a small native file server). Object stores such as S3 already serve ranges concurrently.
+
+## Images
+
+Viv (deck.gl layers for OME-TIFF and OME-Zarr) with per-channel contrast and blending: COGs
+written by the suite through a custom pixel source first, then vendor OME-TIFFs, with
+JPEG-2000 decoded either in R or by a browser decoder. Needs deck.gl 9.4 and multi-page image
+selection in GiottoClass.
+
+## Plugins
+
+Interactive workflows that return results to R, living in other packages, each an R part and
+a JS part registered together and drivable from R like the rest of the viewer.
+
+1. **Editing core:** editable points, polylines and polygons; cell label editing as a list of
+   changes; undo and redo; autosave of the viewer state.
+2. **Plugin loader:** `viewer$use(plugin)`, a `register()` API for the JS part (state slice,
+   map tools, layers, tabs, calls to R with progress and cancel), and a blocking-workflow
+   helper in the style of `shiny::runGadget()`.
+3. **Registration:** landmark pairs between two samples, an affine fitted in R and previewed
+   live, returned as a transform or a new space.
+4. **Pinwheel unrolling:** a backbone curve, an unrolling computed in R, and label cleanup with
+   the editing tools, returned as labels and unrolled coordinates.
+
+The foundation they need is in place: a session token, a protocol version handshake, browser
+errors in the R console, and end-to-end tests with chromote.

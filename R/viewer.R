@@ -162,7 +162,8 @@ LensViewer <- R6::R6Class("LensViewer",
     public = list(
         #' @field port        Server port
         port        = NULL,
-        #' @field url         Viewer URL, including the session token
+        #' @field url         Viewer URL. It contains this launch's token: treat
+        #'   it like a password while the viewer runs
         url         = NULL,
         #' @field selection   Character vector of selected cell IDs
         selection   = NULL,
@@ -190,7 +191,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 recursive = TRUE, showWarnings = FALSE)
             private$cell_ids <- .export_session(gpoints, gpolygons,
                 output = file.path(private$session, "manifest.json"), transfer = transfer)
-            self$url <- paste0(url_prefix, "/lens/?token=", private$token)
+            self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host, .layer_mounts(gpoints, gpolygons))
             assign(as.character(port), self, envir = .lens_registry)
         },
@@ -664,7 +665,7 @@ LensViewer <- R6::R6Class("LensViewer",
                         ready = {
                             if (!identical(as.integer(dat$protocol), .lens_protocol))
                                 warning("[LensViewer] the viewer bundle speaks protocol ",
-                                    dat$protocol %||% "?", ", this package ", .lens_protocol,
+                                    .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
                                     "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
@@ -679,14 +680,14 @@ LensViewer <- R6::R6Class("LensViewer",
                                 data = dat, error = parsed$error),
                         client_error = {
                             priv$add_log("error", dat)
-                            message("[GiottoLens viewer] ", dat$where %||% "", ": ",
-                                dat$message %||% "")
+                            message("[GiottoLens viewer] ", .console_text(dat$where), ": ",
+                                .console_text(dat$message))
                         },
                         log = priv$add_log(dat$action %||% "", dat$detail),
                         {
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
                                 error = function(e) warning("[LensViewer] message error: ",
-                                    conditionMessage(e), call. = FALSE))
+                                    .console_text(conditionMessage(e)), call. = FALSE))
                             if (parsed$type == "cell_selection") {
                                 priv$sel_seq <- priv$sel_seq + 1L
                                 rules <- dat$rules %||% list()

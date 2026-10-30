@@ -1,4 +1,5 @@
-// Histogram / bar panel over one metadata column, drawn with Vega-Lite.
+// Histogram / bar panel over one metadata column, drawn with Vega-Lite (it
+// replaces Mosaic: adr/0003).
 // Bins are counted in JS from the typed arrays; Vega-Lite only draws the bins
 // and reports the brush, which becomes a 'range' or 'categories' rule.
 // Grey bars: all cells. Blue: cells passing every *other* source (crossfilter)

@@ -1,4 +1,5 @@
-// Parquet over HTTP: Range reads with hyparquet, and columnar decoding.
+// Parquet over HTTP: Range reads with hyparquet, and columnar decoding. The browser
+// reads parquet R prepared and keeps no SQL model of its own (adr/0003).
 import { parquetRead, parquetMetadataAsync } from 'hyparquet';
 // @ts-ignore: not in hyparquet's type exports
 import { DEFAULT_PARSERS } from 'hyparquet/src/convert.js';
@@ -13,13 +14,24 @@ export interface AsyncBuffer {
 // for every column chunk of a file together, and many tiles of row groups ×
 // columns otherwise exhaust the browser's connection pool
 // (ERR_INSUFFICIENT_RESOURCES). First come, first served, so tiles requested
-// first (nearest the view centre) finish first.
+// first (nearest the view centre) finish first. A load aborted while queued
+// leaves the queue and never starts.
 const MAX_INFLIGHT = 6;
 let inflight = 0;
 const waiting: (() => void)[] = [];
-async function acquire(): Promise<void> {
+async function acquire(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   if (inflight < MAX_INFLIGHT) { inflight++; return; }
-  await new Promise<void>(resolve => waiting.push(resolve));
+  await new Promise<void>((resolve, reject) => {
+    const wake = () => { signal?.removeEventListener('abort', drop); resolve(); };
+    const drop = () => {
+      const i = waiting.indexOf(wake);
+      if (i >= 0) waiting.splice(i, 1);
+      reject(signal!.reason);
+    };
+    waiting.push(wake);
+    signal?.addEventListener('abort', drop, { once: true });
+  });
 }
 function release(): void {
   const next = waiting.shift();
@@ -29,8 +41,8 @@ function release(): void {
 // The manifest records each file's size, so no probe is needed. Without it,
 // probe with bytes=0-0, which every Range server answers with
 // Content-Range: bytes 0-0/<total>.
-async function probeSize(url: string): Promise<{ byteLength?: number; full?: ArrayBuffer }> {
-  const probe = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+async function probeSize(url: string, signal?: AbortSignal): Promise<{ byteLength?: number; full?: ArrayBuffer }> {
+  const probe = await fetch(url, { headers: { Range: 'bytes=0-0' }, signal });
   if (probe.status === 206) {
     await probe.body?.cancel();
     const total = parseInt((probe.headers.get('content-range') ?? '').split('/')[1]);
@@ -40,9 +52,9 @@ async function probeSize(url: string): Promise<{ byteLength?: number; full?: Arr
   return { full: await probe.arrayBuffer() };
 }
 
-export async function rangeBuffer(url: string, byteLength?: number): Promise<AsyncBuffer> {
+export async function rangeBuffer(url: string, byteLength?: number, signal?: AbortSignal): Promise<AsyncBuffer> {
   if (!byteLength) {
-    const p = await probeSize(url);
+    const p = await probeSize(url, signal);
     // No Range support: degrade to one full download rather than fail
     if (p.full) {
       const full = p.full;
@@ -54,9 +66,9 @@ export async function rangeBuffer(url: string, byteLength?: number): Promise<Asy
   return {
     byteLength: size,
     slice: async (start, end) => {
-      await acquire();
+      await acquire(signal);
       try {
-        const r = await fetch(url, { headers: { Range: `bytes=${start}-${(end ?? size) - 1}` } });
+        const r = await fetch(url, { headers: { Range: `bytes=${start}-${(end ?? size) - 1}` }, signal });
         // A 200 here is the whole file, which would be read as the slice
         if (r.status !== 206) throw new Error(`${url}: Range request answered with ${r.status}, not 206`);
         return await r.arrayBuffer();
@@ -120,7 +132,8 @@ export async function readColumns(file: AsyncBuffer | ArrayBuffer, columns: stri
 //   'columns' — the drawn columns' blocks, with blocks less than MERGE_GAP
 //               apart merged into one request. Best on slow links.
 // 'auto' starts with 'whole' on a localhost URL and switches to 'columns' when
-// whole tiles arrive slowly: an SSH port forward also looks like localhost.
+// whole tiles arrive slowly: an SSH port forward also looks like localhost
+// (adr/0004).
 
 export type Transfer = 'auto' | 'whole' | 'columns';
 const MERGE_GAP = 1 << 20;          // merge blocks less than 1 MB apart
@@ -137,11 +150,11 @@ export function transferMode(): 'whole' | 'columns' {
   return autoMode ?? (LOOPBACK.includes((globalThis as any).location?.hostname ?? '') ? 'whole' : 'columns');
 }
 
-async function fetchWhole(url: string): Promise<ArrayBuffer> {
-  await acquire();
+async function fetchWhole(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+  await acquire(signal);
   try {
     const t0 = performance.now();
-    const r = await fetch(url);
+    const r = await fetch(url, { signal });
     if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
     const ab = await r.arrayBuffer();
     const mbps = ab.byteLength / 1e6 / ((performance.now() - t0) / 1000);
@@ -179,19 +192,22 @@ export function mergedRanges(metadata: any, columns: string[], gap = MERGE_GAP):
 
 // A tile's bytes for the given columns, fetched per the transfer mode, plus
 // its parquet metadata. `file.slice()` then serves the columns' blocks from
-// memory.
-export async function tileSource(tile: { url: string; file?: string; bytes?: number }, columns: string[]):
-    Promise<{ file: AsyncBuffer; metadata: any }> {
+// memory. `signal` aborts the tile's requests, queued or in flight.
+export async function tileSource(tile: { url: string; file?: string; bytes?: number }, columns: string[],
+    signal?: AbortSignal): Promise<{ file: AsyncBuffer; metadata: any }> {
   if (tile.file && transferMode() === 'whole') {
-    const ab = await fetchWhole(tile.file);
+    const ab = await fetchWhole(tile.file, signal);
     const metadata = await parquetMetadataAsync(ab as any, { parsers: PARSERS } as any);
     return { file: { byteLength: ab.byteLength, slice: (s, e) => ab.slice(s, e) }, metadata };
   }
-  const file = await rangeBuffer(tile.url, tile.bytes);
+  const file = await rangeBuffer(tile.url, tile.bytes, signal);
   // Footers here are a few tens of KB; hyparquet's default first read is 512 KB
   const metadata = await parquetMetadataAsync(file as any, { parsers: PARSERS, initialFetchSize: 1 << 16 } as any);
   const ranges = mergedRanges(metadata, columns);
   const parts = ranges.map(([a, b]) => Promise.resolve(file.slice(a, b)));
+  // A part the decoder never reaches (it failed or was aborted first) must not
+  // surface as an unhandled rejection
+  for (const p of parts) p.catch(() => {});
   return {
     metadata,
     file: {
@@ -206,8 +222,9 @@ export async function tileSource(tile: { url: string; file?: string; bytes?: num
   };
 }
 
-export async function readTileColumns(tile: { url: string; file?: string; bytes?: number }, columns: string[]) {
-  const { file, metadata } = await tileSource(tile, columns);
+export async function readTileColumns(tile: { url: string; file?: string; bytes?: number }, columns: string[],
+    signal?: AbortSignal) {
+  const { file, metadata } = await tileSource(tile, columns, signal);
   return readColumns(file, columns, metadata);
 }
 
