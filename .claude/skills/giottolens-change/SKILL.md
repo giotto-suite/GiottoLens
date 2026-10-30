@@ -68,4 +68,5 @@ devtools::check()         # 0 errors, 0 warnings; non-ASCII only in comments
   `roadmap.Rmd`: items done or added.
 - An ADR (`adr/README.md`) for a decision someone could reasonably reverse, with
   an `adr/NNNN` pointer at the code it constrains.
-- Merging to `main` is a release: bump the version in `DESCRIPTION`.
+- Open the PR against `dev`. Merging `dev` into `main` is a release: bump the
+  version in `DESCRIPTION` then.
