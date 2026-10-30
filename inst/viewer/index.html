@@ -17,6 +17,19 @@
     }
     #tx-sample, #sel-count, #cursor-coords { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: #6b7280; font-size: 11px; }
     #cursor-coords { font-family: monospace; }
+    #rule-strip {
+      position: absolute; top: 44px; left: 12px; right: 120px; z-index: 5;
+      display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none;
+    }
+    .rule-chip {
+      pointer-events: auto; display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(17,24,39,0.85); border: 1px solid rgba(255,220,50,0.45); border-radius: 10px;
+      color: #fde68a; font-size: 11px; padding: 1px 4px 1px 8px; max-width: 320px;
+    }
+    .rule-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rule-chip.rule-mode { border-color: rgba(156,163,175,0.5); color: #9ca3af; padding-right: 8px; }
+    .rule-chip-x { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+    .rule-chip-x:hover { color: #f87171; }
     #ruler-label {
       position: absolute; display: none; pointer-events: none;
       background: rgba(17,24,39,0.85); border: 1px solid #374151; border-radius: 4px;
@@ -134,7 +147,8 @@
     }
     #panel-actions button:hover { background: #374151; color: #e5e7eb; }
     #btn-color-all.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
-    #sel-count { color: #6b7280; font-size: 11px; margin-top: 6px; }
+    .stats-ctrl-sep { width: 1px; height: 14px; background: #374151; margin: 0 4px; flex-shrink: 0; align-self: center; }
+    #gene-count { color: #6b7280; font-size: 11px; margin-left: 6px; align-self: center; }
 
     #gene-list { flex: 1; overflow-y: auto; padding: 4px 0; }
     #gene-list::-webkit-scrollbar { width: 4px; }
@@ -288,7 +302,7 @@
     }
     #btn-screenshot:hover { opacity: 1; }
   </style>
-  <script type="module" crossorigin src="/lens/assets/index-BETk-k-E.js"></script>
+  <script type="module" crossorigin src="/lens/assets/index-l6zr_LXS.js"></script>
 </head>
 <body>
   <div id="main-layout">
@@ -298,6 +312,7 @@
         <line id="tx-connector-line" x1="0" y1="0" x2="0" y2="0" stroke="#ffff64" stroke-width="1.5" display="none"/>
       </svg>
       <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="sel-count"></span><span id="cursor-coords"></span></div>
+      <div id="rule-strip" style="display:none"></div>
       <div id="toolbar">
     <button class="tool-btn active" data-mode="pan" title="pan"><i data-lucide="hand"></i></button>
     <button class="tool-btn" id="btn-fit-spatial" title="zoom to fit"><i data-lucide="maximize-2"></i></button>
@@ -323,7 +338,7 @@
       <button class="tool-btn tool-group-btn" id="btn-group-select" title="select"><i data-lucide="mouse-pointer-2"></i></button>
       <div class="tool-submenu">
         <button class="tool-btn" data-mode="lasso" title="lasso"><i data-lucide="lasso"></i></button>
-        <button class="tool-btn" data-mode="brush" title="brush select (scroll to resize)"><i data-lucide="paintbrush-2"></i></button>
+        <button class="tool-btn" data-mode="brush" title="brush select ([ and ] resize)"><i data-lucide="paintbrush-2"></i></button>
         <button class="tool-btn" id="tool-invert-sel" title="invert selection"><i data-lucide="flip-horizontal-2"></i></button>
         <button class="tool-btn" id="tool-meta-sel" title="select by metadata"><i data-lucide="filter"></i></button>
         <button class="tool-btn" id="tool-clear-sel" title="clear selection"><i data-lucide="circle-x"></i></button>
@@ -331,6 +346,7 @@
     </div>
     <div class="tool-sep"></div>
     <button class="tool-btn" id="btn-crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
+    <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
     <button class="tool-btn" id="btn-stats-toggle" title="toggle stats panels"><i data-lucide="bar-chart-2"></i></button>
   </div>
       <div id="scalebar">
@@ -398,6 +414,7 @@
           <button id="btn-color-all">color all</button>
           <button id="btn-palette">muted</button>
           <button id="btn-clear">clear</button>
+          <span id="gene-count"></span>
         </div>
       </div>
     </div>
@@ -421,12 +438,6 @@
     <div id="alpha-panel">
       <h3 class="section-hd" data-target="opacity-body">Opacity<i data-lucide="chevron-down" class="section-chevron"></i></h3>
       <div id="opacity-body" class="section-body">
-        <div class="alpha-row">
-          <input type="checkbox" id="show-overview" checked>
-          <label>density</label>
-          <input type="range" id="alpha-overview" min="0" max="100" value="80">
-          <span class="alpha-val" id="val-overview">80</span>
-        </div>
         <div class="alpha-row">
           <input type="checkbox" id="show-poly" checked>
           <label>cells</label>

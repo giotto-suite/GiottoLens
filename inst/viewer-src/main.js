@@ -1,15 +1,25 @@
-import { state } from './state.js';
-import { TRANSCRIPT_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from './constants.js';
-import { initDB, visibleTiles, loadTile, invalidateTx, invalidatePoly, buildMetaColors, buildCellMetaCache } from './data.js';
-import { geneSelectionKey, getManifestOverviewBins, updateGeneOverview } from './overview.js';
-import { renderLayers } from './render.js';
-import { renderGeneList, setToggleCallback } from './panel.js';
-import { initComms, onMessage, sendToR } from './comms.js';
-import { loadMetaIntoMosaic, initMosaicPanels } from './mosaic.js';
-import { onCoord, notify } from './coordination.js';
-import { updateScalebar } from './ui.js';
-import { initAnnotations, generateAnnotId } from './annotations.js';
-import { updateRulerLabel, updateTxConnector, initInput } from './input.js';
+import { state } from './core/state.js';
+import { store, actions } from './core/store.ts';
+import { initComms, onMessage, reportError } from './core/comms.js';
+import { initRemote } from './core/remote.js';
+import { invalidateTx } from './data/tiles.js';
+import { loadCells } from './data/cells.ts';
+import { setTransfer } from './data/parquet.ts';
+import { loadMeta } from './data/meta.ts';
+import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
+import { initSelection, recompute } from './selection/selection.ts';
+import { cellColorBuffer } from './render/colors.ts';
+import { initRenderScheduler, requestRender } from './render/schedule.js';
+import { renderGeneList, setGeneSearch } from './ui/panel.js';
+import { renderLegend } from './ui/legend.js';
+import { initAnnotations, generateAnnotId } from './ui/annotations.js';
+import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
+import { initReleaseGuard } from './ui/release.js';
+import { initRuleStrip } from './ui/rules.js';
+import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
+import { createScatterPanel } from './panels/scatter.js';
+import { createHistogramPanel } from './panels/histogram.js';
+import { createSpecPanel } from './panels/spec.js';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
 import { createIcons, icons } from 'lucide';
@@ -18,67 +28,7 @@ import { createIcons, icons } from 'lucide';
 // ES modules are deferred, so this runs after DOM is parsed.
 createIcons({ icons });
 
-// ── Tile eviction + load scheduling ──────────────────────────────────────────
-function updateTiles(viewState) {
-  state.currentViewState = viewState;
-  const newTier = Math.min(3, Math.max(0, Math.floor(viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD)));
-  if (newTier !== state.txZoomTier) { state.txZoomTier = newTier; invalidateTx(); }
-  const txLayer       = state.manifest.layers.transcripts;
-  const txAboveThresh = state.showTx && txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
-  // Polygon tiles always stay in scope — only 12 tiles, centroids needed at all zooms
-  const hasPoly       = state.showPoly && state.manifest.layers.polygons;
-  const inScope       = new Set();
-
-  if (hasPoly)
-    for (const t of visibleTiles(viewState, state.manifest.layers.polygons.tiles))
-      inScope.add(`polygons:${t.index}`);
-
-  if (txAboveThresh)
-    for (const t of visibleTiles(viewState, txLayer.tiles))
-      inScope.add(`transcripts:${t.index}`);
-
-  for (const key of state.cache.keys()) {
-    if (!inScope.has(key)) {
-      if      (key.startsWith('transcripts:')) { state.cache.delete(key); invalidateTx(); }
-      else if (key.startsWith('polygons:'))    { state.cache.delete(key); invalidatePoly(); }
-    }
-  }
-
-  for (const key of state.pending)
-    if (!inScope.has(key)) state.cancelled.add(key);
-
-  renderLayers(viewState);
-
-  if (hasPoly)
-    for (const t of visibleTiles(viewState, state.manifest.layers.polygons.tiles))
-      loadTile('polygons', t, vs => renderLayers(vs));
-
-  if (txAboveThresh) {
-    const [cx, cy] = viewState.target;
-    const txPending = [...state.pending].filter(k => k.startsWith('transcripts:')).length;
-    visibleTiles(viewState, txLayer.tiles)
-      .filter(t => !state.cache.has(`transcripts:${t.index}`) && !state.pending.has(`transcripts:${t.index}`))
-      .sort((a, b) =>
-        Math.hypot((a.xmin+a.xmax)/2 - cx, (a.ymin+a.ymax)/2 - cy) -
-        Math.hypot((b.xmin+b.xmax)/2 - cx, (b.ymin+b.ymax)/2 - cy)
-      )
-      .slice(0, MAX_TRANSCRIPT_TILES - txPending)
-      .forEach(t => loadTile('transcripts', t, vs => { renderLayers(vs); updateTiles(vs); }));
-  }
-
-  if (!txAboveThresh && state.showOverview) {
-    const geneKey = geneSelectionKey();
-    if (state.overviewGeneKey !== geneKey) {
-      state.overviewGeneKey = geneKey;
-      if (state.selectedGenes.size === 0) {
-        state.overviewBins = getManifestOverviewBins();
-        renderLayers(viewState);
-      } else {
-        updateGeneOverview(() => renderLayers(state.currentViewState));
-      }
-    }
-  }
-}
+const $status = msg => { document.getElementById('status').textContent = msg; };
 
 function onViewStateChange({ viewState }) {
   state.currentViewState = viewState;
@@ -86,89 +36,132 @@ function onViewStateChange({ viewState }) {
   updateScalebar(viewState);
   updateRulerLabel();
   updateTxConnector();
-  clearTimeout(state.tileTimer);
-  state.tileTimer = setTimeout(() => updateTiles(viewState), 150);
+  requestRender();
+  scheduleTiles(viewState);
 }
 
-// ── Layer control helpers ─────────────────────────────────────────────────────
-function makeLayerControl(checkId, sliderId, valId, visSetter, alphaSetter) {
+// ── Layer controls ────────────────────────────────────────────────────────────
+function bindLayerControl(name, checkId, sliderId, valId) {
   const check  = document.getElementById(checkId);
   const slider = document.getElementById(sliderId);
   const label  = document.getElementById(valId);
   if (!check || !slider) return;
-  slider.disabled = !check.checked;
-  check.addEventListener('change', () => {
-    visSetter(check.checked);
-    slider.disabled = !check.checked;
-    invalidateTx();
-    updateTiles(state.currentViewState);
-  });
-  slider.addEventListener('input', () => {
-    label.textContent = slider.value;
-    alphaSetter(slider.value / 100);
-    renderLayers(state.currentViewState);
-  });
+  const sync = ({ show, alpha }) => {
+    check.checked = show;
+    slider.disabled = !show;
+    slider.value = Math.round(alpha * 100);
+    if (label) label.textContent = slider.value;
+  };
+  sync(store.getState().layers[name]);
+  store.subscribe(s => s.layers[name], sync);
+  check.addEventListener('change', () => actions.setLayer(name, { show: check.checked }));
+  slider.addEventListener('input', () => actions.setLayer(name, { alpha: slider.value / 100 }));
+}
+
+// ── Cell colours ──────────────────────────────────────────────────────────────
+function recolorCells() {
+  if (!state.cells) return;
+  const col = store.getState().colorBy;
+  const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null);
+  state.cellColors  = colors;
+  state.colorLegend = legend;
+  renderLegend();
+  actions.bumpMeta();
+}
+
+// ── Stats panels ──────────────────────────────────────────────────────────────
+// Pane i shows either a built-in panel or a spec pushed from R; a pushed spec
+// stays until replaced, and metadata reloads leave it alone.
+const _panels = [null, null];
+const _pushed = [false, false];
+const _paneBody = i => document.getElementById(`stats-body-${i + 1}`);
+function setPanel(i, panel) {
+  _panels[i]?.destroy();
+  _panels[i] = panel;
+}
+function initPanels() {
+  if (!state.meta?.size) return;
+  if (!_pushed[0]) setPanel(0, createScatterPanel(_paneBody(0)));
+  if (!_pushed[1]) setPanel(1, createHistogramPanel(_paneBody(1)));
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function main() {
-  document.getElementById('status').textContent = 'initializing duckdb…';
-  await initDB();
-  initComms();
-
-  document.getElementById('status').textContent = 'loading manifest…';
-  state.manifest = await fetch('./manifest.json').then(r => {
+  $status('loading manifest…');
+  state.manifest = await fetch('session/manifest.json').then(r => {
     if (!r.ok) throw new Error(`manifest.json not found (${r.status})`);
     return r.json();
   });
+  // Tile URLs are relative to this page so the viewer works behind a
+  // path-prefixing proxy; fetch resolves them, but keep them absolute anyway
+  for (const layer of Object.values(state.manifest.layers))
+    for (const t of layer.tiles ?? []) {
+      t.url = new URL(t.url, document.baseURI).href;
+      if (t.file) t.file = new URL(t.file, document.baseURI).href;
+    }
+  setTransfer(state.manifest.transfer ?? 'auto');
 
-  state.geneIndex = new Map(state.manifest.layers.transcripts.genes.map((g, i) => [g, i]));
+  const txLayer   = state.manifest.layers.transcripts;
+  const polyLayer = state.manifest.layers.polygons;
+  state.geneIndex = new Map((txLayer?.genes ?? []).map((g, i) => [g, i]));
+  if (!txLayer) {
+    // Polygons-only launch: no gene list or transcript controls
+    document.getElementById('panel-header').style.display = 'none';
+    document.getElementById('gene-list').style.display = 'none';
+    document.getElementById('show-tx')?.closest('.alpha-row')?.remove();
+    document.querySelector('[data-mode="txlasso"]')?.remove();
+  }
+  // Points-only launch: transcripts are all there is to show
+  if (txLayer && !polyLayer) actions.setLayer('tx', { show: true });
+
+  if (polyLayer) {
+    $status('loading cells…');
+    state.cells = await loadCells(polyLayer);
+    const { n, x, y } = state.cells;
+    state.cellPositions = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) { state.cellPositions[i * 2] = x[i]; state.cellPositions[i * 2 + 1] = y[i]; }
+    recolorCells();
+  }
+
+  // Split first so the canvas has its final size when the zoom is fitted
+  const mainSplit = Split(['#spatial-pane', '#stats-column'], {
+    sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
+    onDragEnd: () => {
+      window.dispatchEvent(new Event('resize'));
+      if (state.currentViewState) updateTiles(state.currentViewState);
+    },
+  });
 
   const ext  = state.manifest.extent;
-  const cx   = (ext.xmin + ext.xmax) / 2;
-  const cy   = (ext.ymin + ext.ymax) / 2;
-  const zoom = Math.log2(
-    Math.min((window.innerWidth - 260) / (ext.xmax - ext.xmin),
-              window.innerHeight       / (ext.ymax - ext.ymin))
-  ) - 0.3;
-
-  const initialViewState = { target: [cx, cy, 0], zoom, minZoom: zoom - 2, maxZoom: zoom + 12 };
+  const zoom = fitZoom(ext.xmax - ext.xmin, ext.ymax - ext.ymin) - 0.3;
+  const initialViewState = {
+    target: [(ext.xmin + ext.xmax) / 2, (ext.ymin + ext.ymax) / 2, 0],
+    zoom, minZoom: zoom - 2, maxZoom: zoom + 12,
+  };
 
   state.deckgl = new Deck({
     canvas: 'deck-canvas', width: '100%', height: '100%',
     views: new OrthographicView({ id: 'ortho', controller: true, flipY: false }),
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
+  state.currentViewState = initialViewState;
   updateScalebar(initialViewState);
 
-  document.getElementById('btn-fit-spatial')?.addEventListener('click', () => {
-    state.deckgl.setProps({ viewState: initialViewState });
-    state.currentViewState = initialViewState;
-    updateScalebar(initialViewState);
-    updateTiles(initialViewState);
-  });
+  document.getElementById('btn-fit-spatial')?.addEventListener('click', () =>
+    setViewState(initialViewState));
 
-  // ── Coordination handlers ─────────────────────────────────────────────────
-  onCoord('cellSelection', () => {
-    sendToR('cell_selection', { ids: [...state.selectedCells] });
-    renderLayers(state.currentViewState);
-  });
-  onCoord('metaColors', () => {
-    renderMetaLegend();
-    renderLayers(state.currentViewState);
-  });
+  // ── Store subscriptions ───────────────────────────────────────────────────
+  initRenderScheduler();
+  initSelection();
+  store.subscribe(s => s.colorBy, recolorCells);
+  store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
+  store.subscribe(s => [s.genes, s.txPalette, s.colorAll], () => { invalidateTx(); renderGeneList(); },
+    { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
 
   initAnnotations();
   initInput();
-
-  // ── Split.js layout ───────────────────────────────────────────────────────
-  const mainSplit = Split(['#spatial-pane', '#stats-column'], {
-    sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
-    onDragEnd: () => {
-      window.dispatchEvent(new Event('resize'));
-      if (state.currentViewState) updateScalebar(state.currentViewState);
-    },
-  });
+  initReleaseGuard();
+  initRuleStrip();
 
   let statsOpen      = true;
   let lastStatsSizes = [65, 35];
@@ -181,6 +174,7 @@ async function main() {
       mainSplit.setSizes([100, 0]);
     }
     window.dispatchEvent(new Event('resize'));
+    if (state.currentViewState) updateTiles(state.currentViewState);
     document.getElementById('btn-stats-toggle')?.classList.toggle('active', statsOpen);
   });
   document.getElementById('btn-stats-toggle')?.classList.add('active');
@@ -188,150 +182,81 @@ async function main() {
   document.querySelectorAll('.stats-collapse-btn').forEach(btn =>
     btn.addEventListener('click', () => btn.closest('.stats-pane').classList.toggle('stats-collapsed'))
   );
-
-  // ── Collapsible panel sections ────────────────────────────────────────────
   document.querySelectorAll('.section-hd').forEach(hd =>
     hd.addEventListener('click', () => hd.closest('[id]').classList.toggle('section-collapsed'))
   );
 
   // ── Gene panel ────────────────────────────────────────────────────────────
   const $search = document.getElementById('gene-search');
-  $search?.addEventListener('input', () => {
-    state.searchTerm = $search.value;
-    renderGeneList();
-  });
+  $search?.addEventListener('input', () => setGeneSearch($search.value));
 
   const $btnColorAll = document.getElementById('btn-color-all');
-  $btnColorAll?.addEventListener('click', () => {
-    state.colorAll = !state.colorAll;
-    $btnColorAll.classList.toggle('active', state.colorAll);
-    invalidateTx();
-    renderLayers(state.currentViewState);
-  });
+  $btnColorAll?.addEventListener('click', () => actions.setColorAll(!store.getState().colorAll));
+  store.subscribe(s => s.colorAll, on => $btnColorAll?.classList.toggle('active', on));
 
   const $btnPalette   = document.getElementById('btn-palette');
   const paletteLabels = ['muted', 'vivid'];
-  $btnPalette?.addEventListener('click', () => {
-    state.txPaletteIdx = (state.txPaletteIdx + 1) % paletteLabels.length;
-    $btnPalette.textContent = paletteLabels[state.txPaletteIdx];
-    invalidateTx();
-    renderLayers(state.currentViewState);
-  });
+  $btnPalette?.addEventListener('click', () =>
+    actions.setTxPalette((store.getState().txPalette + 1) % paletteLabels.length));
+  store.subscribe(s => s.txPalette, i => { if ($btnPalette) $btnPalette.textContent = paletteLabels[i]; });
 
-  document.getElementById('btn-clear')?.addEventListener('click', () => {
-    state.selectedGenes.clear();
-    invalidateTx();
-    renderGeneList();
-    state.overviewGeneKey = null;
-    updateTiles(state.currentViewState);
-  });
+  document.getElementById('btn-clear')?.addEventListener('click', () => actions.clearGenes());
 
-  setToggleCallback(() => {
-    if (state.currentViewState?.zoom < TRANSCRIPT_ZOOM_THRESHOLD) {
-      state.overviewGeneKey = null;
-      updateTiles(state.currentViewState);
-    } else {
-      renderLayers(state.currentViewState);
-    }
-  });
+  // ── Layers ────────────────────────────────────────────────────────────────
+  bindLayerControl('poly',        'show-poly',        'alpha-poly',        'val-poly');
+  bindLayerControl('tx',          'show-tx',          'alpha-tx',          'val-tx');
+  bindLayerControl('annotations', 'show-annotations', 'alpha-annotations', 'val-annotations');
 
-  // ── Opacity + visibility controls ─────────────────────────────────────────
-  makeLayerControl('show-overview', 'alpha-overview', 'val-overview',
-    v => state.showOverview = v, v => state.alphaOverview = v);
-  makeLayerControl('show-poly',     'alpha-poly',     'val-poly',
-    v => state.showPoly = v,     v => state.alphaPoly     = v);
-  makeLayerControl('show-tx',       'alpha-tx',       'val-tx',
-    v => { state.showTx = v; invalidateTx(); }, v => state.alphaTx = v);
-  makeLayerControl('show-annotations', 'alpha-annotations', 'val-annotations',
-    v => state.showAnnotations = v, v => state.alphaAnnotations = v);
+  const $colSel = document.getElementById('meta-col-select');
+  $colSel?.addEventListener('change', e => actions.setColorBy(e.target.value || null));
+  store.subscribe(s => s.colorBy, c => { if ($colSel) $colSel.value = c ?? ''; });
 
-  // ── Metadata color legend ─────────────────────────────────────────────────
-  function renderMetaLegend() {
-    const el = document.getElementById('meta-legend');
-    if (!el) return;
-    if (!state.metaLegend) { el.innerHTML = ''; return; }
-    if (state.metaLegend.type === 'continuous') {
-      const { min, max } = state.metaLegend;
-      el.innerHTML =
-        `<div class="legend-gradient"></div>` +
-        `<div class="legend-labels"><span>${min.toFixed(2)}</span><span>${max.toFixed(2)}</span></div>`;
-    } else {
-      const items = state.metaLegend.items.slice(0, 30);
-      el.innerHTML = items.map(({ label, color }) =>
-        `<div class="legend-item">` +
-        `<span class="legend-dot" style="background:rgb(${color[0]},${color[1]},${color[2]})"></span>` +
-        `<span class="legend-label">${label}</span></div>`
-      ).join('') + (state.metaLegend.items.length > 30
-        ? `<div class="legend-overflow">+${state.metaLegend.items.length - 30} more</div>` : '');
-    }
-  }
-
-  document.getElementById('meta-col-select')?.addEventListener('change', async e => {
-    state.metaCol = e.target.value || null;
-    await buildMetaColors();
-    notify('metaColors');
-  });
-
-  // ── R → viewer message handlers ───────────────────────────────────────────
-  onMessage('load_metadata', async ({ url, types }) => {
-    const fullUrl = `${location.origin}${url}`;
-    await state.polyConn.query(
-      `CREATE OR REPLACE TABLE cell_meta AS SELECT * FROM read_parquet('${fullUrl}')`
-    );
-    state.metaCols = Object.entries(types ?? {}).map(([name, kind]) => ({
-      name,
-      numeric: kind === 'continuous',
-    }));
-    const colSel = document.getElementById('meta-col-select');
-    if (colSel) {
-      colSel.innerHTML = '<option value="">none</option>' +
-        state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+  // ── R → viewer messages ───────────────────────────────────────────────────
+  let metaUrl = null;
+  onMessage('load_metadata', async ({ url, columns }) => {
+    // A reconnect re-sends the current metadata; keep the panels as they are
+    if (!state.cells || url === metaUrl) return;
+    metaUrl = url;
+    state.meta = await loadMeta(url, columns ?? []);
+    if ($colSel) {
+      $colSel.innerHTML = '<option value="">none</option>' +
+        [...state.meta.keys()].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
       document.getElementById('meta-panel').style.display = '';
     }
-    if (state.metaCol) { await buildMetaColors(); notify('metaColors'); }
-    await buildCellMetaCache();
-    await loadMetaIntoMosaic(fullUrl);
-    initMosaicPanels(state.metaCols);
+    const colorBy = store.getState().colorBy;
+    if (colorBy && !state.meta.has(colorBy)) actions.setColorBy(null);
+    else recolorCells();
+    // Rules on metadata columns re-evaluate against the new table
+    recompute({ reset: true });
+    initPanels();
   });
 
-  onMessage('set_selection', ({ ids }) => {
-    if (state.crossFilter) {
-      state.crossFilter   = false;
-      state.spatialFilter = null;
-      state.scatterFilter = null;
-      document.getElementById('btn-crossfilter')?.classList.remove('active');
-    }
-    state.selectedCells = new Set(ids ?? []);
-    state.selVersion++;
-    renderLayers(state.currentViewState);
+  onMessage('push_panel', async ({ pane, ...panel }) => {
+    const i = Math.min(2, Math.max(1, pane ?? 2)) - 1;
+    _pushed[i] = true;
+    _panels[i]?.destroy();
+    _panels[i] = null;
+    setPanel(i, await createSpecPanel(_paneBody(i), panel));
   });
 
-  onMessage('push_polygons', ({ polygons }) => {
-    const incoming = (polygons ?? []).map(p => ({
-      id: generateAnnotId(), type: 'polygon',
-      name: p.name ?? '', coords: p.coords,
-    }));
-    state.annotations = [...state.annotations, ...incoming];
-    notify('annotations');
-    renderLayers(state.currentViewState);
-  });
+  onMessage('push_polygons', ({ polygons }) =>
+    actions.addAnnotations((polygons ?? []).map(p => ({
+      id: generateAnnotId(), type: 'polygon', name: p.name ?? '', coords: p.coords,
+    }))));
 
-  onMessage('color_cells',     data  => { console.log('color_cells', data); });
-  onMessage('highlight_genes', genes => {
-    genes.forEach(g => {
-      const idx = state.geneIndex.get(g);
-      if (idx !== undefined) state.selectedGenes.add(idx);
-    });
-    invalidateTx();
-    renderGeneList();
-    renderLayers(state.currentViewState);
-  });
+  initRemote();
+  initComms();   // after every handler is registered
 
   renderGeneList();
+  $status('ready');
   updateTiles(initialViewState);
 }
 
+// Handles for tests and debugging from the browser console
+window.__giottolens = { state, store, actions, panels: _panels };
+
 main().catch(err => {
-  document.getElementById('status').textContent = 'error: ' + err.message;
-  console.error(err);
+  $status('error: ' + err.message);
+  initComms();   // so the error still reaches R
+  reportError(err, 'boot');
 });

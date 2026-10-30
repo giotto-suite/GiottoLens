@@ -16,36 +16,36 @@ prep_meta(
 \arguments{
 \item{x}{A giotto object.}
 
-\item{cols}{Metadata columns to include. `NULL` (default) includes
+\item{cols}{Metadata columns to include. \code{NULL} (default) includes
 all columns. A character vector selects columns as they
 are. A named list or named character vector also sets how
 the viewer treats each column: names are the columns,
-values are `"categorical"` (alias `"factor"`) or
-`"continuous"` (alias `"numeric"`), e.g.
-`list(leiden_clus = "categorical", nr_feats = "continuous")`.
+values are \code{"categorical"} (alias \code{"factor"}) or
+\code{"continuous"} (alias \code{"numeric"}), e.g.
+\code{list(leiden_clus = "categorical", nr_feats = "continuous")}.
 Unnamed entries are kept without casting.}
 
 \item{dimreds}{Character vector of dimension reduction names or types
-(see `list_dim_reductions(g)`).  `NULL` skips all.}
+(see \code{list_dim_reductions(g)}).  \code{NULL} skips all.}
 
 \item{dims}{Integer vector of axes to pull from each reduction
-(default `1:2`, silently capped to available axes).}
+(default \code{1:2}, silently capped to available axes).}
 
-\item{spat_unit}{Spatial unit key (default `"cell"`).}
+\item{spat_unit}{Spatial unit key (default \code{"cell"}).}
 
-\item{feat_type}{Feature type key for dimension reductions (default `"rna"`).}
+\item{feat_type}{Feature type key for dimension reductions (default \code{"rna"}).}
 }
 \value{
-A `data.frame` with `cell_ID` plus selected metadata and dim-red
-  columns named `<name>_<dim>` (e.g. `umap.projection_1`, `umap.projection_2`).
+A \code{data.frame} with \code{cell_ID} plus selected metadata and dim-red
+columns named \verb{<name>_<dim>} (e.g. \code{umap.projection_1}, \code{umap.projection_2}).
 }
 \description{
 Joins cell-level metadata with dimension reduction coordinates into a single
-data.frame ready for [launch_lens()] or [LensViewer]`$push_metadata()`.
+data.frame ready for \code{\link[=launch_lens]{launch_lens()}} or \link{LensViewer}\verb{$push_metadata()}.
 Inspect or modify the result before pushing if needed.
 }
 \details{
-`dimreds` accepts names as they appear in `list_dim_reductions(g)$name`
-(e.g. `"umap.projection"`, `"pca"`) **or** by `dim_type`
-(e.g. `"umap"`, `"pca"`); the first match is used.
+\code{dimreds} accepts names as they appear in \code{list_dim_reductions(g)$name}
+(e.g. \code{"umap.projection"}, \code{"pca"}) \strong{or} by \code{dim_type}
+(e.g. \code{"umap"}, \code{"pca"}); the first match is used.
 }

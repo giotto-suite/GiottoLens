@@ -1,6 +1,6 @@
 Package: GiottoLens
 Title: Interactive Spatial Biology Viewer for GiottoDisk Data
-Version: 0.0.2
+Version: 0.1.0
 Authors@R: c(
 	person("Ruben", "Dries", email = "rubendries@gmail.com",
 		 role = c("aut", "cre"), comment = c(ORCID = "0000-0001-7650-7754")),
@@ -11,16 +11,26 @@ Description: An interactive web viewer for GiottoDisk-backed spatial biology dat
     using deck.gl and DuckDB WASM. Supports transcript scatter, polygon outlines,
     density rasterization, gene filtering, cell selection, and annotation drawing.
     Includes bidirectional R communication via httpuv WebSocket for analysis workflows.
-License: MIT
+License: MIT + file LICENSE
 Imports:
     arrow,
-    dplyr,
+    httpuv (>= 1.5.2),
     jsonlite,
-    httpuv,
     later,
-    R6
+    methods,
+    R6,
+    stats,
+    utils
 Suggests:
+    chromote,
+    curl,
     GiottoClass,
-    GiottoDisk
+    GiottoDisk,
+    sf,
+    terra,
+    testthat (>= 3.0.0),
+    websocket
 Encoding: UTF-8
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.0.0

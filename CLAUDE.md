@@ -1,118 +1,133 @@
 # GiottoLens — Claude Code Guide
 
 ## What this is
-A static spatial biology viewer for GiottoDisk-backed data. Two R functions launch a local HTTP server and open a deck.gl + DuckDB WASM viewer in the browser with bidirectional R communication via WebSocket.
+A spatial viewer for GiottoDisk-backed data. `launch_lens()` starts an httpuv server and opens a
+deck.gl viewer in the browser, with two-way R communication over a WebSocket. The R6 `LensViewer`
+methods are also the agent API: anything a user can do in the browser has an R equivalent.
+
+Plans: `vignettes/articles/state_selection.md` and `plugins.md` (branch
+`docs/state-selection-plan`), `data_delivery.md` (branch `docs/data-delivery-plan`).
 
 ## npm dependencies (pinned in `inst/viewer-src/package.json`)
-| Package | Version |
-|---|---|
-| `@duckdb/duckdb-wasm` | 1.29.0 |
-| `hyparquet` | 1.25.8 |
-| `deck.gl` | 9.3.2 |
-| `@luma.gl/core` / `engine` / `webgl` | 9.3.3 |
-| `@uwdata/vgplot` | 0.25.0 |
-| `lucide` | 1.14.0 |
-| `split.js` | 1.6.5 |
+| Package | Version | Use |
+|---|---|---|
+| `deck.gl` | 9.3.2 | rendering |
+| `@luma.gl/core` / `engine` / `webgl` | 9.3.3 | deck.gl peers |
+| `hyparquet` | 1.25.8 | all parquet reads (tiles, cells, metadata, panels) |
+| `zustand` | 5.0.16 | store |
+| `vega` / `vega-lite` / `vega-embed` | 6.4.0 / 6.5.0 / 7.3.0 | histogram and pushed panels, loaded on demand |
+| `lucide` | 1.14.0 | icons |
+| `split.js` | 1.6.5 | layout |
+| dev: `vite` 5.4.0, `vitest` 2.1.9, `typescript` 5.9.3 | | build, tests, typecheck |
 
-The DuckDB WASM binary (40 MB) is committed to `inst/viewer/assets/` and served locally — no CDN needed at runtime.
+`data/point-decode.ts` imports hyparquet internals (`hyparquet/src/thrift.js`, `encoding.js`,
+`snappy.js`); recheck it when bumping hyparquet.
+
+No DuckDB-WASM and no Mosaic: both were removed (state_selection.md steps 4 and 8).
 
 ## Package structure
 ```
-GiottoLens/
-├── R/
-│   ├── export.R      # export_manifest() — generates manifest.json from GiottoDisk stores
-│   └── launch.R      # serve_lens(), launch_lens(), LensServer, LensViewer R6 classes
-├── inst/
-│   ├── viewer-src/   # Vite source — edit JS here, then npm run build
-│   │   ├── index.html
-│   │   ├── main.js       # bootstrap, updateTiles, event wiring
-│   │   ├── state.js      # single shared mutable state object
-│   │   ├── constants.js  # zoom thresholds, palette, limits
-│   │   ├── data.js       # DuckDB connections, tile fetching, caching
-│   │   ├── overview.js   # density grid, gene overview queries
-│   │   ├── render.js     # renderLayers() only
-│   │   ├── panel.js      # gene list UI
-│   │   ├── scatter.js    # scatter plot panels
-│   │   ├── annotations.js
-│   │   ├── mosaic.js     # vgplot/Mosaic coordination
-│   │   ├── coordination.js
-│   │   ├── input.js
-│   │   ├── ui.js
-│   │   ├── comms.js      # WebSocket to R
-│   │   ├── package.json
-│   │   └── vite.config.js
-│   └── viewer/       # built output — committed to git, served at runtime
-│       ├── index.html
-│       └── assets/   # hashed JS bundle + DuckDB WASM
-└── DESCRIPTION
+R/
+  viewer.R     launch_lens(), LensViewer (R API), viewer registry, input checks
+  server.R     httpuv app: static paths, Range-aware data handler, WS token/Origin
+  protocol.R   message types, parsing, selection bitmasks
+  rules.R      selection rules: validation, evaluation in R, lens_*() builders
+  export.R     export_manifest(): manifest.json + cells.parquet from tile stores
+  metadata.R   prep_meta(), .write_metadata()
+tests/testthat/  unit, server integration (websocket client), e2e (chromote)
+inst/viewer-src/  Vite source (edit here, then npm run build)
+  main.js            bootstrap and wiring
+  core/   state.js (runtime), store.ts (config + selection), comms.js (protocol),
+          remote.js (R commands), constants.js
+  data/   parquet.ts (Range reader), cells.ts, meta.ts, tiles.js, schedule.js,
+          wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js (transcript workers)
+  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
+  render/ render.js, schedule.js (requestRender), colors.ts
+  ui/     input.js (tools), annotations.js, panel.js, legend.js, tooltip.js, dom.js
+  panels/ scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
+  test/   vitest
+inst/viewer/  built bundle — committed, served at runtime
 ```
 
-## Development workflow
-```r
-# After editing R files:
-devtools::load_all()
-```
-
+## Workflow
 ```bash
-# After editing inst/viewer-src/ JS files:
-cd inst/viewer-src
-npm install          # first time only
-npm run build        # outputs to inst/viewer/
+cd inst/viewer-src && npm ci && npm test && npm run typecheck && npm run build
 ```
 ```r
-devtools::load_all() # picks up the new inst/viewer/ build
+devtools::load_all(); devtools::test()   # e2e needs Chrome and NOT_CRAN=true
+viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 ```
-
-```r
-# Launch:
-server <- serve_lens(gpoints, gpolygons)   # starts httpuv server
-viewer <- launch_lens(server)               # opens browser + WebSocket
-server$stop()                               # kill HTTP server (also auto-stops on session exit)
-```
-
-**Remember to commit `inst/viewer/` after rebuilding** — it is the built artifact that ships with the package. `inst/viewer-src/node_modules/` is gitignored.
+**Commit `inst/viewer/` after rebuilding.** CI checks it matches a fresh build.
 
 ## Key conventions
 
-**R side:**
-- `serve_lens()` derives all paths from `store@path` — never ask user for `artifacts_dir`
-- `serve_root` = `dirname(dirname(dirname(store@path)))` (3 levels up from the data files)
-- Viewer files served at `serve_root/lens/`, parquet data at `serve_root/artifacts/`
-- Always open browser to `/lens/` — WebSocket uses `ws://${location.host}` (same origin, no ws_port param)
-- `LensServer` (R6) is a config-only object (no process); `LensViewer` (R6) owns the combined httpuv server
-- httpuv `staticPath` serves files in C++ — concurrent, Range-aware, never blocks R's event loop
-- Direct field assignment in `onMessage` is safe — httpuv dispatches callbacks to the main R thread
-- Capture `private` env before async closures: `priv <- private` then use `priv$ws <- ws`
+**Serving (R/server.R):**
+- Nothing is copied or written next to the data. All URLs are under `/lens/` and the viewer
+  uses page-relative URLs, so path-prefixing proxies work:
+  `/lens/` bundle (from the package), `/lens/session/` per-viewer temp dir (manifest,
+  `cells.parquet`, metadata, panel data; removed by `close()`), `/lens/data/<layer>/` store
+  directories through `.data_response()` (Range, R main thread), and `/lens/files/<layer>/`
+  the same files whole from httpuv's own thread (no R).
+- httpuv `staticPath` **ignores Range**. `.data_response()` answers single ranges with 206 on
+  R's main thread. Headers include `Content-Encoding: identity` (httpuv gzips otherwise).
+- Binds `127.0.0.1` on a random port. The WebSocket needs the per-launch `?token=`; the Origin
+  check only rejects non-loopback foreign pages.
 
-**JS side:**
-- All shared state lives in `state.js` as a single exported object — mutate via `state.foo = bar`
-- `loadTile()` takes an `onLoad` callback to avoid circular imports between `data.js` and `render.js`
-- `panel.js` uses `setToggleCallback()` for the same reason
-- DuckDB uses 3 connections: `conn` (transcripts — legacy, unused for tile loads), `overviewConn` (gene overview), `polyConn` (polygons + metadata)
-- Polygon geometry: `ST_AsGeoJSON(geom)` directly — DuckDB spatial auto-promotes GeoParquet GEOMETRY columns, do NOT use `ST_GeomFromWKB()`
-- Data caches: `txDirty/txBuild` and `polyDirty/polyBuild` — invalidate when tiles load/evict
+**Cells and selection:**
+- Cell index `i` = polygon tiles concatenated in manifest order; tile rows are cells
+  `offset .. offset + n - 1`. The browser holds centroids and metadata as typed arrays by
+  index; R holds the IDs (`private$cell_ids`) and translates.
+- A selection is one rule per source (`spatial`, `scatter`, `hist:<col>`, `meta`, `panel:*`,
+  `r`), combined with OR, or AND in cross-filter mode. Rules evaluate to `Uint8Array` masks
+  over all cells, never only loaded tiles. Selections cross the socket as base64 bitmasks.
+- `R/rules.R` and `selection/rules.ts` implement the same evaluation; keep them in step (the
+  e2e tests compare them).
+- Metadata is written in cell order; categorical columns as 0-based codes (-1 = NA) with levels.
 
-**Transcript tile loading — hyparquet, not DuckDB:**
-Transcript parquet files contain hundreds of gene expression columns (~20–35 MB each). We only need `x_index`, `y_index`, `feat_ID`. DuckDB could do column-selective range reads but requires `crossOriginIsolated = true` (SharedArrayBuffer + `Atomics.wait()`), which Positron's Electron webview never sets even with COOP/COEP headers. Instead, `fetchTranscriptTile` uses hyparquet (`parquetReadObjects`) with a custom `_rangeBuffer` that:
-1. Probes with `Range: bytes=0-0` (not HEAD, not `bytes=-8`) to get total size from `Content-Range`
-2. Makes targeted range requests for only the 3 column byte ranges (~5 MB vs ~26 MB)
-3. Passes `Accept-Encoding: identity` on all parquet fetches to prevent gzip encoding corrupting range responses
-4. Includes an inline LZ4 Hadoop decompressor (`_lz4BlockDecompress` + `_lz4Compressors`) — GiottoDisk writes LZ4-compressed parquet; hyparquet has no built-in LZ4 support
-Falls back to full download if server returns 200 instead of 206. Polygon tiles still use DuckDB + `registerFileBuffer` (needed for WKB geometry decoding via spatial extension).
+**Browser state:**
+- Config and selection live in the zustand store and change only through `actions`. Renders
+  follow store subscriptions through `requestRender()` (one per frame). `core/state.js` holds
+  runtime data only (deck, manifest, caches, loaded tables, in-progress drawing).
+- Camera moves go through `setViewState()` so tiles load. Viewport size comes from
+  `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
+- deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
+  render.js). A new object per render re-triangulates polygons and re-uploads buffers.
 
-**Why not DuckDB for transcripts in Positron:**
-`crossOriginIsolated = false` in Positron's webview → DuckDB worker can't use `Atomics.wait()` → falls back to full-file HTTP read (allocates one contiguous malloc block per file) → crashes on large tiles. COOP/COEP headers don't fix this in Electron-based viewers.
+**Protocol (core/comms.js ↔ R/protocol.R, PROTOCOL = 2):**
+- `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
+  comes back as `{type: 'reply', id, data | error}`. `LensViewer$request()` waits for it.
+- A tab sends `ready` once its handlers are registered; R then sends metadata and rules.
+- Browser errors are forwarded as `client_error` and printed in the R console.
 
-**httpuv server (R/launch.R):**
-- `Cache-Control: no-cache` + COOP/COEP headers on all staticPath responses
-- COOP: `same-origin`, COEP: `credentialless` (enables SharedArrayBuffer on main thread; doesn't fix Positron but needed for browser)
-- `.stamp_index()` injects a per-launch UID into `index.html` so its ETag changes every launch, preventing stale browser cache
-- Stale viewer file pruning: after copying, removes any files in lens/ not present in inst/viewer/
+**Tiles:**
+- Tile reads go through `readTileColumns()` (data/parquet.ts), in one of two modes
+  (`launch_lens(transfer =)`, manifest `transfer`): `whole` fetches the file from `/lens/files/`
+  in one request with no R involved; `columns` reads the footer (64 KB first read) and the
+  needed column blocks, merged when < 1 MB apart, from `/lens/data/` (~2 requests per tile).
+  `auto` starts `whole` on a localhost URL and switches to `columns` after two slow
+  (< 150 MB/s) whole fetches, since an SSH port forward also looks like localhost.
+  Measured (Atera, 10 tx tiles + outlines): whole 0.9 s with R free or busy; columns 1.0 s,
+  but ≥ 2.8 s while R is busy (every request waits for R's main thread).
+- Transcript tiles decode in a worker pool with `data/point-decode.ts`: x, y, gene straight
+  into typed arrays, keeping every `stride`-th row (16/4/1 by zoom tier, `txStride()`),
+  reading only the kept dictionary indices; gene names map once per dictionary entry.
+  2.6× faster than hyparquet for all rows, 3.4× at 1/16, identical output (Atera, 7.1M
+  rows). Unsupported layouts throw `UnsupportedLayout` and fall back to hyparquet. A tile
+  cached at a coarser stride is refetched on zoom-in; the transcript lasso always decodes
+  stride 1. After this, zoomed-out loads are bound by bytes moved (whole tiles: 28 MB each),
+  not decoding: the next gain is a pre-sampled coarse tier or lean tiles.
+- One deck layer per transcript tile. Polygon tiles: `geom`
+  only, WKB to flat arrays, loaded only near outline zoom (centroids come from the cell table).
+- Every Range slice must be a 206; at most 6 requests in flight per context.
+
+**Input:** a button released outside the page (e.g. outside Positron's viewer pane, an
+embedded frame) never reaches it; deck.gl then keeps panning on the next move.
+`ui/release.js` sends the missed `pointerup`/`mouseup` when a move arrives with no button
+down during a drag, or on blur. Tools listen for `mouseup` on `window`, so they end too.
 
 ## Common mistakes to avoid
-- Do not use `ST_GeomFromWKB(geom)` — `geom` is already GEOMETRY type from GeoParquet metadata
-- Do not open browser to `/lens/index.html` — serve strips .html and redirects, breaking relative imports
-- Do not add polygon tiles to `failed` Set — they should always retry (only 12 tiles)
-- Do not run tile eviction on polygon tiles based on zoom — polygons must always stay in scope for centroid rendering
-- `getFillColor` in `SolidPolygonLayer` binary format is per-triangle not per-polygon — use function accessors
-- COUNT(*) from DuckDB returns int64 (BigInt in JS) — cast with `n::INTEGER` before storing in Int32Array
+- Do not open `/lens/index.html`; open `viewer$url` (`/lens/?token=…`).
+- Do not build absolute URLs from `location.origin`; resolve against `document.baseURI`.
+- Do not write store state directly or call `renderLayers()` by hand; use actions and `requestRender()`.
+- Do not key per-cell data by cell ID in the browser; use the cell index.
+- `getFillColor` in `SolidPolygonLayer` binary data is per vertex as an attribute; use a function accessor for per-polygon colour.
