@@ -37,3 +37,25 @@ export function pointInPolygon(ring, x, y) {
   }
   return inside;
 }
+
+// ── Viewport ──────────────────────────────────────────────────────────────────
+// Size of the spatial view in CSS pixels. The window is larger: the side
+// panel and the stats column take part of it. Measured on the pane, since the
+// canvas is still the default 300 × 150 until deck.gl sizes it.
+export function viewportSize() {
+  const c = document.getElementById('spatial-pane');
+  return { width: c?.clientWidth || window.innerWidth, height: c?.clientHeight || window.innerHeight };
+}
+
+// Zoom that fits a w × h world box into a viewport of the given pixel size
+export function fitZoom(w, h, { width, height } = viewportSize()) {
+  return Math.log2(Math.min(width / Math.max(w, 1e-9), height / Math.max(h, 1e-9)));
+}
+
+// ── HTML ──────────────────────────────────────────────────────────────────────
+// Escape data-derived text before it goes into innerHTML (gene names, IDs,
+// metadata values and annotation names all come from user data).
+const _ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export function escapeHtml(v) {
+  return String(v).replace(/[&<>"']/g, c => _ESC[c]);
+}

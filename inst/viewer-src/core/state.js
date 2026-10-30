@@ -1,52 +1,31 @@
-// Shared mutable state — all modules import from here.
-// Using a plain object so any module can update state.foo = bar
-// and all other importers see the change via the same reference.
+// Runtime state: handles, loaded data, caches and in-progress drawing. Never
+// saved. Savable settings (layers, colouring, selection rules, annotations,
+// tool settings) live in the store (core/store.ts).
 
+/** @type {Record<string, any>} */
 export const state = {
-  // DuckDB connections
-  db: null, conn: null, overviewConn: null, polyConn: null,
-  spatialLoaded: false,
-
   // App
-  manifest: null, deckgl: null, tileTimer: null,
-  geneIndex: null, currentViewState: null,
+  manifest: null, deckgl: null, tileTimer: null, currentViewState: null,
+  geneIndex: null,          // Map gene name → index into manifest genes
 
-  // Tile management
-  cache:     new Map(),   // "layer:idx" → data
+  // Cells (data/cells.ts) and metadata (data/meta.ts)
+  cells: null,              // { n, x, y, tiles, url }
+  cellPositions: null,      // Float32Array x0,y0,x1,y1,… for deck.gl
+  meta: null,               // Map column → MetaColumn
+  cellColors: null,         // Uint8Array RGBA per cell for the colour-by column
+  colorLegend: null,
+  selPositions: null,       // Float32Array of selected cell centroids
+
+  // Tiles
+  cache:     new Map(),     // "layer:idx" → decoded tile
   pending:   new Set(),
   cancelled: new Set(),
-  failed:    new Set(),   // transcript tiles that errored — no retry
-  polyIdColFailed: false, // set true when id_col from manifest doesn't exist in parquet
+  failed:    new Map(),     // transcript tile → time it failed (retried later)
 
-  // Gene selection
-  selectedGenes:    new Set(),
-  geneOverviewCache: new Map(),
-  colorAll:      false,
-  txPaletteIdx:  0,
-  searchTerm:    '',
-
-  // Overview
-  overviewBins:         null,
-  overviewGeneKey:      null,
-  manifestOverviewBins: null,
-
-  // Visibility + opacity
-  showOverview:     true,  alphaOverview:     0.80,
-  showPoly:         true,  alphaPoly:         0.60,
-  showTx:           false, alphaTx:           0.70,
-  showAnnotations:  true,  alphaAnnotations:  0.60,
-
-  // Annotations
-  annotations:      [],
-  selectedAnnotId:  null,
-
-  // Data caches
-  txBuild:    null, txDirty:    true,
+  // Transcript zoom tier (stride sampling), see data/tiles.js txDrawTiles()
   txZoomTier: -1,
-  polyBuild:  null, polyDirty:  true,
 
-  // Annotation / selection
-  mode:         'pan',   // 'pan' | 'draw' | 'lasso' | 'rect'
+  // In-progress drawing and measuring
   drawRing:     [],
   lassoRing:    [],
   lassoActive:  false,
@@ -58,19 +37,4 @@ export const state = {
   txLassoRing:  null,
   brushDown:    false,
   brushPos:     null,
-  brushRadius:  30,
-  selectedCells:  new Set(),
-  selVersion:     0,
-  allPolyIds:     new Set(),
-  crossFilter:    false,
-  spatialFilter:  null,   // Set | null — cells from spatial selection
-  scatterFilter:  null,   // Set | null — cells from scatter selection
-
-  // Cell metadata
-  metaCols:    [],    // [{name, numeric}] populated when metadata is loaded
-  metaCol:     null,  // active coloring column
-  metaColors:  null,  // Map<cell_ID, [r,g,b,a]> built async
-  metaLegend:  null,  // {type:'categorical',items:[{label,color}]} | {type:'continuous',min,max}
-  cellMetaCache: null, // Map<cell_ID, {col:val,...}> for hover tooltip
-
 };

@@ -2,7 +2,6 @@ export const TRANSCRIPT_ZOOM_THRESHOLD = 0;
 export const POLYGON_ZOOM_THRESHOLD   = -1;  // outlines pop in; centroids show below
 export const MAX_TRANSCRIPT_TILES     = 25;
 export const MAX_LIST_ROWS            = 200;
-export const OVERVIEW_CELL_SIZE       = 100;
 
 export const PALETTE = [
   [76,114,176],[221,132,82],[85,168,104],[196,78,82],[129,114,179],

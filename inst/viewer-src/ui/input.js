@@ -1,13 +1,17 @@
-import { state }              from './state.js';
-import { renderLayers }       from './render.js';
-import { getCachedPolyData }  from './data.js';
-import { notify, recomputeCrossFilter, sqlIds, clearFilters } from './coordination.js';
-import { sel }                from './mosaic.js';
-import { generateAnnotId, syncAnnotationsToR } from './annotations.js';
-import { clientToWorld, worldToClient, pointInPolygon } from './ui.js';
+// Spatial-view tools: modes, drawing, measuring, selecting, keyboard
+import { state } from '../core/state.js';
+import { store, actions } from '../core/store.ts';
+import { requestRender } from '../render/schedule.js';
+import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
+import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterMeta } from '../selection/selection.ts';
+import { generateAnnotId } from './annotations.js';
+import { clientToWorld, worldToClient, pointInPolygon, escapeHtml } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
 
 let _canvas = null; // set in initInput, used by exported functions above initInput scope
+let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
+
+const DRAG_MODES = ['lasso', 'txlasso', 'rect', 'freehand', 'brush'];
 
 function rulerDist(a, b) {
   const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -46,8 +50,7 @@ export function updateTxConnector() {
   line.setAttribute('display', '');
 }
 
-export function setMode(m) {
-  state.mode = m;
+function resetDrawing() {
   state.drawRing    = [];
   state.lassoRing   = [];
   state.lassoActive = false;
@@ -55,7 +58,15 @@ export function setMode(m) {
   state.rectPreview = null;
   state.brushDown   = false;
   state.brushPos    = null;
-  state.deckgl.setProps({ controller: (m === 'lasso' || m === 'txlasso' || m === 'rect' || m === 'freehand' || m === 'brush')
+}
+
+export function setMode(m) {
+  resetDrawing();
+  actions.setMode(m);
+}
+
+function applyMode(m) {
+  state.deckgl.setProps({ controller: DRAG_MODES.includes(m)
     ? { dragPan: false, doubleClickZoom: false }
     : { doubleClickZoom: false } });
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
@@ -64,20 +75,35 @@ export function setMode(m) {
   document.getElementById('btn-group-draw')?.classList.toggle('active',    ['poly','rect','freehand'].includes(m));
   document.getElementById('btn-group-select')?.classList.toggle('active',  ['lasso','brush'].includes(m));
   document.getElementById('btn-group-measure')?.classList.toggle('active', ['ruler','txlasso'].includes(m));
-  renderLayers(state.currentViewState);
+}
+
+function clearMeasurements() {
+  state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
+  document.getElementById('ruler-label')?.classList.remove('visible');
+  state.txLassoRing = null;
+  document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+  updateTxConnector();
+  requestRender();
 }
 
 // ── Transcript lasso ──────────────────────────────────────────────────────────
+// Counts genes inside the ring from the same column-only tile reads used for
+// drawing, reusing tiles already in the cache. Large regions belong to the
+// server-side query path (state_selection.md step 7); until then, cap them.
+const TX_LASSO_MAX_TILES = 100;
+let _txLassoRun = 0;
+
 async function _runTxLasso(ring) {
   const panel = document.getElementById('tx-lasso-panel');
   const title = document.getElementById('tx-lasso-title');
   const list  = document.getElementById('tx-lasso-results');
   if (!panel) return;
+  const run = ++_txLassoRun;
 
   state.txLassoRing = ring;
-  renderLayers(state.currentViewState);
+  requestRender();
   title.textContent = 'querying…';
-  list.innerHTML = '';
+  list.replaceChildren();
   panel.classList.add('visible');
   updateTxConnector();
 
@@ -95,53 +121,65 @@ async function _runTxLasso(ring) {
       t.xmax > xmin && t.xmin < xmax && t.ymax > ymin && t.ymin < ymax
     );
     if (!overlapping.length) { title.textContent = '0 transcripts'; return; }
-
-    const urls   = overlapping.map(t => `'${t.url}'`).join(', ');
-    const result = await state.conn.query(
-      `SELECT feat_ID, x_index, y_index FROM read_parquet([${urls}])
-       WHERE x_index BETWEEN ${xmin} AND ${xmax}
-         AND y_index BETWEEN ${ymin} AND ${ymax}`
-    );
-
-    const counts = new Map();
-    const closed = [...ring, ring[0]];
-    for (const batch of result.batches) {
-      const fs = batch.getChildAt(0), xs = batch.getChildAt(1), ys = batch.getChildAt(2);
-      for (let i = 0; i < batch.numRows; i++) {
-        if (pointInPolygon(closed, xs.get(i), ys.get(i))) {
-          const g = fs.get(i);
-          counts.set(g, (counts.get(g) ?? 0) + 1);
-        }
-      }
+    if (overlapping.length > TX_LASSO_MAX_TILES) {
+      title.textContent = `region spans ${overlapping.length} tiles; draw a smaller one`;
+      return;
     }
 
+    const counts = new Map();   // gene index → count
+    const closed = [...ring, ring[0]];
+    await Promise.all(overlapping.map(async t => {
+      // Counts need every point: reuse a cached tile only if it was not sampled
+      const cached = state.cache.get(`transcripts:${t.index}`);
+      const { pos, geneIdxs } = cached?.stride === 1 ? cached : await fetchTranscriptTile(t, 1);
+      if (run !== _txLassoRun) return;
+      for (let i = 0; i < geneIdxs.length; i++) {
+        const x = pos[i * 2], y = pos[i * 2 + 1];
+        if (x < xmin || x > xmax || y < ymin || y > ymax) continue;
+        if (pointInPolygon(closed, x, y)) counts.set(geneIdxs[i], (counts.get(geneIdxs[i]) ?? 0) + 1);
+      }
+    }));
+    if (run !== _txLassoRun) return;   // a newer lasso replaced this one
+
+    const genes  = txLayer.genes;
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
     const total  = sorted.reduce((s, [, n]) => s + n, 0);
     const top    = sorted.slice(0, 50);
     const maxN   = top[0]?.[1] ?? 1;
 
     title.textContent = `${total.toLocaleString()} transcripts · ${sorted.length} genes`;
-    list.innerHTML = top.map(([gene, n]) =>
-      `<div class="tx-gene-row">
+    list.innerHTML = top.map(([gi, n]) => {
+      const gene = escapeHtml(gi === GENE_UNKNOWN ? '(unknown)' : genes[gi]);
+      return `<div class="tx-gene-row">
         <span class="tx-gene-name" title="${gene}">${gene}</span>
         <div class="tx-gene-bar-wrap"><div class="tx-gene-bar" style="width:${(n/maxN*100).toFixed(1)}%"></div></div>
         <span class="tx-gene-count">${n.toLocaleString()}</span>
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
     requestAnimationFrame(updateTxConnector);
   } catch(e) {
+    if (run !== _txLassoRun) return;
     title.textContent = 'query failed';
     requestAnimationFrame(updateTxConnector);
     console.warn('[txlasso]', e);
   }
 }
 
+function addAnnotation(type, coords) {
+  actions.addAnnotation({ id: generateAnnotId(), type, name: '', coords });
+}
+
 // ── Input initialization ──────────────────────────────────────────────────────
 export function initInput() {
   _canvas = document.getElementById('deck-canvas');
   const canvas = _canvas;
+  const world  = e => clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
   let lassoDragged = false;
   let lassoLastPx  = null;
+
+  store.subscribe(s => s.mode, applyMode, { fireImmediately: true });
+  store.subscribe(s => s.combine, c =>
+    document.getElementById('btn-crossfilter')?.classList.toggle('active', c === 'and'));
 
   // ── Toolbar groups ────────────────────────────────────────────────────────
   function toggleGroup(groupId, ...otherIds) {
@@ -163,41 +201,17 @@ export function initInput() {
   );
 
   // ── Tool action buttons ───────────────────────────────────────────────────
-  document.getElementById('tool-clear-sel')?.addEventListener('click', () => clearFilters());
-
-  document.getElementById('tool-clear-measure')?.addEventListener('click', () => {
-    state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
-    document.getElementById('ruler-label')?.classList.remove('visible');
-    state.txLassoRing = null;
-    document.getElementById('tx-lasso-panel')?.classList.remove('visible');
-    updateTxConnector();
-    renderLayers(state.currentViewState);
-  });
-
-  document.getElementById('tool-invert-sel')?.addEventListener('click', () => {
-    if (!state.allPolyIds.size) return;
-    state.selectedCells = new Set([...state.allPolyIds].filter(id => !state.selectedCells.has(id)));
-    state.selVersion++;
-    notify('cellSelection');
-  });
-
-  document.getElementById('btn-crossfilter')?.addEventListener('click', () => {
-    state.crossFilter = !state.crossFilter;
-    document.getElementById('btn-crossfilter')?.classList.toggle('active', state.crossFilter);
-    if (!state.crossFilter) {
-      state.spatialFilter = null;
-      state.scatterFilter = null;
-      try { sel.update({ source: 'spatial', predicate: null }); } catch(_) {}
-    }
-  });
+  document.getElementById('tool-clear-sel')?.addEventListener('click', () => actions.clearSelection());
+  document.getElementById('tool-clear-measure')?.addEventListener('click', clearMeasurements);
+  document.getElementById('tool-invert-sel')?.addEventListener('click', invertSelection);
+  document.getElementById('btn-crossfilter')?.addEventListener('click', () =>
+    actions.setCombine(store.getState().combine === 'and' ? 'or' : 'and'));
 
   document.getElementById('btn-screenshot')?.addEventListener('click', () => {
     if (!state.deckgl) return;
     state.deckgl.redraw('screenshot');
-    const canvas = document.getElementById('deck-canvas');
-    const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
-    a.href = url;
+    a.href = canvas.toDataURL('image/png');
     a.download = `giottolens-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
     document.body.appendChild(a);
     a.click();
@@ -211,44 +225,33 @@ export function initInput() {
     const open = $metaSelPanel.classList.toggle('visible');
     if (open) {
       const colSel = document.getElementById('meta-sel-col');
-      if (colSel) {
-        colSel.innerHTML = state.metaCols.length
-          ? state.metaCols.map(c => `<option value="${c.name}">${c.name}</option>`).join('')
-          : '<option value="">no metadata loaded</option>';
-      }
+      const names  = state.meta ? [...state.meta.keys()] : [];
+      if (colSel) colSel.innerHTML = names.length
+        ? names.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+        : '<option value="">no metadata loaded</option>';
     }
   });
 
-  document.getElementById('meta-sel-apply')?.addEventListener('click', async () => {
+  document.getElementById('meta-sel-apply')?.addEventListener('click', () => {
     const col = document.getElementById('meta-sel-col')?.value;
     const op  = document.getElementById('meta-sel-op')?.value ?? '=';
     const val = document.getElementById('meta-sel-val')?.value ?? '';
-    if (!col || !state.metaCols.length) return;
-    const colInfo = state.metaCols.find(c => c.name === col);
-    const valExpr = (colInfo?.numeric && op !== 'LIKE')
-      ? val
-      : `'${val.replace(/'/g, "''")}'`;
-    const opExpr  = op === 'LIKE' ? `LIKE '%${val.replace(/'/g, "''")}%'` : `${op} ${valExpr}`;
-    const result  = await state.polyConn.query(
-      `SELECT cell_ID FROM cell_meta WHERE "${col}" ${opExpr}`
-    );
-    const ids = result.toArray().map(r => String(r.cell_ID));
-    state.selectedCells = new Set(ids);
-    state.selVersion++;
-    notify('cellSelection');
+    if (!col || !state.meta?.has(col)) return;
+    filterMeta(col, op === 'LIKE' ? 'contains' : op, val);
   });
 
   document.getElementById('tx-lasso-close')?.addEventListener('click', () => {
     state.txLassoRing = null;
     document.getElementById('tx-lasso-panel')?.classList.remove('visible');
     updateTxConnector();
-    renderLayers(state.currentViewState);
+    requestRender();
   });
 
   // ── Canvas events ─────────────────────────────────────────────────────────
   canvas.addEventListener('click', e => {
-    if (state.mode === 'ruler') {
-      const pt = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
+    const mode = store.getState().mode;
+    if (mode === 'ruler') {
+      const pt = world(e);
       if (!state.rulerStart || state.rulerLocked) {
         state.rulerStart  = pt;
         state.rulerEnd    = pt;
@@ -259,39 +262,39 @@ export function initInput() {
         state.rulerLocked = true;
         updateRulerLabel();
       }
-      renderLayers(state.currentViewState);
+      requestRender();
       return;
     }
-    if (state.mode !== 'poly') return;
+    if (mode !== 'poly') return;
+    // The second click of a double-click finishes the ring; it adds no vertex
+    if (e.detail > 1) return;
+    _lastClickAddedVertex = false;
     const r      = canvas.getBoundingClientRect();
     const picked = state.deckgl.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
     if (picked?.layer?.id === 'annotations') return;
-    state.drawRing.push(clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState));
-    renderLayers(state.currentViewState);
+    state.drawRing.push(world(e));
+    _lastClickAddedVertex = true;
+    requestRender();
   });
 
   canvas.addEventListener('dblclick', () => {
-    if (state.mode !== 'poly') return;
-    state.drawRing.pop();
-    state.drawRing.pop();
-    if (state.drawRing.length >= 3) {
-      const coords = [...state.drawRing, state.drawRing[0]];
-      state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'polygon', name: '', coords }];
-      syncAnnotationsToR();
-    }
+    if (store.getState().mode !== 'poly') return;
+    if (_lastClickAddedVertex) state.drawRing.pop();
+    _lastClickAddedVertex = false;
+    if (state.drawRing.length >= 3) addAnnotation('polygon', [...state.drawRing, state.drawRing[0]]);
     state.drawRing = [];
-    renderLayers(state.currentViewState);
+    requestRender();
   });
-
-  canvas.addEventListener('mouseleave', () => hideCellTooltip());
 
   canvas.addEventListener('mousedown', e => {
     hideCellTooltip();
-    if (state.mode === 'brush') {
+    const mode = store.getState().mode;
+    if (mode === 'brush') {
       state.brushDown = true;
-      state.brushPos  = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
-    } else if (state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') {
-      if (state.mode === 'txlasso') {
+      state.brushPos  = world(e);
+      brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, state.currentViewState.zoom));
+    } else if (mode === 'lasso' || mode === 'freehand' || mode === 'txlasso') {
+      if (mode === 'txlasso') {
         state.txLassoRing = null;
         document.getElementById('tx-lasso-panel')?.classList.remove('visible');
         updateTxConnector();
@@ -299,181 +302,109 @@ export function initInput() {
       lassoDragged = false;
       lassoLastPx  = [e.clientX, e.clientY];
       state.lassoActive = true;
-      state.lassoRing   = [clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState)];
-    } else if (state.mode === 'rect') {
-      state.rectStart   = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
+      state.lassoRing   = [world(e)];
+    } else if (mode === 'rect') {
+      state.rectStart   = world(e);
       state.rectPreview = state.rectStart;
     }
   });
 
   canvas.addEventListener('mousemove', e => {
-    const coords  = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
+    const coords  = world(e);
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
+    const mode = store.getState().mode;
 
-    if (state.mode === 'brush') {
+    if (mode === 'brush') {
       state.brushPos = coords;
-      if (state.brushDown) {
-        const r        = state.brushRadius / Math.pow(2, state.currentViewState.zoom);
-        const polyData = getCachedPolyData();
-        if (polyData?.ids) {
-          const cents    = polyData.centroids;
-          const brushSet = new Set(state.crossFilter ? (state.spatialFilter ?? []) : state.selectedCells);
-          for (let i = 0; i < polyData.ids.length; i++)
-            if (polyData.ids[i] != null && Math.hypot(cents[i*2] - coords[0], cents[i*2+1] - coords[1]) <= r)
-              brushSet.add(polyData.ids[i]);
-          if (state.crossFilter) { state.spatialFilter = brushSet; recomputeCrossFilter(); }
-          else { state.selectedCells = brushSet; state.selVersion++; notify('cellSelection'); }
-        }
-      }
-      renderLayers(state.currentViewState);
+      if (state.brushDown) brushMove(coords);
+      requestRender();
     }
 
-    if (state.mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
+    if (mode === 'ruler' && state.rulerStart && !state.rulerLocked) {
       state.rulerEnd = coords;
       updateRulerLabel();
-      renderLayers(state.currentViewState);
+      requestRender();
     }
 
-    if ((state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') && state.lassoActive) {
+    if ((mode === 'lasso' || mode === 'freehand' || mode === 'txlasso') && state.lassoActive) {
       const dx = e.clientX - lassoLastPx[0], dy = e.clientY - lassoLastPx[1];
-      if (Math.hypot(dx, dy) < (state.mode === 'freehand' ? 20 : 5)) return;
+      if (Math.hypot(dx, dy) < (mode === 'freehand' ? 20 : 5)) return;
       lassoLastPx = [e.clientX, e.clientY];
       lassoDragged = true;
-      state.lassoRing.push(clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState));
-      renderLayers(state.currentViewState);
-    } else if (state.mode === 'rect' && state.rectStart) {
-      state.rectPreview = clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
-      renderLayers(state.currentViewState);
+      state.lassoRing.push(coords);
+      requestRender();
+    } else if (mode === 'rect' && state.rectStart) {
+      state.rectPreview = coords;
+      requestRender();
     }
   });
 
   window.addEventListener('mouseup', () => {
-    if (state.mode === 'brush' && state.brushDown) {
+    const mode = store.getState().mode;
+    if (mode === 'brush' && state.brushDown) {
       state.brushDown = false;
-      if (state.crossFilter) {
-        recomputeCrossFilter();
-        try {
-          const active = state.spatialFilter ? sqlIds(state.spatialFilter) : '';
-          sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
-        } catch(_) {}
-      } else notify('cellSelection');
+      brushEnd();
+      requestRender();
     }
-    if ((state.mode === 'lasso' || state.mode === 'freehand' || state.mode === 'txlasso') && state.lassoActive) {
+    if ((mode === 'lasso' || mode === 'freehand' || mode === 'txlasso') && state.lassoActive) {
       state.lassoActive = false;
-      if (lassoDragged && state.lassoRing.length >= 3) {
-        if (state.mode === 'txlasso') {
-          const ring = state.lassoRing;
-          state.lassoRing = [];
-          renderLayers(state.currentViewState);
-          _runTxLasso(ring);
-        } else if (state.mode === 'lasso') {
-          const polyData = getCachedPolyData();
-          if (polyData?.ids) {
-            const ring     = state.lassoRing;
-            const cents    = polyData.centroids;
-            const lassoSet = new Set();
-            for (let i = 0; i < polyData.ids.length; i++)
-              if (polyData.ids[i] != null && pointInPolygon(ring, cents[i * 2], cents[i * 2 + 1]))
-                lassoSet.add(polyData.ids[i]);
-            if (state.crossFilter) {
-              state.spatialFilter = lassoSet;
-              recomputeCrossFilter();
-              try {
-                const active = sqlIds(lassoSet);
-                sel.update({ source: 'spatial', predicate: active ? `cell_ID IN (${active})` : null });
-              } catch(_) {}
-            } else {
-              state.selectedCells = new Set([...state.selectedCells, ...lassoSet]);
-              state.selVersion++;
-              notify('cellSelection');
-            }
-          }
-        } else {
-          const coords = [...state.lassoRing, state.lassoRing[0]];
-          state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'freehand', name: '', coords }];
-          syncAnnotationsToR();
-        }
-      }
+      const ring = state.lassoRing;
       state.lassoRing = [];
-      renderLayers(state.currentViewState);
-    } else if (state.mode === 'rect' && state.rectStart) {
+      if (lassoDragged && ring.length >= 3) {
+        if (mode === 'txlasso') _runTxLasso(ring);
+        else if (mode === 'lasso') lassoSpatial(ring);
+        else addAnnotation('freehand', [...ring, ring[0]]);
+      }
+      requestRender();
+    } else if (mode === 'rect' && state.rectStart) {
       const [x0, y0] = state.rectStart;
       const [x1, y1] = state.rectPreview ?? state.rectStart;
-      if (Math.abs(x1 - x0) > 0 && Math.abs(y1 - y0) > 0) {
-        const coords = [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]];
-        state.annotations = [...state.annotations, { id: generateAnnotId(), type: 'rectangle', name: '', coords }];
-        syncAnnotationsToR();
-      }
+      if (Math.abs(x1 - x0) > 0 && Math.abs(y1 - y0) > 0)
+        addAnnotation('rectangle', [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]);
       state.rectStart   = null;
       state.rectPreview = null;
-      renderLayers(state.currentViewState);
+      requestRender();
     }
   });
 
   canvas.addEventListener('mouseleave', () => {
+    hideCellTooltip();
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = '';
   });
 
-  function _scatterToPan() {
-    document.querySelectorAll('#stats-column canvas').forEach(c => {
-      if (typeof c._setMode !== 'function') return;
-      c._setMode('pan');
-      c.closest('.stats-pane-body')?.querySelector('.tool-btn[title="pan"]')
-        ?.classList.add('active');
-      c.closest('.stats-pane-body')?.querySelector('.tool-btn[title="lasso"]')
-        ?.classList.remove('active');
-    });
-  }
+  // Space and Escape also return the stats panels to pan
+  const panelsToPan = () => document.dispatchEvent(new CustomEvent('lens:pan'));
 
   document.addEventListener('keydown', e => {
-    const inInput = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+    const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    const mode = store.getState().mode;
 
     if (e.code === 'Space' && !e.repeat && !inInput) {
       e.preventDefault();
-      if (state.mode !== 'pan') setMode('pan');
-      _scatterToPan();
+      if (mode !== 'pan') setMode('pan');
+      panelsToPan();
       return;
     }
 
     if (e.key === 'Escape') {
-      state.drawRing    = [];
-      state.lassoRing   = [];
-      state.lassoActive = false;
-      state.rectStart   = null;
-      state.rectPreview = null;
-      state.selectedAnnotId = null;
-      notify('annotSelect');
-      _scatterToPan();
-      if (state.mode !== 'pan') setMode('pan');
-      else renderLayers(state.currentViewState);
+      resetDrawing();
+      actions.selectAnnotation(null);
+      panelsToPan();
+      if (mode !== 'pan') setMode('pan'); else requestRender();
     }
-    if (!inInput) {
-      if (e.key === 'c') {
-        clearFilters();
-      }
-      if (e.key === 'x') {
-        state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
-        document.getElementById('ruler-label')?.classList.remove('visible');
-        state.txLassoRing = null;
-        document.getElementById('tx-lasso-panel')?.classList.remove('visible');
-        updateTxConnector();
-        renderLayers(state.currentViewState);
-      }
+    if (inInput) return;
+    if (e.key === 'c') actions.clearSelection();
+    if (e.key === 'x') clearMeasurements();
+    if (mode === 'brush') {
+      if (e.key === '[') actions.setBrushRadius(store.getState().brushRadius - 5);
+      if (e.key === ']') actions.setBrushRadius(store.getState().brushRadius + 5);
     }
-    if (state.mode === 'brush' && !inInput) {
-      if (e.key === '[') { state.brushRadius = Math.max(8,   state.brushRadius - 5); renderLayers(state.currentViewState); }
-      if (e.key === ']') { state.brushRadius = Math.min(300, state.brushRadius + 5); renderLayers(state.currentViewState); }
-    }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedAnnotId && !inInput) {
-      state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotId);
-      state.selectedAnnotId = null;
-      notify('annotSelect');
-      syncAnnotationsToR();
-      renderLayers(state.currentViewState);
+    const annot = store.getState().selectedAnnotId;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && annot) {
+      actions.removeAnnotation(annot);
       e.preventDefault();
     }
   });
-
 }
