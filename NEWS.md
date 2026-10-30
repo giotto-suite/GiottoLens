@@ -1,3 +1,9 @@
+# GiottoLens 0.1.1
+
+* Tiles written with ZSTD, GZIP or LZ4 compression now load; before, only SNAPPY did
+  (GiottoDisk's Xenium zarr converter writes ZSTD). SNAPPY decoding is faster (#2).
+* Charts pushed with `viewer$push_panel()` fit their pane, axis labels and titles included (#3).
+
 # GiottoLens 0.1.0
 
 ## Breaking changes
