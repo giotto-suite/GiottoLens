@@ -231,10 +231,10 @@ test_that("both tile transfer modes load the same transcripts", {
         counts[[mode]] <- br$js("(() => { let n = 0; for (const [k, v] of window.__giottolens.state.cache) if (k.startsWith('transcripts:')) n += v.geneIdxs.length; return n; })()")
         # Polygon tiles are fetched on the page (transcripts in workers, whose
         # requests the page's resource timing does not list)
-        urls <- unlist(br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => /\\/lens\\/(data|files)\\/polygons\\//.test(u))"))
+        urls <- unlist(br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => /\\/(data|files)\\/polygons\\//.test(u))"))
         expect_gt(length(urls), 0L)
-        if (mode == "whole") expect_true(all(grepl("/lens/files/polygons/", urls)))
-        else expect_true(all(grepl("/lens/data/polygons/", urls)))
+        if (mode == "whole") expect_true(all(grepl("/lens/[^/]+/files/polygons/", urls)))
+        else expect_true(all(grepl("/lens/[^/]+/data/polygons/", urls)))
         expect_identical(br$errors(), character())
         br$close(); v$close()
     }

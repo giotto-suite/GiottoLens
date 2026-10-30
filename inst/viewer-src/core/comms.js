@@ -1,6 +1,7 @@
 // WebSocket connects back to the server that served this page (same port, so
 // no CORS), at a URL relative to the page so path-prefixing proxies work.
-// R only accepts it with this launch's token, passed in the page URL.
+// The page lives under /lens/<token>/, so the socket's URL carries the token R
+// checks.
 // Reconnects every 2s until R's event loop processes the initial handshake.
 //
 // Messages are { type, id?, data }. A message from R with an `id` is a
@@ -46,7 +47,6 @@ function setRStatus(s) {
 function wsUrl() {
   const u = new URL('ws', document.baseURI);
   u.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  u.search = new URLSearchParams({ token: new URLSearchParams(location.search).get('token') ?? '' });
   return u.href;
 }
 

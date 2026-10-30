@@ -17,33 +17,41 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
     on.exit(v$close(), add = TRUE)
     base <- sub("/lens/.*$", "", v$url)
     expect_match(base, "^http://127\\.0\\.0\\.1:[0-9]+$")
+    expect_match(v$url, "/lens/[A-Za-z0-9]{24}/$")
 
-    idx <- http_get(paste0(base, "/lens/"))
+    idx <- http_get(v$url)
     expect_identical(idx$status_code, 200L)
     expect_match(rawToChar(idx$content), "<html", ignore.case = TRUE)
 
-    man <- http_get(paste0(base, "/lens/session/manifest.json"))
+    man <- http_get(paste0(v$url, "session/manifest.json"))
     expect_identical(man$status_code, 200L)
     m <- jsonlite::fromJSON(rawToChar(man$content), simplifyVector = FALSE)
     tile <- m$layers$transcripts$tiles[[1]]
 
-    part <- http_get(paste0(base, "/lens/", tile$url), list(Range = "bytes=0-3"))
+    part <- http_get(paste0(v$url, tile$url), list(Range = "bytes=0-3"))
     expect_identical(part$status_code, 206L)
     expect_identical(rawToChar(part$content), "PAR1")
     expect_identical(part$headers_list[["content-range"]], sprintf("bytes 0-3/%d", tile$bytes))
 
-    whole <- http_get(paste0(base, "/lens/", tile$url))
+    whole <- http_get(paste0(v$url, tile$url))
     expect_identical(whole$status_code, 200L)
     expect_length(whole$content, tile$bytes)
 
     # The same file whole from httpuv's static thread (no R callback)
     expect_match(tile$file, "^files/transcripts/")
-    static <- http_get(paste0(base, "/lens/", tile$file))
+    static <- http_get(paste0(v$url, tile$file))
     expect_identical(static$status_code, 200L)
     expect_identical(static$content, whole$content)
     expect_identical(m$transfer, "auto")
 
-    expect_identical(http_get(paste0(base, "/lens/data/transcripts/../x"))$status_code, 404L)
+    expect_identical(http_get(paste0(v$url, "data/transcripts/../x"))$status_code, 404L)
+
+    # Nothing is served without this launch's token in the path
+    other <- sub("/lens/[^/]+/", "/lens/AAAAAAAAAAAAAAAAAAAAAAAA/", v$url)
+    for (p in c("", "session/manifest.json", tile$url, tile$file)) {
+        expect_identical(http_get(paste0(other, p))$status_code, 404L, info = p)
+        expect_identical(http_get(paste0(base, "/lens/", p))$status_code, 404L, info = p)
+    }
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
 })
 
@@ -142,9 +150,9 @@ test_that(".ide reads the IDE from the environment", {
 })
 
 test_that("without the Origin check the token alone admits a socket", {
-    req <- list(QUERY_STRING = "token=abc", HTTP_HOST = "127.0.0.1:1",
+    req <- list(PATH_INFO = "/lens/abc/ws", HTTP_HOST = "127.0.0.1:1",
         HTTP_ORIGIN = "https://rstudio.example.org")
     expect_false(.ws_allowed(req, "abc"))
     expect_true(.ws_allowed(req, "abc", check_origin = FALSE))
-    expect_false(.ws_allowed(modifyList(req, list(QUERY_STRING = "token=x")), "abc", check_origin = FALSE))
+    expect_false(.ws_allowed(modifyList(req, list(PATH_INFO = "/lens/x/ws")), "abc", check_origin = FALSE))
 })

@@ -1,14 +1,17 @@
 # ── httpuv app ────────────────────────────────────────────────────────────────
 #
-# URL layout (everything under /lens/ so a path-prefixing proxy can forward it
-# as one unit, and the viewer can use page-relative URLs):
+# URL layout. Everything lives under /lens/<token>/, where <token> is random
+# per launch: a path nobody can guess is the access check for the files, since
+# httpuv serves static paths on its own thread without asking R (adr/0006).
+# The viewer uses page-relative URLs, so a path-prefixing proxy forwards one
+# unit. Anything else is a 404.
 #
-#   /lens/            viewer bundle, served from the package in place
-#   /lens/session/    this viewer's manifest.json and metadata/ (temp dir)
-#   /lens/data/<m>/   data store <m>, through the Range handler below
-#   /lens/files/<m>/  the same files whole, from httpuv's own thread (fast
-#                     when the browser is local; see data/parquet.ts, adr/0004)
-#   WebSocket         any path; needs the per-launch token
+#   /lens/<token>/            viewer bundle, served from the package in place
+#   /lens/<token>/session/    manifest.json, cells.parquet, metadata/ (temp dir)
+#   /lens/<token>/data/<m>/   data store <m>, through the Range handler below
+#   /lens/<token>/files/<m>/  the same files whole, from httpuv's own thread
+#                             (fast when the browser is local; adr/0004)
+#   /lens/<token>/ws          the WebSocket
 #
 # The viewer bundle and the data stores are never written to.
 
@@ -23,27 +26,24 @@
 # `mounts`: named list of data directories (name → path).
 # `session_dir`: directory with manifest.json and metadata/.
 # `ws_handlers`: list(open = function(ws), message = function(ws, msg),
-#   close = function(ws)); `token`: required on the WebSocket URL.
+#   close = function(ws)); `token`: the per-launch path segment.
 # `check_origin`: FALSE behind a proxy that changes the Origin (RStudio Server,
 #   Workbench); the token still guards the socket.
 .lens_app <- function(viewer_dir, session_dir, mounts, token, ws_handlers,
                       check_origin = TRUE) {
     mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
-    files <- stats::setNames(
-        lapply(mounts, httpuv::staticPath, indexhtml = FALSE, fallthrough = FALSE,
-            headers = .static_headers),
-        paste0("/lens/files/", names(mounts)))
+    root <- .lens_root(token)
+    static <- function(dir, index = FALSE) httpuv::staticPath(dir,
+        indexhtml = index, fallthrough = FALSE, headers = .static_headers)
+    paths <- c(
+        stats::setNames(list(static(viewer_dir, index = TRUE), static(session_dir),
+            httpuv::excludeStaticPath()),
+            paste0(root, c("", "/session", "/data"))),
+        stats::setNames(lapply(mounts, static), paste0(root, "/files/", names(mounts)))
+    )
     list(
-        call = function(req) .data_response(req, mounts),
-        staticPaths = c(list(
-            "/lens" = httpuv::staticPath(viewer_dir,
-                indexhtml = TRUE, fallthrough = FALSE,
-                headers = .static_headers),
-            "/lens/session" = httpuv::staticPath(session_dir,
-                indexhtml = FALSE, fallthrough = FALSE,
-                headers = .static_headers),
-            "/lens/data" = httpuv::excludeStaticPath()
-        ), files),
+        call = function(req) .data_response(req, mounts, root),
+        staticPaths = paths,
         onWSOpen = function(ws) {
             if (!.ws_allowed(ws$request, token, check_origin)) {
                 ws$close()
@@ -58,13 +58,14 @@
     )
 }
 
-# A WebSocket is accepted when it carries this launch's token, and its
+.lens_root <- function(token) paste0("/lens/", token)
+
+# A WebSocket is accepted when its path is under this launch's token, and its
 # Origin (if a browser sent one) is either local or the server itself.
 # The token is the real check; the Origin test only blocks foreign pages
 # early. A local proxy (Positron, VS Code) has a loopback Origin (adr/0006).
 .ws_allowed <- function(req, token, check_origin = TRUE) {
-    query <- .parse_query(req$QUERY_STRING)
-    if (!identical(query[["token"]], token)) return(FALSE)
+    if (!startsWith(req$PATH_INFO %||% "", paste0(.lens_root(token), "/"))) return(FALSE)
     !check_origin || .origin_allowed(req$HTTP_ORIGIN, req$HTTP_HOST)
 }
 
@@ -79,24 +80,19 @@
         origin_host %in% tolower(getOption("GiottoLens.allowed_origins", character()))
 }
 
-.parse_query <- function(qs) {
-    qs <- sub("^\\?", "", qs %||% "")
-    if (!nzchar(qs)) return(list())
-    kv  <- strsplit(strsplit(qs, "&", fixed = TRUE)[[1L]], "=", fixed = TRUE)
-    out <- lapply(kv, function(p) utils::URLdecode(paste(p[-1L], collapse = "=")))
-    stats::setNames(out, vapply(kv, `[[`, "", 1L))
-}
-
 # ── Range-aware file handler ─────────────────────────────────────────────────
 #
 # httpuv's staticPath ignores Range (always 200 + whole file), which makes the
 # viewer download every column of every tile. This handler answers single
 # byte ranges with 206. It runs on R's main thread, so requests wait while R
-# is busy; see vignettes/articles/data_delivery.md.
+# is busy (adr/0004). `root`: the /lens/<token> prefix.
 
-.data_response <- function(req, mounts) {
+.data_response <- function(req, mounts, root) {
     path <- utils::URLdecode(req$PATH_INFO %||% "")
-    m <- regmatches(path, regexec("^/lens/data/([^/]+)/(.+)$", path))[[1L]]
+    data_root <- paste0(root, "/data/")
+    if (!startsWith(path, data_root)) return(.http_status(404L))
+    rest <- substring(path, nchar(data_root) + 1L)
+    m <- regmatches(rest, regexec("^([^/]+)/(.+)$", rest))[[1L]]
     if (!length(m)) return(.http_status(404L))
     root <- mounts[[m[[2L]]]]
     rel  <- m[[3L]]

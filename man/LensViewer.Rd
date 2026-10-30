@@ -14,7 +14,8 @@ of them.
   \describe{
     \item{\code{port}}{Server port}
 
-    \item{\code{url}}{Viewer URL, including the session token}
+    \item{\code{url}}{Viewer URL. It contains this launch's token: treat
+it like a password while the viewer runs}
 
     \item{\code{selection}}{Character vector of selected cell IDs}
 
