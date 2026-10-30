@@ -63,6 +63,9 @@ devtools::load_all(); devtools::test()   # e2e needs Chrome and NOT_CRAN=true
 viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 ```
 
+- **Branches.** Feature branches open PRs against `dev` and are deleted on merge. `dev` →
+  `main` is a release: bump the version in `DESCRIPTION`. Rulesets block deleting or
+  force-pushing `dev` and `main`.
 - **Commit `inst/viewer/` after rebuilding.** CI checks it matches a fresh build.
 - The R-CMD-check CI job cannot install the suite's dependency chain yet; test locally.
 
