@@ -42,8 +42,13 @@ prep_meta <- function(
     id_col <- if ("cell_ID" %in% names(meta)) "cell_ID" else names(meta)[1L]
 
     casts <- .parse_col_types(cols)
-    if (!is.null(cols))
+    if (!is.null(cols)) {
+        missing_cols <- setdiff(names(casts), names(meta))
+        if (length(missing_cols))
+            warning("[prep_meta] column(s) not in cell metadata: ",
+                paste(missing_cols, collapse = ", "), call. = FALSE)
         meta <- meta[, unique(c(id_col, intersect(names(casts), names(meta)))), drop = FALSE]
+    }
     for (cn in intersect(names(casts)[!is.na(casts)], names(meta))) {
         meta[[cn]] <- switch(casts[[cn]],
             categorical = as.factor(meta[[cn]]),
@@ -53,10 +58,7 @@ prep_meta <- function(
 
     if (!is.null(dimreds)) {
         # Build lookup table: name → dim_type
-        dr_registry <- tryCatch(
-            as.data.frame(GiottoClass::list_dim_reductions(x)),
-            error = function(e) NULL
-        )
+        dr_registry <- as.data.frame(GiottoClass::list_dim_reductions(x))
 
         for (dr_query in dimreds) {
             # Match by name first, then by dim_type
@@ -93,7 +95,7 @@ prep_meta <- function(
                     output           = "matrix"
                 ),
                 error = function(e) {
-                    warning("prep_meta: could not load '", dr_row$name, "' — ",
+                    warning("prep_meta: could not load '", dr_row$name, "': ",
                             conditionMessage(e), call. = FALSE)
                     NULL
                 }
@@ -104,7 +106,7 @@ prep_meta <- function(
             if (!length(d)) next
 
             dr_sub            <- as.data.frame(dr_mat[, d, drop = FALSE])
-            colnames(dr_sub)  <- paste0(dr_row$name, "_", seq_along(d))
+            colnames(dr_sub)  <- paste0(dr_row$name, "_", d)
             dr_sub[[id_col]]  <- rownames(dr_mat)
 
             meta <- merge(meta, dr_sub, by = id_col, all.x = TRUE)
@@ -112,6 +114,64 @@ prep_meta <- function(
     }
 
     meta
+}
+
+# Write metadata for the viewer and return the load_metadata payload.
+# Rows are written in the viewer's cell order (`cell_ids`, from the cells
+# table), so the browser reads each column straight into a typed array indexed
+# by cell. Categorical columns are written as 0-based integer codes (NA = -1)
+# with their levels in the payload; continuous columns as doubles.
+.write_metadata <- function(meta, dir, cell_ids) {
+    if (!"cell_ID" %in% names(meta))
+        stop("[push_metadata] metadata needs a `cell_ID` column matching the ",
+            "polygon IDs", call. = FALSE)
+    if (is.null(cell_ids))
+        stop("[push_metadata] the viewer has no polygons to attach metadata to",
+            call. = FALSE)
+    # Dots and other characters break identifiers downstream; sanitising can
+    # merge names, so make them unique again
+    names(meta) <- make.unique(gsub("[^A-Za-z0-9_]", "_", names(meta)), sep = "_")
+    row <- match(cell_ids, as.character(meta$cell_ID))
+    unmatched <- nrow(meta) - sum(!is.na(row))
+    if (all(is.na(row)))
+        stop("[push_metadata] no cell_ID matches a polygon ID in the viewer",
+            call. = FALSE)
+    if (unmatched > 0L)
+        message("[push_metadata] ", unmatched, " metadata row(s) have no polygon ",
+            "in the viewer and are not shown")
+
+    data_cols <- setdiff(names(meta), "cell_ID")
+    table <- meta[row, data_cols, drop = FALSE]
+    rownames(table) <- NULL
+    if (!length(data_cols))
+        stop("[push_metadata] metadata has no columns besides cell_ID", call. = FALSE)
+    columns <- list()
+    arrays  <- list()
+    for (cn in data_cols) {
+        v <- meta[[cn]][row]
+        if (is.factor(v) || is.character(v) || is.logical(v) || is.integer(v)) {
+            f <- if (is.factor(v)) droplevels(v) else factor(v)
+            codes <- as.integer(f) - 1L
+            codes[is.na(codes)] <- -1L
+            arrays[[cn]]  <- codes
+            columns[[length(columns) + 1L]] <- list(name = cn,
+                kind = "categorical", levels = as.list(levels(f)))
+        } else {
+            arrays[[cn]]  <- as.double(v)
+            columns[[length(columns) + 1L]] <- list(name = cn, kind = "continuous")
+        }
+    }
+
+    # A fresh file name per push, so a browser never reads a cached older table
+    unlink(list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE))
+    fname <- sprintf("cell_meta_%.0f.parquet", as.numeric(Sys.time()) * 1000)
+    arrow::write_parquet(as.data.frame(arrays, optional = TRUE), file.path(dir, fname))
+    list(
+        msg = list(url = paste0("session/metadata/", fname), n = length(cell_ids),
+            columns = columns),
+        # The same rows with their original types, for rule evaluation in R
+        table = table
+    )
 }
 
 # `cols` -> named character vector of column -> viewer type (NA = no cast)

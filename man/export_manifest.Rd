@@ -4,28 +4,23 @@
 \alias{export_manifest}
 \title{Export a GiottoLens manifest.json}
 \usage{
-export_manifest(
-  gpoints = NULL,
-  gpolygons = NULL,
-  output = "lens/manifest.json",
-  serve_root,
-  url_prefix = "http://localhost:3000"
-)
+export_manifest(gpoints = NULL, gpolygons = NULL, output)
 }
 \arguments{
-\item{gpoints}{giottoPoints object (optional)}
+\item{gpoints}{giottoPoints backed by a GiottoDisk tile store (optional)}
 
-\item{gpolygons}{giottoPolygon object (optional)}
+\item{gpolygons}{giottoPolygon backed by a GiottoDisk tile store (optional)}
 
 \item{output}{Path to write manifest.json}
-
-\item{serve_root}{The directory being served by the HTTP server — tile
-URLs are computed relative to this root}
-
-\item{url_prefix}{URL at which serve_root is accessible}
+}
+\value{
+\code{output}, invisibly.
 }
 \description{
-Generates the manifest JSON that tells the viewer where to find tile data.
-Called internally by [launch_lens()]; can also be called directly if you
-want to regenerate the manifest without relaunching.
+Generates the manifest JSON that tells the viewer where to find tile data,
+and, when polygons are given, \code{cells.parquet} next to it: one row per cell
+with its centroid, in the viewer's cell order. Called internally by
+\code{\link[=launch_lens]{launch_lens()}}. Tile URLs are relative to the viewer page
+(\verb{data/<layer>/...}) and are answered by the viewer's server, which mounts
+each layer's store directory under that name.
 }
