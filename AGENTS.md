@@ -138,6 +138,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `stride`-th row (16/4/1 by zoom tier, `txStride()`) and reading only the kept dictionary
   indices. Layouts it does not cover throw `UnsupportedLayout` and fall back to hyparquet. A
   tile cached at a coarser stride is refetched on zoom-in; the transcript lasso decodes stride 1.
+- A tile that leaves the view while loading is aborted (`abortTiles()`): `state.pending` maps
+  each key to its `AbortController`, whose signal reaches the worker (an `abort` message),
+  the request queue and `fetch`. Pass the signal through any new read on the tile path.
 - Codecs: `compressors` in `data/parquet.ts` (hyparquet-compressors + hysnappy WASM): SNAPPY,
   ZSTD, GZIP, LZ4_RAW, Hadoop LZ4. BROTLI is left out (size; R's arrow cannot write it).
 - `data/point-decode.ts` imports hyparquet internals (`hyparquet/src/thrift.js`,

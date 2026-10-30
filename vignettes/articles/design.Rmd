@@ -28,10 +28,9 @@ example (170k cells, about 600M transcripts in 853 tiles) in headless Chrome.
 5. Fully drivable from R, so an agent working in the user's R session can read and steer the
    viewer without seeing it.
 
-GiottoLens always runs with an R session alongside it. The data model and data operations
+GiottoLens runs with an R session alongside it. The data model and data operations
 belong to the giotto object and GiottoClass/GiottoDisk; the browser draws what R prepares and
-keeps no second model of its own (adr/0003). Anything that would work the same on any table,
-with no giotto object behind it, belongs in dbVisuals instead.
+keeps no second model of its own (adr/0003).
 
 ## Overview
 

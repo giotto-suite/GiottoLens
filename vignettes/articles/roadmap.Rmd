@@ -71,7 +71,6 @@ queries over transcripts, the work runs in R next to the files.
 - **Curve-ordered tile numbering**, so neighbouring tiles are neighbours in space.
 - **Range serving off R's main thread** for remote viewing through R (a background process
   or a small native file server). Object stores such as S3 already serve ranges concurrently.
-- **Abort out-of-view tile fetches** in the workers (#1).
 
 ## Images
 

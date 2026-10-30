@@ -18,8 +18,7 @@ export const state = {
 
   // Tiles
   cache:     new Map(),     // "layer:idx" → decoded tile
-  pending:   new Set(),
-  cancelled: new Set(),
+  pending:   new Map(),     // "layer:idx" → AbortController of the load in flight
   failed:    new Map(),     // transcript tile → time it failed (retried later)
 
   // Transcript zoom tier (stride sampling), see data/tiles.js txDrawTiles()

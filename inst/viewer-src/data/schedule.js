@@ -3,7 +3,7 @@
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from '../core/constants.js';
-import { visibleTiles, loadTile, invalidateTx, txStride } from './tiles.js';
+import { visibleTiles, loadTile, abortTiles, invalidateTx, txStride } from './tiles.js';
 import { requestRender } from '../render/schedule.js';
 import { updateScalebar, viewportSize } from '../ui/dom.js';
 
@@ -31,8 +31,7 @@ export function updateTiles(viewState) {
     state.cache.delete(key);
   }
 
-  for (const key of state.pending)
-    if (!inScope.has(key)) state.cancelled.add(key);
+  abortTiles(inScope);
 
   requestRender();
 
@@ -41,7 +40,7 @@ export function updateTiles(viewState) {
 
   if (wantTx) {
     const [cx, cy] = viewState.target;
-    const txPending = [...state.pending].filter(k => k.startsWith('transcripts:')).length;
+    const txPending = [...state.pending.keys()].filter(k => k.startsWith('transcripts:')).length;
     const stride = txStride();
     txTiles
       .filter(t => !(state.cache.get(`transcripts:${t.index}`)?.stride <= stride) && !state.pending.has(`transcripts:${t.index}`))

@@ -3,6 +3,8 @@
 * The viewer is served under a random path that changes every launch (`viewer$url`), and the
   server answers nothing outside it. Other users of a shared machine can no longer read the
   data being shown through the viewer's port. See `SECURITY.md`.
+* Tiles that leave the view while loading stop downloading, so panning quickly fills the new
+  view sooner, most noticeably over a slow connection (#1).
 
 # GiottoLens 0.1.1
 
