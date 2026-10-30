@@ -10,7 +10,10 @@
 #   /lens/<token>/session/    manifest.json, cells.parquet, metadata/ (temp dir)
 #   /lens/<token>/data/<m>/   data store <m>, through the Range handler below
 #   /lens/<token>/files/<m>/  the same files whole, from httpuv's own thread
-#                             (fast when the browser is local; adr/0004)
+#                             (fast when the browser is local; adr/0004). That
+#                             thread follows symlinks, so a store with links
+#                             leading out of it goes through the handler
+#                             below instead, which checks real paths.
 #   /lens/<token>/ws          the WebSocket
 #
 # The viewer bundle and the data stores are never written to.
@@ -35,11 +38,13 @@
     root <- .lens_root(token)
     static <- function(dir, index = FALSE) httpuv::staticPath(dir,
         indexhtml = index, fallthrough = FALSE, headers = .static_headers)
+    files <- lapply(mounts, function(m)
+        if (.links_outside(m)) httpuv::excludeStaticPath() else static(m))
     paths <- c(
         stats::setNames(list(static(viewer_dir, index = TRUE), static(session_dir),
             httpuv::excludeStaticPath()),
             paste0(root, c("", "/session", "/data"))),
-        stats::setNames(lapply(mounts, static), paste0(root, "/files/", names(mounts)))
+        stats::setNames(files, paste0(root, "/files/", names(mounts)))
     )
     list(
         call = function(req) .data_response(req, mounts, root),
@@ -59,6 +64,15 @@
 }
 
 .lens_root <- function(token) paste0("/lens/", token)
+
+# TRUE when a symlink under `dir` (a normalized path) resolves outside it
+.links_outside <- function(dir) {
+    entries <- list.files(dir, recursive = TRUE, all.files = TRUE, full.names = TRUE,
+        include.dirs = TRUE, no.. = TRUE)
+    links <- entries[nzchar(Sys.readlink(entries))]
+    length(links) > 0L &&
+        !all(startsWith(normalizePath(links, mustWork = FALSE), paste0(dir, "/")))
+}
 
 # A WebSocket is accepted when its path is under this launch's token, and its
 # Origin (if a browser sent one) is either local or the server itself.
@@ -85,14 +99,18 @@
 # httpuv's staticPath ignores Range (always 200 + whole file), which makes the
 # viewer download every column of every tile. This handler answers single
 # byte ranges with 206. It runs on R's main thread, so requests wait while R
-# is busy (adr/0004). `root`: the /lens/<token> prefix.
+# is busy (adr/0004). `root`: the /lens/<token> prefix. It also answers
+# files/<m>/ for stores not mounted statically (.links_outside()).
 
 .data_response <- function(req, mounts, root) {
-    path <- utils::URLdecode(req$PATH_INFO %||% "")
-    data_root <- paste0(root, "/data/")
-    if (!startsWith(path, data_root)) return(.http_status(404L))
-    rest <- substring(path, nchar(data_root) + 1L)
-    m <- regmatches(rest, regexec("^([^/]+)/(.+)$", rest))[[1L]]
+    # A %00 cannot be decoded into an R string
+    path <- tryCatch(utils::URLdecode(req$PATH_INFO %||% ""), error = function(e) "")
+    m <- NULL
+    for (prefix in paste0(root, c("/data/", "/files/"))) {
+        if (!startsWith(path, prefix)) next
+        rest <- substring(path, nchar(prefix) + 1L)
+        m <- regmatches(rest, regexec("^([^/]+)/(.+)$", rest))[[1L]]
+    }
     if (!length(m)) return(.http_status(404L))
     root <- mounts[[m[[2L]]]]
     rel  <- m[[3L]]

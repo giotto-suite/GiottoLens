@@ -2,7 +2,11 @@
 
 * The viewer is served under a random path that changes every launch (`viewer$url`), and the
   server answers nothing outside it. Other users of a shared machine can no longer read the
-  data being shown through the viewer's port. See `SECURITY.md`.
+  data being shown through the viewer's port. The path's token comes from the operating
+  system's random source, so `set.seed()` no longer makes it predictable, and launching no
+  longer changes your random number stream. See `SECURITY.md`.
+* `viewer$rules(code = TRUE)` quotes and escapes column names and labels, so the code it
+  prints cannot run anything else when labels contain quotes.
 * Tiles that leave the view while loading stop downloading, so panning quickly fills the new
   view sooner, most noticeably over a slow connection (#1).
 

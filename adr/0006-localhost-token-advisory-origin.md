@@ -23,7 +23,8 @@ forwards), where the browser's Origin is not the server's address.
 
 Bind `127.0.0.1` on a random port by default (`host =` to expose). Serve everything (bundle,
 session files, tile stores, the WebSocket) under `/lens/<token>/`, with a random 24-character
-token per launch; any other path is a 404. The unguessable path is the access check, so it
+token per launch from the OS random source (`/dev/urandom`), never R's RNG, which `set.seed()`
+and Giotto's default seeds make predictable; any other path is a 404. The unguessable path is the access check, so it
 works for the static thread too. An Origin check additionally rejects non-loopback foreign
 pages on the WebSocket, and is switched off behind RStudio Server's proxy.
 

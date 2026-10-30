@@ -85,6 +85,11 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   WebSocket alike, since httpuv's static thread cannot check anything per request; the Origin
   check rejects non-loopback foreign pages and is off behind RStudio Server's proxy (adr/0006,
   `SECURITY.md`). Never serve anything outside `.lens_root(token)`.
+- Tokens come from `.rand_id()` (`/dev/urandom`), never `sample()`. A store with a symlink
+  leading out of it is not mounted statically: `files/` goes through `.data_response()`,
+  which checks real paths (`.links_outside()`).
+- Browser-supplied text printed in the console goes through `.console_text()`; strings in
+  generated R code (`.rule_code()`) through `encodeString()`.
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
 

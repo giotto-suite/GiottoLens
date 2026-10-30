@@ -73,6 +73,29 @@ test_that("rule code recreates the same cells", {
     }
 })
 
+test_that("rule code escapes labels from the data or the browser", {
+    evil <- c('a"); stop("injected"); c("', "back\\slash", "line\nbreak", "tab\t\033[31m")
+    rules <- list(
+        lens_categories(evil[[1]], evil),
+        lens_range(evil[[1]], 0, 1),
+        lens_compare(evil[[1]], "=", evil[[2]]),
+        lens_polygon(rbind(c(0, 0), c(1, 0), c(1, 1)), space = c(x = evil[[1]], y = evil[[3]]))
+    )
+    for (r in rules) {
+        code <- .rule_code(r)
+        exprs <- parse(text = code)
+        expect_length(exprs, 1L)
+        expect_match(deparse(exprs[[1L]][[1L]]), "^lens_")
+        expect_identical(eval(exprs[[1L]]), r, info = code)
+    }
+    # A forged op from the browser stays a string too
+    forged <- list(kind = "compare", space = "x", params = list(op = '="); stop("x"); ("', value = 1))
+    expect_length(parse(text = .rule_code(forged)), 1L)
+    ids <- c('c1"); stop("x"); c("', "c2")
+    code <- .rule_code(.resolve_cells(lens_cells(ids), ids), ids, list(x = c(0, 1), y = c(0, 1)))
+    expect_identical(eval(parse(text = code))$params$ids, as.list(ids))
+})
+
 test_that("lens_cells resolves IDs to the viewer's cells", {
     ids <- paste0("c", 1:10)
     r <- .resolve_cells(lens_union(lens_cells(c("c2", "c5")), lens_cells("c9")), ids)

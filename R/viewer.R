@@ -665,7 +665,7 @@ LensViewer <- R6::R6Class("LensViewer",
                         ready = {
                             if (!identical(as.integer(dat$protocol), .lens_protocol))
                                 warning("[LensViewer] the viewer bundle speaks protocol ",
-                                    dat$protocol %||% "?", ", this package ", .lens_protocol,
+                                    .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
                                     "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
@@ -680,14 +680,14 @@ LensViewer <- R6::R6Class("LensViewer",
                                 data = dat, error = parsed$error),
                         client_error = {
                             priv$add_log("error", dat)
-                            message("[GiottoLens viewer] ", dat$where %||% "", ": ",
-                                dat$message %||% "")
+                            message("[GiottoLens viewer] ", .console_text(dat$where), ": ",
+                                .console_text(dat$message))
                         },
                         log = priv$add_log(dat$action %||% "", dat$detail),
                         {
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
                                 error = function(e) warning("[LensViewer] message error: ",
-                                    conditionMessage(e), call. = FALSE))
+                                    .console_text(conditionMessage(e)), call. = FALSE))
                             if (parsed$type == "cell_selection") {
                                 priv$sel_seq <- priv$sel_seq + 1L
                                 rules <- dat$rules %||% list()
