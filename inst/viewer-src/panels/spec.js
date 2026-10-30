@@ -36,7 +36,11 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
   };
   if (linked) markSel();
 
-  const s = { ...spec, data: { name: 'cells' }, width: 'container', height: 'container',
+  // Pixel size of the pane, not 'container': with axis titles and a legend,
+  // 'container' sizing lets the chart overflow the pane (issue #3). 'fit' with
+  // explicit pixels shrinks the plot so axes, titles and legend fit inside.
+  const paneSize = () => ({ width: Math.max(area.clientWidth, 120), height: Math.max(area.clientHeight, 120) });
+  const s = { ...spec, data: { name: 'cells' }, ...paneSize(),
               autosize: { type: 'fit', contains: 'padding' }, background: 'transparent' };
   delete s.$schema;
   if (linked && !s.layer && !s.encoding?.opacity)
@@ -50,6 +54,12 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
   const res = await embed(area, s, { actions: false, renderer: 'canvas' });
   view = res.view;
   await view.data('cells', rows).runAsync();
+  const resize = new ResizeObserver(() => {
+    const { width, height } = paneSize();
+    if (view && (width !== view.width() || height !== view.height())) view.width(width).height(height).runAsync();
+  });
+  resize.observe(area);
+  unsub.push(() => resize.disconnect());
 
   if (linked) {
     unsub.push(store.subscribe(st => st.selection.version, () => {

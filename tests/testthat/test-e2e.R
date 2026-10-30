@@ -190,6 +190,9 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
     expect_true(browser_wait(br, "window.__giottolens.panels[1]?.view != null"))
     expect_true(browser_wait(br,
         "document.querySelector('#stats-pane-2 .stats-pane-title').textContent === 'score'"))
+    # Issue #3: the chart, axes and titles fit inside the pane
+    fits <- br$js("(() => { const a = document.querySelector('#stats-body-2 .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panels[1].view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
+    expect_true(fits)
 
     # Dragging a brush on the chart selects exactly the cells inside it
     box <- br$js("(() => { const r = document.querySelector('#stats-body-2 canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
