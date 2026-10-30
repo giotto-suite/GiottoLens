@@ -57,5 +57,5 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0003](0003-no-browser-data-model.md) | No browser-side data model: DuckDB-WASM and Mosaic removed | Accepted | 2026-10-30 |
 | [0004](0004-tile-transfer-whole-or-merged-columns.md) | Tiles are read whole on a fast link and as merged column ranges on a slow one | Accepted | 2026-10-30 |
 | [0005](0005-own-point-decoder-sampling-before-decode.md) | Transcript tiles use an own JS decoder that samples before decoding | Accepted | 2026-10-30 |
-| [0006](0006-localhost-token-advisory-origin.md) | Serve on localhost with a per-launch token; the Origin check is advisory | Accepted | 2026-10-30 |
+| [0006](0006-localhost-token-advisory-origin.md) | Serve on localhost under a per-launch token path; the Origin check is advisory | Accepted | 2026-10-30 |
 | [0007](0007-interactive-selection-not-through-spatrelate.md) | Interactive selection does not go through `spatRelate()` | Accepted | 2026-10-30 |

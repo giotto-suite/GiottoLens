@@ -19,6 +19,7 @@ and direction live elsewhere:
 | `.claude/skills/giottolens-change/` | Checklist for changing the viewer or the R API (both sides, bundle, tests, docs). |
 | `NEWS.md` | User-visible changes per version. Add an entry when you change behaviour, an argument or an export. |
 | `README.md` | User-facing: install, quick start, R and agent API. |
+| `SECURITY.md` | What the server exposes, how it is protected, how to report problems. |
 
 When a decision looks arbitrary and you are tempted to undo it, check `adr/` first; the
 alternatives were often measured. Write a new ADR when you make a call a future reader could
@@ -69,18 +70,21 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 ### Serving (`R/server.R`)
 
-- Nothing is copied or written next to the data. All URLs are under `/lens/` and the viewer
-  uses page-relative URLs (resolve against `document.baseURI`), so path-prefixing proxies work:
-  - `/lens/`: bundle, from the package;
-  - `/lens/session/`: per-viewer temp dir (manifest, `cells.parquet`, metadata, panel data),
+- Nothing is copied or written next to the data. Everything is under `/lens/<token>/` (random
+  per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
+  `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
+  - `/lens/<token>/`: bundle, from the package;
+  - `.../session/`: per-viewer temp dir (manifest, `cells.parquet`, metadata, panel data),
     removed by `close()`;
-  - `/lens/files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
-  - `/lens/data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread.
+  - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
+  - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
+  - `.../ws`: the WebSocket.
 - httpuv `staticPath` ignores Range. Headers include `Content-Encoding: identity`
   (httpuv gzips otherwise, and fetch cannot opt out).
-- Binds `127.0.0.1` on a random port. The WebSocket needs the per-launch `?token=`; the
-  Origin check rejects non-loopback foreign pages and is off behind RStudio Server's proxy
-  (adr/0006).
+- Binds `127.0.0.1` on a random port. The token path is the access check for files and the
+  WebSocket alike, since httpuv's static thread cannot check anything per request; the Origin
+  check rejects non-loopback foreign pages and is off behind RStudio Server's proxy (adr/0006,
+  `SECURITY.md`). Never serve anything outside `.lens_root(token)`.
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
 
@@ -126,9 +130,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 ### Tiles (adr/0004, adr/0005)
 
 - Tile reads go through `readTileColumns()` / `tileSource()` (`data/parquet.ts`) in one of two
-  modes (`launch_lens(transfer =)`, manifest `transfer`): `whole` fetches `/lens/files/` in one
+  modes (`launch_lens(transfer =)`, manifest `transfer`): `whole` fetches `files/` in one
   request; `columns` reads the footer (64 KB first read) and the needed column blocks, merged
-  when < 1 MB apart, from `/lens/data/`. `auto` starts `whole` on a localhost URL and switches
+  when < 1 MB apart, from `data/`. `auto` starts `whole` on a localhost URL and switches
   after two whole fetches under 150 MB/s (an SSH port forward also looks like localhost).
 - Transcript tiles decode in a worker pool with `data/point-decode.ts`, keeping every
   `stride`-th row (16/4/1 by zoom tier, `txStride()`) and reading only the kept dictionary
@@ -165,7 +169,7 @@ having a consumer.
 
 ## Common mistakes to avoid
 
-- Opening `/lens/index.html`; open `viewer$url` (`/lens/?token=…`).
+- Opening anything but `viewer$url` (`/lens/<token>/`).
 - Building absolute URLs from `location.origin`.
 - Writing store state directly or calling `renderLayers()` by hand.
 - Keying per-cell data by cell ID in the browser instead of the cell index.

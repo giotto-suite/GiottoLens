@@ -17,8 +17,8 @@ Over a slow link bytes dominate. An SSH port forward also shows as `localhost`.
 
 ## Decision
 
-Mount each store twice: whole files from httpuv's static thread (`/lens/files/`) and the
-Range handler (`/lens/data/`). The viewer reads a tile either whole, or as its footer plus
+Mount each store twice under the viewer's path: whole files from httpuv's static thread
+(`files/`) and the Range handler (`data/`). The viewer reads a tile either whole, or as its footer plus
 the needed column blocks merged when less than 1 MB apart. `auto` starts whole on a localhost
 URL and switches to columns after two whole fetches under 150 MB/s; `launch_lens(transfer =)`
 overrides.
