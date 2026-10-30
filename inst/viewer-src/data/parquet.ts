@@ -1,4 +1,5 @@
-// Parquet over HTTP: Range reads with hyparquet, and columnar decoding.
+// Parquet over HTTP: Range reads with hyparquet, and columnar decoding. The browser
+// reads parquet R prepared and keeps no SQL model of its own (adr/0003).
 import { parquetRead, parquetMetadataAsync } from 'hyparquet';
 // @ts-ignore: not in hyparquet's type exports
 import { DEFAULT_PARSERS } from 'hyparquet/src/convert.js';
@@ -120,7 +121,8 @@ export async function readColumns(file: AsyncBuffer | ArrayBuffer, columns: stri
 //   'columns' — the drawn columns' blocks, with blocks less than MERGE_GAP
 //               apart merged into one request. Best on slow links.
 // 'auto' starts with 'whole' on a localhost URL and switches to 'columns' when
-// whole tiles arrive slowly: an SSH port forward also looks like localhost.
+// whole tiles arrive slowly: an SSH port forward also looks like localhost
+// (adr/0004).
 
 export type Transfer = 'auto' | 'whole' | 'columns';
 const MERGE_GAP = 1 << 20;          // merge blocks less than 1 MB apart

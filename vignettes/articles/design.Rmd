@@ -1,0 +1,181 @@
+---
+title: "Architecture and Design"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Architecture and Design}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+This article describes how GiottoLens works and why, for contributors and advanced users.
+Decisions with a recorded argument link to their ADR in `adr/`; numbers are from the Atera
+example (170k cells, about 600M transcripts in 853 tiles) in headless Chrome.
+
+## Goals
+
+1. Full-resolution exploration of GiottoDisk-backed data at any size.
+2. Reactive pan, zoom and selection.
+3. Selections and annotations that come back to R, as cell IDs or Giotto objects.
+4. Panels drawn from the same GiottoVisuals specs as static figures.
+5. Fully drivable from R, so an agent working in the user's R session can read and steer the
+   viewer without seeing it.
+
+GiottoLens always runs with an R session alongside it. The data model and data operations
+belong to the giotto object and GiottoClass/GiottoDisk; the browser draws what R prepares and
+keeps no second model of its own (adr/0003). Anything that would work the same on any table,
+with no giotto object behind it, belongs in dbVisuals instead.
+
+## Overview
+
+```
+R session                                   Browser
+launch_lens()                               deck.gl (OrthographicView, Y up)
+  httpuv on 127.0.0.1:<random port>          zustand store: config + selection rules
+    /lens/           viewer bundle           rules -> masks over all cells (typed arrays)
+    /lens/session/   manifest, cells,        hyparquet + own point decoder (workers)
+                     metadata, panel data    Vega-Lite panels (loaded on demand)
+    /lens/files/     tile stores, whole
+    /lens/data/      tile stores, by Range
+    WebSocket (token) <-------------------->  requests, selections, rules, logs, errors
+```
+
+## Serving
+
+`launch_lens()` serves everything from one httpuv server so the IDE viewer panes (Positron,
+RStudio) can reach the WebSocket on the same origin. Nothing is copied or written next to
+the data: the viewer bundle is served from the installed package, each GiottoDisk tile store
+is mounted in place, and per-viewer files (manifest, `cells.parquet`, pushed metadata and panel
+data) go to a temp directory removed by `close()`.
+
+Every URL sits under `/lens/` and the viewer resolves them against the page, so a proxy that
+adds a path prefix (RStudio Server, Workbench, a port forward) forwards one unit.
+
+The server binds `127.0.0.1` on a random port. The WebSocket needs a per-launch token carried
+in the viewer URL; an Origin check additionally rejects foreign pages, except behind RStudio
+Server's proxy, where the Origin is the proxy's and the token alone decides (adr/0006).
+
+## Cells
+
+The viewer numbers cells by concatenating the polygon tiles in manifest order: tile `t` holds
+cells `offset[t] .. offset[t] + n[t] - 1`. R builds this table once at launch
+(`cells.parquet`: centroid x, y and the ID) and keeps the IDs; the browser loads the centroids
+into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
+
+- A polygon tile row maps to its cell by addition, so colouring and selection highlighting
+  of outlines need no lookup.
+- All cells are drawn as centroids from the start, whatever is loaded: all 170k Atera cells
+  appear in 0.12–0.16 s. Polygon tiles are only fetched for outlines, near outline zoom.
+- Metadata pushed with `push_metadata()` is written in the same order, one typed array per
+  column (categories as integer codes with their levels), so the browser joins nothing.
+- Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
+
+## Selection rules
+
+A selection is one **rule** per source: the spatial view (lasso, brush), the scatter, each
+histogram, the metadata filter, pushed panels and R. Rule kinds: `polygon`, `stroke`,
+`range`, `categories`, `compare`, `ids` and `union`, each optionally negated. Sources combine
+with OR, or with AND in cross-filter mode, where each panel shows the other sources only.
+
+Rules, not cell lists, are the state (adr/0001):
+
+- They evaluate to masks over **all** cells, so a lasso drawn zoomed out over unloaded
+  tiles selects what the same lasso selects zoomed in.
+- They are evaluated the same way in the browser (`selection/rules.ts`) and in R
+  (`R/rules.R`). `viewer$select()` resolves cells with no browser open, and a rule read back
+  from the browser gives the same cells in R. The end-to-end tests compare the two.
+- They describe themselves: `viewer$rules()` lists each with a summary and its own cell count,
+  `viewer$rules(code = TRUE)` prints the `lens_*()` calls that recreate the selection, and the
+  rules strip shows them in the viewer.
+
+Evaluation stays interactive at scale. A point-in-polygon test with edges bucketed into
+horizontal bands (`ringTester()`) runs a whole-view lasso over 10M cells in 248 ms (a plain
+edge loop took 1.5 s) and is nearly flat in vertex count; tile bounds prune the cells tested.
+Masks are cached per rule object, brushes build theirs incrementally while dragging, and
+range, category and AND/OR steps are single passes (a cross-filter step on Atera: 2.8 ms).
+Up to roughly 10–20M cells the browser holds everything it needs; beyond that, the plan is
+R-side evaluation (see the roadmap).
+
+## Browser state and rendering
+
+Configuration (layers, colouring, rules, combine mode, annotations, tool settings) lives in
+a zustand store and changes only through its actions; it can be saved as JSON. Runtime data
+(deck instance, caches, loaded tables, in-progress drawing) is kept apart. Every store change
+requests a render, batched to one per animation frame.
+
+deck.gl compares `data` by reference, so binary data objects are built once per underlying
+array. Rebuilding them each render had deck re-triangulate every polygon tile and re-upload
+every buffer on each tile arrival: 1.3–1.5 s of main-thread blocking while loading, down to
+about 90 ms with the objects reused.
+
+## Reading tiles
+
+Parquet stores each column of each row group as its own block, so reading a few columns of a
+tile means one byte range per column per row group. How tiles are fetched therefore depends
+on where the browser is (adr/0004):
+
+- **whole**: one request per tile from httpuv's own thread, with no R involved. On the same
+  machine the extra bytes cost nothing and a busy R does not stall panning (10 tiles and
+  outlines: 0.9 s, R free or busy).
+- **columns**: the footer, then only the needed blocks, merged when less than 1 MB apart
+  (about two requests per tile), through the Range handler on R's main thread. About 6x fewer
+  bytes, for slow links; while R is busy these requests wait.
+- **auto** (default) starts with whole tiles on a localhost URL and switches to columns after
+  two slow whole fetches, since an SSH port forward also looks like localhost.
+
+Transcript tiles decode in a pool of Web Workers with GiottoLens' own decoder for the three
+drawn columns (adr/0005). It reads dictionary-encoded columns as integer indices, looks up
+only the rows the zoom tier keeps (every 16th, 4th or all) and maps gene names to gene
+indices once per dictionary entry: 2.6x faster than hyparquet for all rows and 3.4x at 1/16,
+with identical output. Layouts it does not cover fall back to hyparquet. Codecs: SNAPPY (WASM),
+ZSTD, GZIP, LZ4_RAW and Hadoop LZ4.
+
+At zoomed-out views loading is now bound by bytes, not decoding, which is what the planned
+coarse tier addresses.
+
+## The R API is the agent API
+
+Every user action has an R equivalent on the `LensViewer` object, so an agent in the user's R
+session can work with the viewer as well as the user can: read it (`describe()`, `state()`,
+`rules()`, `log()`, `screenshot()`), drive it (`select()`, `set_view()`, `zoom_to()`,
+`color_by()`, `set_layer()`, `push_panel()`), ask the user for input
+(`wait_for_selection()`) and get results back as R objects (`selection`, `subset()`).
+
+The protocol is request/reply: a message from R with an `id` is answered by the browser with
+the handler's result or error. A tab announces `ready` once its handlers are registered, and
+R then sends it the current metadata and rules, so reloads and new tabs match. Browser errors
+are forwarded and printed in the R console.
+
+## Panels
+
+The stats column holds a scatter of any two metadata columns and a histogram or bar chart,
+both drawn from the typed arrays and linked by the selection rules. `push_panel()` adds any
+Vega-Lite spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`; rows with a
+`cell_ID` are linked, and an interval brush named `brush` becomes a selection rule. Mosaic is
+not used: linking comes from the rules, and aggregation from typed-array scans (about 1 ms per
+million cells) or from R.
+
+## The large-data path
+
+Selections over cells stay in the browser up to about 10–20M cells. Beyond that, and for
+queries over transcripts, the work belongs in R next to the files. Bare SQL on the parquet
+tiles sets the floor (one 200-vertex lasso, cell IDs returned to R):
+
+| Data | DuckDB (8 threads) | DuckDB (1 thread) | sedona |
+|---|---|---|---|
+| 170k cells, centroid | 16 ms | 30 ms | 6 ms |
+| 170k cells, geometry intersects | 36 ms | 129 ms | 54 ms |
+| transcripts, 420M in the lasso | 49 s | 101 s | 5.3 s |
+| transcripts, 1.1M in the lasso | 0.53 s | 0.81 s | 0.83 s |
+
+GiottoDisk's `spatRelate()` took 1.4 s (sedona), 1.8 s (terra) and 5.7 s (duckdb) for the
+same cell lasso: per-call overhead, not engine time (adr/0007). At transcript scale nothing
+returns IDs interactively, so the server path serves aggregates (counts per gene, densities)
+and keeps selections as rules.

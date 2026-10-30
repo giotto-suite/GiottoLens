@@ -5,3 +5,10 @@
 *.Rproj
 node_modules/
 .DS_Store
+# rendered vignettes (only the .Rmd is tracked)
+vignettes/articles/*.html
+vignettes/articles/*_files/
+vignettes/*.html
+inst/doc
+# agent-private scratch (the shipped guide is AGENTS.md)
+CLAUDE.md

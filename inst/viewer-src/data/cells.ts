@@ -1,6 +1,7 @@
 // All cells as typed arrays, indexed 0..N-1 in the order R wrote them:
 // polygon tiles concatenated in manifest order, so tile t holds cells
-// offset .. offset + n - 1. Selections, colours and metadata use this index.
+// offset .. offset + n - 1. Selections, colours and metadata use this index
+// (adr/0002).
 import { rangeBuffer, readColumns } from './parquet.ts';
 
 export interface CellTile {

@@ -5,7 +5,8 @@
 # viewer evaluates rules in the browser; this is the same evaluation in R,
 # over the cell centroids and the pushed metadata, so a rule set from R (or
 # read back from the viewer) resolves to cells without a browser. Keep it in
-# step with inst/viewer-src/selection/rules.ts.
+# step with inst/viewer-src/selection/rules.ts (adr/0001). Interactive
+# selection stays here and in the browser, not in spatRelate() (adr/0007).
 
 .rule_kinds <- c("polygon", "stroke", "range", "categories", "compare", "ids", "union",
     "cells")  # cells: R-side only, resolved to ids by .resolve_cells()

@@ -7,7 +7,7 @@
 #   /lens/session/    this viewer's manifest.json and metadata/ (temp dir)
 #   /lens/data/<m>/   data store <m>, through the Range handler below
 #   /lens/files/<m>/  the same files whole, from httpuv's own thread (fast
-#                     when the browser is local; see data/parquet.ts)
+#                     when the browser is local; see data/parquet.ts, adr/0004)
 #   WebSocket         any path; needs the per-launch token
 #
 # The viewer bundle and the data stores are never written to.
@@ -61,7 +61,7 @@
 # A WebSocket is accepted when it carries this launch's token, and its
 # Origin (if a browser sent one) is either local or the server itself.
 # The token is the real check; the Origin test only blocks foreign pages
-# early. A local proxy (Positron, VS Code) has a loopback Origin.
+# early. A local proxy (Positron, VS Code) has a loopback Origin (adr/0006).
 .ws_allowed <- function(req, token, check_origin = TRUE) {
     query <- .parse_query(req$QUERY_STRING)
     if (!identical(query[["token"]], token)) return(FALSE)

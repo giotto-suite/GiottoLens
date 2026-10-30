@@ -3,7 +3,8 @@
 // `stride`-th row. hyparquet materialises every row of every column as JS
 // values; here dictionary-encoded columns are decoded as integer indices and
 // only the kept rows are looked up, and gene names are mapped to gene indices
-// once per dictionary entry rather than once per row.
+// once per dictionary entry rather than once per row. Why JS and not Rust, and the
+// numbers: adr/0005.
 //
 // Handles flat (non-nested) columns, PLAIN, dictionary or (numbers)
 // BYTE_STREAM_SPLIT encoded, in v1 or v2 data pages, with any codec in

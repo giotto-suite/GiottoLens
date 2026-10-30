@@ -131,6 +131,10 @@ launch_lens()                        deck.gl (OrthographicView, Y up)
 
 ## Development
 
+Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) (code map and
+invariants). Architecture is in `vignettes/articles/design.Rmd`, direction in
+`roadmap.Rmd`, and the reasons behind decisions in [`adr/`](adr/README.md).
+
 ```bash
 cd inst/viewer-src
 npm ci

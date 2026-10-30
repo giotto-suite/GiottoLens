@@ -121,7 +121,8 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 # The viewer numbers cells 0..N-1 by concatenating the polygon tiles in
 # manifest order. Each tile is then a contiguous range of cell indices, so the
 # browser maps a tile row to its cell by addition, keeps per-cell data in
-# typed arrays, and never needs string IDs. R keeps the IDs and translates.
+# typed arrays, and never needs string IDs. R keeps the IDs and translates
+# (adr/0002).
 
 .build_cells <- function(store) {
     tile_idx <- store@tiles@metadata$tile
