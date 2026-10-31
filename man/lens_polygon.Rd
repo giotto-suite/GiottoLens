@@ -7,6 +7,7 @@
 \alias{lens_categories}
 \alias{lens_compare}
 \alias{lens_union}
+\alias{lens_intersect}
 \alias{lens_cells}
 \title{Build selection rules for a GiottoLens viewer}
 \usage{
@@ -21,6 +22,8 @@ lens_categories(column, values, negate = FALSE)
 lens_compare(column, op, value, negate = FALSE)
 
 lens_union(..., negate = FALSE)
+
+lens_intersect(..., negate = FALSE)
 
 lens_cells(ids, negate = FALSE)
 }
@@ -46,7 +49,9 @@ for a lasso in a scatter of two metadata columns.}
 
 \item{value}{Value to compare with.}
 
-\item{...}{Rules to combine (cells matching any of them), e.g. several lassos}
+\item{...}{Rules to combine: cells matching any of them (\code{lens_union()}), e.g.
+several lassos, or all of them (\code{lens_intersect()}), e.g. a lasso and a
+negated one to cut a region out}
 
 \item{ids}{Cell IDs (for \code{lens_cells()}; resolved when passed to
 \code{viewer$select()})}

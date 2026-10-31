@@ -54,6 +54,11 @@ test_that("rules have readable summaries", {
         "not (lab in {a, b})")
     expect_identical(.rule_summary(lens_compare("name", "contains", "n9")), "name contains 'n9'")
     expect_match(.rule_summary(lens_union(lens_range("score", 0, 1), lens_range("score", 5, 6))), "; or ")
+    # 6 x 6 cells in the box, minus the two columns with score 2-4
+    expect_identical(sum(.eval_rule(lens_intersect(lens_bbox(c(0, 6, 0, 6)),
+        lens_range("score", 2, 4, negate = TRUE)), ctx)), 24L)
+    expect_match(.rule_summary(lens_intersect(lens_range("score", 0, 6), lens_range("score", 2, 3, negate = TRUE))),
+        "score from 0 to 6; and not \\(score from 2 to 3\\)")
 })
 
 test_that("rule code recreates the same cells", {
@@ -64,7 +69,11 @@ test_that("rule code recreates the same cells", {
         lens_categories("lab", "a"),
         lens_compare("name", "contains", "n9"),
         lens_union(lens_bbox(c(0, 2, 0, 2)), lens_range("score", 8, 10)),
-        list(kind = "stroke", params = list(path = list(c(0.5, 0.5), c(9.5, 0.5)), radius = 0.1))
+        lens_intersect(lens_bbox(c(0, 6, 0, 6)), lens_range("score", 2, 4, negate = TRUE)),
+        list(kind = "stroke", params = list(path = list(c(0.5, 0.5), c(9.5, 0.5)), radius = 0.1)),
+        # a subtracted brush: listed as the cells it covers, negated
+        lens_intersect(lens_bbox(c(0, 10, 0, 2)), list(kind = "stroke", negate = TRUE,
+            params = list(path = list(c(0.5, 0.5), c(9.5, 0.5)), radius = 0.1)))
     )
     for (r in rules) {
         code <- .rule_code(r, ids, ctx)

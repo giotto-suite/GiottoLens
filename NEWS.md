@@ -1,5 +1,11 @@
 # GiottoLens (development version)
 
+* Lasso and brush strokes work the same in both combine modes: a plain stroke replaces the
+  view's selection, Shift adds to it, and Alt (Option) or Ctrl/Cmd subtracts from it. Before,
+  strokes added in "or" mode while the lassos replaced in cross-filter mode.
+* `lens_intersect()` combines rules by intersection; `rules(code = TRUE)` uses it for
+  subtracted regions.
+
 * The status line shows "ready" again once the viewer has loaded; since 0.1.2 it showed a
   tile count instead.
 
