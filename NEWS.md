@@ -5,6 +5,8 @@
   strokes added in "or" mode while the lassos replaced in cross-filter mode.
 * `lens_intersect()` combines rules by intersection; `rules(code = TRUE)` uses it for
   subtracted regions.
+* Brushing a histogram updates the selection as the brush moves; before, it only updated
+  once the brush stopped.
 
 * The status line shows "ready" again once the viewer has loaded; since 0.1.2 it showed a
   tile count instead.
