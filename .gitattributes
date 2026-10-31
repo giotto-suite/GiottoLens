@@ -1,0 +1,2 @@
+# Built by CI after merge (.github/workflows/check.yaml); hidden in diffs
+inst/viewer/** linguist-generated=true -diff

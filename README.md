@@ -141,7 +141,7 @@ cd inst/viewer-src
 npm ci
 npm test            # vitest
 npm run typecheck   # tsc
-npm run build       # writes inst/viewer/ — commit it
+npm run build       # writes inst/viewer/ for local use; CI builds and commits it after merge
 ```
 
 ```r
