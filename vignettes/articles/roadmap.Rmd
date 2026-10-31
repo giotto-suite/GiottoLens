@@ -76,8 +76,8 @@ queries over transcripts, the work runs in R next to the files.
 
 Viv (deck.gl layers for OME-TIFF and OME-Zarr) with per-channel contrast and blending: COGs
 written by the suite through a custom pixel source first, then vendor OME-TIFFs, with
-JPEG-2000 decoded either in R or by a browser decoder. Needs deck.gl 9.4 and multi-page image
-selection in GiottoClass.
+JPEG-2000 decoded either in R or by a browser decoder. The viewer is on deck.gl 9.4, which
+Viv 0.23 requires; still needs multi-page image selection in GiottoClass.
 
 ## Plugins
 
