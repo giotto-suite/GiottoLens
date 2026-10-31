@@ -71,35 +71,50 @@ export function initSelection(): void {
 }
 
 // ── Tools ────────────────────────────────────────────────────────────────────
-// 'or' mode: new strokes add to what is selected. 'and' (crossfilter): a new
-// lasso replaces its view's selection, so views narrow each other.
+// Every tool, in both combine modes: a plain stroke replaces its view's rule,
+// Shift adds to it and Alt (Option) or Ctrl/Cmd subtracts from it. The view's
+// rule becomes the stroke, union(rule, stroke) or intersect(rule, not stroke).
+// The × on a rule chip drops one view's rule.
 
-function spatialParts(): Rule[] {
-  const r = store.getState().rules.spatial;
-  return r?.kind === 'union' ? r.params.parts : r ? [r] : [];
-}
-function setSpatial(parts: Rule[]): void {
-  actions.setRule('spatial', parts.length ? { source: 'spatial', kind: 'union', params: { parts } } : null);
+export type StrokeOp = 'replace' | 'add' | 'subtract';
+export function strokeOp(e: { shiftKey?: boolean; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }): StrokeOp {
+  if (e.altKey || e.ctrlKey || e.metaKey) return 'subtract';
+  return e.shiftKey ? 'add' : 'replace';
 }
 
-export function lassoSpatial(ring: Ring): void {
+// The view's rule after a stroke. Subtracting from a view with no rule leaves
+// it without one. Unions and intersections are extended, not nested.
+export function strokeRule(prev: Rule | undefined, part: Rule, op: StrokeOp, source: string): Rule | null {
+  if (op === 'replace') return part;
+  if (!prev) return op === 'add' ? part : null;
+  if (op === 'add') {
+    const parts = prev.kind === 'union' && !prev.negate ? [...prev.params.parts, part] : [prev, part];
+    return { source, kind: 'union', params: { parts } };
+  }
+  const parts = prev.kind === 'intersect' && !prev.negate ? [...prev.params.parts, part] : [prev, part];
+  return { source, kind: 'intersect', params: { parts } };
+}
+
+// Subtracted strokes are negated parts of an intersection
+const asPart = (part: Rule, op: StrokeOp): Rule => op === 'subtract' ? { ...part, negate: !part.negate } : part;
+
+export function lassoSpatial(ring: Ring, op: StrokeOp = 'replace'): void {
   const part: Rule = { source: 'spatial', kind: 'polygon', space: 'spatial', params: { rings: [ring] } };
-  setSpatial(store.getState().combine === 'and' ? [part] : [...spatialParts(), part]);
+  actions.setRule('spatial', strokeRule(store.getState().rules.spatial, asPart(part, op), op, 'spatial'));
 }
 
-export function lassoScatter(ring: Ring, x: string, y: string): void {
-  const prev = store.getState().rules.scatter;
-  const sameSpace = prev?.kind === 'polygon' && typeof prev.space === 'object' && prev.space.x === x && prev.space.y === y;
-  const rings = store.getState().combine === 'or' && sameSpace && prev.kind === 'polygon' ? [...prev.params.rings, ring] : [ring];
-  actions.setRule('scatter', { source: 'scatter', kind: 'polygon', space: { x, y }, params: { rings } });
+export function lassoScatter(ring: Ring, x: string, y: string, op: StrokeOp = 'replace'): void {
+  const part: Rule = { source: 'scatter', kind: 'polygon', space: { x, y }, params: { rings: [ring] } };
+  actions.setRule('scatter', strokeRule(store.getState().rules.scatter, asPart(part, op), op, 'scatter'));
 }
 
 // Brush: the stroke's mask is built incrementally while dragging and handed
-// to the rule cache, so moves cost only the cells near the new segment.
-let _brush: { mask: Uint8Array; path: Pt[]; radius: number; base: Rule[] } | null = null;
-export function brushStart(p: Pt, radius: number): void {
+// to the rule cache, so moves cost only the cells near the new segment (and,
+// when subtracting, one pass to invert it).
+let _brush: { mask: Uint8Array; path: Pt[]; radius: number; base: Rule | undefined; op: StrokeOp } | null = null;
+export function brushStart(p: Pt, radius: number, op: StrokeOp = 'replace'): void {
   if (!state.cells) return;
-  _brush = { mask: new Uint8Array(state.cells.n), path: [p], radius, base: spatialParts() };
+  _brush = { mask: new Uint8Array(state.cells.n), path: [p], radius, base: store.getState().rules.spatial, op };
   markSegment(_brush.mask, state.cells, p, p, radius);
   commitBrush();
 }
@@ -118,10 +133,17 @@ export function brushEnd(): void {
 }
 function commitBrush(): void {
   if (!_brush) return;
-  const stroke: Rule = { source: 'spatial', kind: 'stroke', space: 'spatial',
-    params: { path: _brush.path.slice(), radius: _brush.radius } };
-  primeMask(stroke, _brush.mask);
-  setSpatial([..._brush.base, stroke]);
+  const { mask, op } = _brush;
+  const stroke = asPart({ source: 'spatial', kind: 'stroke', space: 'spatial',
+    params: { path: _brush.path.slice(), radius: _brush.radius } }, op);
+  if (op === 'subtract') {
+    const inv = new Uint8Array(mask.length);
+    for (let i = 0; i < mask.length; i++) inv[i] = mask[i] ^ 1;
+    primeMask(stroke, inv);
+  } else {
+    primeMask(stroke, mask);
+  }
+  actions.setRule('spatial', strokeRule(_brush.base, stroke, op, 'spatial'));
 }
 
 export function invertSelection(): void {

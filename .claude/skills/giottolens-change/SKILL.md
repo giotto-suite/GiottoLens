@@ -1,6 +1,6 @@
 ---
 name: giottolens-change
-description: Checklist for changing GiottoLens — the viewer (inst/viewer-src), the R API (LensViewer, lens_*()), selection rules, the protocol, or tile reading. Use when adding a viewer feature, an R method, a rule kind or a message type, or when changing how tiles are served or decoded. Keeps the R and browser sides, the built bundle, the tests and the docs in step.
+description: Checklist for changing GiottoLens — the viewer (inst/viewer-src), the R API (LensViewer, lens_*()), selection rules, the protocol, or tile reading. Use when adding a viewer feature, an R method, a rule kind or a message type, or when changing how tiles are served or decoded. Keeps the R and browser sides, the tests and the docs in step.
 ---
 
 # Changing GiottoLens
@@ -8,7 +8,7 @@ description: Checklist for changing GiottoLens — the viewer (inst/viewer-src),
 GiottoLens has two halves that must agree: R (`R/`) and the browser
 (`inst/viewer-src/`), joined by a WebSocket protocol and by selection rules
 that both sides evaluate. Most bugs this skill prevents are one half changing
-without the other, or the built bundle not matching the source.
+without the other.
 
 ## Orientation
 
@@ -53,7 +53,7 @@ re-uploads.
 
 ```bash
 cd inst/viewer-src
-npm test && npm run typecheck && npm run build     # commit inst/viewer/ with the source
+npm test && npm run typecheck && npm run build     # to test locally; then git restore ../viewer
 ```
 
 ```r
@@ -68,4 +68,5 @@ devtools::check()         # 0 errors, 0 warnings; non-ASCII only in comments
   `roadmap.Rmd`: items done or added.
 - An ADR (`adr/README.md`) for a decision someone could reasonably reverse, with
   an `adr/NNNN` pointer at the code it constrains.
-- Merging to `main` is a release: bump the version in `DESCRIPTION`.
+- Open the PR against `dev`. Merging `dev` into `main` is a release: bump the
+  version in `DESCRIPTION` then.

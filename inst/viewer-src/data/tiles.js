@@ -74,14 +74,17 @@ export async function loadTile(layerName, tile, onLoad) {
   }
 }
 
-// Abort the loads of tiles not in `keep` (a Set of keys)
+// Abort the loads of tiles not in `keep` (a Set of keys). The status line is
+// left alone when nothing was aborted, so it keeps 'ready' at boot.
 export function abortTiles(keep) {
+  let n = 0;
   for (const [key, ctl] of state.pending) {
     if (keep.has(key)) continue;
     state.pending.delete(key);
     ctl.abort();
+    n++;
   }
-  updateStatus();
+  if (n) updateStatus();
 }
 
 // ── Transcript draw buffers ───────────────────────────────────────────────────

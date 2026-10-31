@@ -2,7 +2,7 @@ name: check
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
@@ -13,6 +13,8 @@ jobs:
         working-directory: inst/viewer-src
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # a PR's merge commit and its base parent
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -20,9 +22,52 @@ jobs:
           cache-dependency-path: inst/viewer-src/package-lock.json
       - run: npm ci
       - run: npm test
-      # inst/viewer/ is committed and shipped; it must match the source
       - run: npm run build
-      - run: git diff --exit-code -- ../viewer || (echo "::error::inst/viewer/ is stale; run npm run build and commit it" && exit 1)
+      # inst/viewer/ is built and committed by the bundle job after merge.
+      # Release PRs from dev carry the bundle commits made there.
+      - name: PRs leave inst/viewer/ to CI
+        if: github.event_name == 'pull_request' && github.head_ref != 'dev'
+        run: |
+          if git diff --name-only HEAD^1 HEAD -- ../viewer | grep -q .; then
+            echo "::error::This PR changes inst/viewer/. CI builds it after merge; run 'git restore inst/viewer' (or revert those changes) and push again."
+            exit 1
+          fi
+
+  # Build the viewer after a merge and commit it, so installs from dev and main
+  # (install_github(), pak) get a bundle without Node. Pushes made with
+  # GITHUB_TOKEN do not start new workflow runs.
+  bundle:
+    if: github.event_name == 'push'
+    needs: viewer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: bundle-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}   # the branch tip, to commit on top of
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: inst/viewer-src/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: inst/viewer-src
+      - name: Commit the bundle if it changed
+        run: |
+          git add -A inst/viewer
+          if git diff --cached --quiet; then
+            echo "inst/viewer/ is up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: build viewer bundle" -m "Built from ${GITHUB_SHA}."
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
   R-CMD-check:
     runs-on: ubuntu-latest

@@ -48,7 +48,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js, dom.js
   panels/     scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
-inst/viewer/  built bundle: committed, served at runtime
+inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 adr/          decision records
 ```
 
@@ -63,7 +63,12 @@ devtools::load_all(); devtools::test()   # e2e needs Chrome and NOT_CRAN=true
 viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 ```
 
-- **Commit `inst/viewer/` after rebuilding.** CI checks it matches a fresh build.
+- **Branches.** Feature branches open PRs against `dev` and are deleted on merge. `dev` →
+  `main` is a release: bump the version in `DESCRIPTION`. Rulesets block deleting or
+  force-pushing `dev` and `main`.
+- **Never commit `inst/viewer/`.** Build it locally to test, then `git restore inst/viewer`
+  before committing; a PR that changes it fails CI. After a merge, CI builds it and commits
+  it on `dev` or `main`, so installs from those branches need no Node.
 - The R-CMD-check CI job cannot install the suite's dependency chain yet; test locally.
 
 ## Key invariants
@@ -161,7 +166,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `set_layer()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
-`lens_union()`. New user-facing capability gets an R method; agent-facing helpers count as
+`lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as
 having a consumer.
 
 ## Conventions

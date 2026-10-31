@@ -82,7 +82,7 @@ viewer$screenshot("view.png")                # when a picture is needed
 ```
 
 Rules (`lens_polygon()`, `lens_bbox()`, `lens_range()`, `lens_categories()`,
-`lens_compare()`, `lens_cells()`, `lens_union()`) select the same cells whether they are
+`lens_compare()`, `lens_cells()`, `lens_union()`, `lens_intersect()`) select the same cells whether they are
 drawn in the browser or written in R. To see them:
 
 ```r
@@ -100,8 +100,10 @@ and the toolbar's rules button hides the strip.
 - **Transcripts:** tiles loaded around the view, decoded in background workers; 1/16 and 1/4
   sampling when zoomed out; gene search and highlighting.
 - **Selection:** lasso, brush (`[` `]` resize), invert, select by metadata, scatter lasso,
-  histogram brush, and brushes on panels pushed from R. Sources combine as a union, or
-  intersect in cross-filter mode. Selections cover all cells, not only those loaded.
+  histogram brush, and brushes on panels pushed from R. A lasso or brush stroke replaces its
+  view's selection; Shift adds to it, Alt (Option) or Ctrl/Cmd subtracts from it, and × on
+  its rule drops it. Sources combine as a union, or intersect in cross-filter mode.
+  Selections cover all cells, not only those loaded.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
@@ -141,7 +143,7 @@ cd inst/viewer-src
 npm ci
 npm test            # vitest
 npm run typecheck   # tsc
-npm run build       # writes inst/viewer/ — commit it
+npm run build       # writes inst/viewer/ for local use; CI builds and commits it after merge
 ```
 
 ```r

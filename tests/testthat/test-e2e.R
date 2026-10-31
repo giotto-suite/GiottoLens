@@ -327,6 +327,63 @@ test_that("agent helpers: describe, wait_for_selection, zoom_to, view_bounds, su
     expect_identical(br$errors(), character())
 })
 
+test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    expect_true(pump_until(function() v$connected()))
+
+    priv  <- get("private", v$.__enclos_env__)
+    cells <- arrow::read_parquet(file.path(priv$session, "cells.parquet"))
+    in_r  <- function() sort(cells$cell_ID[.eval_rule(.resolve_cells(v$selection_rules[[1]], cells$cell_ID),
+        list(x = cells$x, y = cells$y))])
+    rule_kind <- function() br$js("window.__giottolens.store.getState().rules.spatial?.kind ?? null")
+    sel_after <- function(f) { v$selection <- NULL; f(); pump_until(function() !is.null(v$selection)); v$selection }
+
+    br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
+    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    w <- size[[1]]; h <- size[[2]]
+    box <- function(x0, x1, y0, y1) list(c(x0 * w, y0 * h), c(x1 * w, y0 * h), c(x1 * w, y1 * h), c(x0 * w, y1 * h), c(x0 * w, y0 * h))
+    target <- br$js("window.__giottolens.state.currentViewState.target")
+
+    # Shapes stay clear of the overlays at the edges (HUD, rules strip)
+    left  <- sel_after(function() browser_drag(br, box(0.2, 0.5, 0.2, 0.8)))
+    expect_identical(rule_kind(), "polygon")
+    right <- sel_after(function() browser_drag(br, box(0.5, 0.8, 0.2, 0.8)))      # replaces
+    expect_length(intersect(left, right), 0L)
+    both  <- sel_after(function() browser_drag(br, box(0.2, 0.5, 0.2, 0.8), 8L))  # Shift adds
+    expect_identical(rule_kind(), "union")
+    expect_setequal(both, union(left, right))
+    expect_identical(sort(v$selection), in_r())
+    cut <- sel_after(function() browser_drag(br, box(0.2, 0.8, 0.2, 0.5), 1L))    # Alt subtracts
+    expect_identical(rule_kind(), "intersect")
+    expect_true(length(cut) > 0L && length(cut) < length(both) && all(cut %in% both))
+    expect_identical(sort(v$selection), in_r())
+    # Modifier drags draw; they do not move the camera
+    expect_identical(br$js("window.__giottolens.state.currentViewState.target"), target)
+
+    # A subtracting brush (Ctrl) removes what it covers, the same in R
+    br$js("document.querySelector('.tool-btn[data-mode=\"brush\"]').click()")
+    brushed <- sel_after(function() browser_drag(br,
+        lapply(seq(0.25, 0.75, by = 0.05), function(f) c(f * w, 0.65 * h)), 2L))
+    expect_true(length(brushed) < length(cut) && all(brushed %in% cut))
+    expect_identical(sort(v$selection), in_r())
+
+    # rules(code = TRUE) rebuilds it with lens_intersect(), the brush as negated cells
+    lines <- v$rules(code = TRUE)
+    expect_true(any(grepl("lens_intersect(", lines, fixed = TRUE)))
+    expect_true(any(grepl("negate = TRUE)", lines, fixed = TRUE)))
+    sel <- v$selection
+    v$select(NULL)
+    viewer <- v
+    invisible(capture.output(for (l in lines) eval(parse(text = l))))
+    expect_setequal(v$selection, sel)
+    expect_identical(br$errors(), character())
+})
+
 test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE) in R", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)

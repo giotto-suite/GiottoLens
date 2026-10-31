@@ -83,8 +83,11 @@ into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
 
 A selection is one **rule** per source: the spatial view (lasso, brush), the scatter, each
 histogram, the metadata filter, pushed panels and R. Rule kinds: `polygon`, `stroke`,
-`range`, `categories`, `compare`, `ids` and `union`, each optionally negated. Sources combine
-with OR, or with AND in cross-filter mode, where each panel shows the other sources only.
+`range`, `categories`, `compare`, `ids`, `union` and `intersect`, each optionally negated.
+Sources combine with OR, or with AND in cross-filter mode, where each panel shows the other
+sources only. Within a view, a lasso or brush stroke replaces the view's rule, Shift adds to
+it (a union) and Alt or Ctrl/Cmd subtracts from it (an intersection with the negated stroke),
+the same in both modes; the × on a rule in the rules strip drops one view's rule.
 
 Rules, not cell lists, are the state (adr/0001):
 

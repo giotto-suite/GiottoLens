@@ -9,7 +9,7 @@
 # selection stays here and in the browser, not in spatRelate() (adr/0007).
 
 .rule_kinds <- c("polygon", "stroke", "range", "categories", "compare", "ids", "union",
-    "cells")  # cells: R-side only, resolved to ids by .resolve_cells()
+    "intersect", "cells")  # cells: R-side only, resolved to ids by .resolve_cells()
 .compare_ops <- c("=", "!=", ">", "<", "contains")
 
 .validate_rule <- function(rule, where = "select") {
@@ -38,7 +38,7 @@
         },
         ids = if (!is.character(p$mask)) bad("ids rule needs params$mask"),
         cells = if (!length(p$ids)) bad("cells rule needs params$ids"),
-        union = for (part in p$parts) .validate_rule(part, where)
+        union = , intersect = for (part in p$parts) .validate_rule(part, where)
     )
     invisible(rule)
 }
@@ -105,7 +105,8 @@
         categories = { v <- col(rule$space); !is.na(v) & as.character(v) %in% unlist(p$values) },
         compare = .eval_compare(col(rule$space), p$op, as.character(p$value)),
         ids = seq_len(n) %in% .decode_mask(p$mask, n),
-        union = Reduce(`|`, lapply(p$parts, .eval_rule, ctx = ctx), logical(n))
+        union = Reduce(`|`, lapply(p$parts, .eval_rule, ctx = ctx), logical(n)),
+        intersect = Reduce(`&`, lapply(p$parts, .eval_rule, ctx = ctx), rep(TRUE, n))
     )
     if (isTRUE(rule$negate)) !m else m
 }
@@ -201,12 +202,22 @@ lens_compare <- function(column, op, value, negate = FALSE) {
 }
 
 #' @rdname lens_polygon
-#' @param ... Rules to combine (cells matching any of them), e.g. several lassos
+#' @param ... Rules to combine: cells matching any of them (`lens_union()`), e.g.
+#'   several lassos, or all of them (`lens_intersect()`), e.g. a lasso and a
+#'   negated one to cut a region out
 #' @export
 lens_union <- function(..., negate = FALSE) {
     parts <- list(...)
     for (p in parts) .validate_rule(p, "lens_union")
     list(kind = "union", params = list(parts = parts), negate = negate)
+}
+
+#' @rdname lens_polygon
+#' @export
+lens_intersect <- function(..., negate = FALSE) {
+    parts <- list(...)
+    for (p in parts) .validate_rule(p, "lens_intersect")
+    list(kind = "intersect", params = list(parts = parts), negate = negate)
 }
 
 # lens_cells() rules name cells by ID; the viewer works in cell indices, so
@@ -221,7 +232,7 @@ lens_union <- function(..., negate = FALSE) {
         return(list(kind = "ids", negate = rule$negate,
             params = list(mask = .encode_mask(unique(idx[!is.na(idx)]), length(cell_ids)))))
     }
-    if (identical(rule$kind, "union"))
+    if (isTRUE(rule$kind %in% c("union", "intersect")))
         rule$params$parts <- lapply(rule$params$parts, .resolve_cells, cell_ids = cell_ids)
     rule
 }
@@ -250,6 +261,7 @@ lens_union <- function(..., negate = FALSE) {
         compare = sprintf("%s %s %s", rule$space, p$op, encodeString(as.character(p$value), quote = "'")),
         ids = "a list of cells",
         union = paste(vapply(p$parts, .rule_summary, ""), collapse = "; or "),
+        intersect = paste(vapply(p$parts, .rule_summary, ""), collapse = "; and "),
         "unknown rule"
     )
     if (isTRUE(rule$negate)) paste0("not (", s, ")") else s
@@ -279,14 +291,17 @@ lens_union <- function(..., negate = FALSE) {
         categories = sprintf("lens_categories(%s, c(%s)%s)", q(rule$space),
             paste(q(p$values), collapse = ", "), neg),
         compare = sprintf("lens_compare(%s, %s, %s%s)", q(rule$space), q(p$op), q(p$value), neg),
-        union = sprintf("lens_union(%s%s)",
+        union = , intersect = sprintf("lens_%s(%s%s)", rule$kind,
             paste(vapply(p$parts, .rule_code, "", cell_ids = cell_ids, ctx = ctx), collapse = ",\n    "), neg),
-        # Brush strokes and cell lists have no builder: the cells they cover
+        # Brush strokes and cell lists have no builder: the cells they cover.
+        # A negated one (a subtracted brush) lists what it covers, negated.
         {
-            idx <- if (!is.null(ctx)) which(.eval_rule(rule, ctx))
+            pos <- rule
+            pos$negate <- FALSE
+            idx <- if (!is.null(ctx)) which(.eval_rule(pos, ctx))
             ids <- cell_ids[idx]
             if (!length(ids)) "NULL  # no cells"
-            else sprintf("lens_cells(c(%s))", paste(q(ids), collapse = ", "))
+            else sprintf("lens_cells(c(%s)%s)", paste(q(ids), collapse = ", "), neg)
         }
     )
 }

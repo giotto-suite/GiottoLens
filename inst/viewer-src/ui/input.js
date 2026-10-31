@@ -3,7 +3,7 @@ import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { requestRender } from '../render/schedule.js';
 import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
-import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterMeta } from '../selection/selection.ts';
+import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterMeta, strokeOp } from '../selection/selection.ts';
 import { generateAnnotId } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
@@ -176,6 +176,7 @@ export function initInput() {
   const world  = e => clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
   let lassoDragged = false;
   let lassoLastPx  = null;
+  let lassoOp      = 'replace';
 
   store.subscribe(s => s.mode, applyMode, { fireImmediately: true });
   store.subscribe(s => s.combine, c =>
@@ -286,13 +287,18 @@ export function initInput() {
     requestRender();
   });
 
+  // Ctrl-click opens the context menu on macOS; Ctrl subtracts while drawing
+  canvas.addEventListener('contextmenu', e => {
+    if (e.ctrlKey && ['lasso', 'brush'].includes(store.getState().mode)) e.preventDefault();
+  });
+
   canvas.addEventListener('mousedown', e => {
     hideCellTooltip();
     const mode = store.getState().mode;
     if (mode === 'brush') {
       state.brushDown = true;
       state.brushPos  = world(e);
-      brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, state.currentViewState.zoom));
+      brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, state.currentViewState.zoom), strokeOp(e));
     } else if (mode === 'lasso' || mode === 'freehand' || mode === 'txlasso') {
       if (mode === 'txlasso') {
         state.txLassoRing = null;
@@ -301,6 +307,7 @@ export function initInput() {
       }
       lassoDragged = false;
       lassoLastPx  = [e.clientX, e.clientY];
+      lassoOp      = strokeOp(e);   // the modifier held when the stroke starts
       state.lassoActive = true;
       state.lassoRing   = [world(e)];
     } else if (mode === 'rect') {
@@ -353,7 +360,7 @@ export function initInput() {
       state.lassoRing = [];
       if (lassoDragged && ring.length >= 3) {
         if (mode === 'txlasso') _runTxLasso(ring);
-        else if (mode === 'lasso') lassoSpatial(ring);
+        else if (mode === 'lasso') lassoSpatial(ring, lassoOp);
         else addAnnotation('freehand', [...ring, ring[0]]);
       }
       requestRender();
