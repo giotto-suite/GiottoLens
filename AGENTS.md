@@ -67,8 +67,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `main` is a release: bump the version in `DESCRIPTION`. Rulesets block deleting or
   force-pushing `dev` and `main`.
 - **Never commit `inst/viewer/`.** Build it locally to test, then `git restore inst/viewer`
-  before committing; a PR that changes it fails CI. After a merge, CI builds it and commits
-  it on `dev` or `main`, so installs from those branches need no Node.
+  before committing; a PR that changes it fails CI. After a merge into `dev`, CI builds it
+  and commits it there; a release PR into `main` fails if `dev`'s bundle does not match its
+  source. Installs from `dev` or `main` need no Node, and no CI writes to `main`.
 - The R-CMD-check CI job cannot install the suite's dependency chain yet; test locally.
 
 ## Key invariants
