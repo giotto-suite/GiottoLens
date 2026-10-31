@@ -10,10 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@luma.gl/core": "9.3.3",
-    "@luma.gl/engine": "9.3.3",
-    "@luma.gl/webgl": "9.3.3",
-    "deck.gl": "9.3.2",
+    "@luma.gl/core": "9.4.2",
+    "@luma.gl/engine": "9.4.2",
+    "@luma.gl/webgl": "9.4.2",
+    "deck.gl": "9.4.1",
     "hyparquet": "1.25.8",
     "hyparquet-compressors": "1.1.2",
     "hysnappy": "1.1.1",

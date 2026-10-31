@@ -1,3 +1,8 @@
+# GiottoLens (development version)
+
+* The status line shows "ready" again once the viewer has loaded; since 0.1.2 it showed a
+  tile count instead.
+
 # GiottoLens 0.1.2
 
 * The viewer is served under a random path that changes every launch (`viewer$url`), and the
