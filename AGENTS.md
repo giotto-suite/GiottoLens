@@ -166,7 +166,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `set_layer()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
-`lens_union()`. New user-facing capability gets an R method; agent-facing helpers count as
+`lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as
 having a consumer.
 
 ## Conventions

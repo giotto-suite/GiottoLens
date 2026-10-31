@@ -17,6 +17,7 @@ export type Rule = Base & (
   | { kind: 'compare'; space: string; params: { op: CompareOp; value: string } }
   | { kind: 'ids'; params: { mask: string } }
   | { kind: 'union'; params: { parts: Rule[] } }
+  | { kind: 'intersect'; params: { parts: Rule[] } }
 );
 
 export interface Ctx { cells: Cells; meta: Meta | null }
@@ -90,6 +91,14 @@ function evalRaw(rule: Rule, ctx: Ctx): Uint8Array {
       for (const p of rule.params.parts) {
         const pm = evaluate(p, ctx);
         for (let i = 0; i < n; i++) m[i] |= pm[i];
+      }
+      return m;
+    }
+    case 'intersect': {
+      m.fill(1);
+      for (const p of rule.params.parts) {
+        const pm = evaluate(p, ctx);
+        for (let i = 0; i < n; i++) m[i] &= pm[i];
       }
       return m;
     }

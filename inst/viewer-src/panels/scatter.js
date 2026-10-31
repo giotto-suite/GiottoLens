@@ -2,7 +2,7 @@
 // drawn from the typed metadata arrays. A lasso emits a 'scatter' rule.
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
-import { lassoScatter } from '../selection/selection.ts';
+import { lassoScatter, strokeOp } from '../selection/selection.ts';
 import { cellColorBuffer } from '../render/colors.ts';
 import { clientToWorld, worldToClient, fitZoom } from '../ui/dom.js';
 import { buildControlBar, chartArea, setTitle } from './controls.js';
@@ -28,7 +28,7 @@ export function createScatterPanel(body) {
       options: [{ value: '', label: 'as spatial' }, ...cols.map(c => c.name)] },
   ], [
     { icon: 'hand', title: 'pan', toggle: 'mode', active: true, onClick: () => setMode('pan') },
-    { icon: 'lasso', title: 'lasso', toggle: 'mode', onClick: () => setMode('lasso') },
+    { icon: 'lasso', title: 'lasso (Shift adds, Alt or Ctrl/Cmd subtracts)', toggle: 'mode', onClick: () => setMode('lasso') },
     { icon: 'maximize-2', title: 'zoom to fit', onClick: () => homeVS && deck?.setProps({ viewState: { ...homeVS } }) },
   ]);
   const area = chartArea(body);
@@ -116,11 +116,11 @@ export function createScatterPanel(body) {
       onViewStateChange: ({ viewState: vs }) => { viewState = vs; deck.setProps({ viewState: vs }); },
     });
 
-    let ring = [], lastPx = null, active = false, dragged = false;
+    let ring = [], lastPx = null, active = false, dragged = false, op = 'replace';
     const opts = { signal: listeners.signal };
     canvas.addEventListener('mousedown', e => {
       if (mode !== 'lasso') return;
-      active = true; dragged = false; lastPx = [e.clientX, e.clientY];
+      active = true; dragged = false; lastPx = [e.clientX, e.clientY]; op = strokeOp(e);
       ring = [clientToWorld(e.clientX, e.clientY, canvas, viewState)];
     }, opts);
     canvas.addEventListener('mousemove', e => {
@@ -133,10 +133,11 @@ export function createScatterPanel(body) {
     window.addEventListener('mouseup', () => {
       if (!active) return;
       active = false;
-      if (dragged && ring.length >= 3) lassoScatter(ring, ctrls.x.value, ctrls.y.value);
+      if (dragged && ring.length >= 3) lassoScatter(ring, ctrls.x.value, ctrls.y.value, op);
       ring = [];
       clearLasso();
     }, opts);
+    canvas.addEventListener('contextmenu', e => { if (e.ctrlKey && mode === 'lasso') e.preventDefault(); }, opts);
     document.addEventListener('lens:pan', () => setMode('pan'), opts);
   }
 
