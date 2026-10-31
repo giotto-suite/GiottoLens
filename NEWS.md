@@ -1,4 +1,4 @@
-# GiottoLens (development version)
+# GiottoLens 0.1.3
 
 * Lasso and brush strokes work the same in both combine modes: a plain stroke replaces the
   view's selection, Shift adds to it, and Alt (Option) or Ctrl/Cmd subtracts from it. Before,
@@ -7,7 +7,6 @@
   subtracted regions.
 * Brushing a histogram updates the selection as the brush moves; before, it only updated
   once the brush stopped.
-
 * The status line shows "ready" again once the viewer has loaded; since 0.1.2 it showed a
   tile count instead.
 
