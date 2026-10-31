@@ -88,13 +88,18 @@ export function createHistogramPanel(body) {
     if (my !== gen) { res.view.finalize(); return; }
     view = res.view;
     const cat = c.kind === 'categorical';
-    let t;
+    // The latest brush is applied once per frame, so the selection follows a
+    // scrub (an update costs ~2 ms at 170k cells). A pause-based debounce
+    // never fired while the brush kept moving.
+    let latest = null, frame = 0;
     view.addSignalListener(cat ? 'pick' : 'brush', (_, v) => {
-      clearTimeout(t);
-      t = setTimeout(() => {
-        if (cat) setCategoryRule(source, col, v?.label ?? null);
-        else setRangeRule(source, col, v?.bin0 ?? null);
-      }, 60);
+      latest = v;
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        if (my !== gen) return;   // redrawn for another column meanwhile
+        if (cat) setCategoryRule(source, col, latest?.label ?? null);
+        else setRangeRule(source, col, latest?.bin0 ?? null);
+      });
     });
   }
 
