@@ -38,7 +38,7 @@ A cell layer is three parts:
   when the metadata has them (exact spacing and angle), otherwise the median
   nearest-neighbour spacing and angle 0. `launch_lens(mark =)` overrides any field. This
   launch mark is a default: the viewer's configuration holds a setting over it (from
-  `set_mark()` or the mark control), saved and restored with the rest of the configuration.
+  `set_mark()`, from R only), saved and restored with the rest of the configuration.
   Cells from spatial locations draw their mark by default; segmented cells carry one but
   draw dots until it is turned on.
 - **Geometry (optional):** polygon tiles aligned with the chunks.

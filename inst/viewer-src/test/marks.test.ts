@@ -51,13 +51,11 @@ describe('drawnMark', () => {
 });
 
 describe('setCellMark', () => {
-  it('merges fields, clears some, or resets all', () => {
+  it('merges fields, or resets all', () => {
     actions.setCellMark(null);
     actions.setCellMark({ shape: 'hex', size: 4 });
     actions.setCellMark({ angle: 30 });
     expect(store.getState().cellMark).toEqual({ shape: 'hex', size: 4, angle: 30 });
-    actions.setCellMark({}, ['size']);
-    expect(store.getState().cellMark).toEqual({ shape: 'hex', angle: 30 });
     actions.setCellMark(null);
     expect(store.getState().cellMark).toEqual({});
   });

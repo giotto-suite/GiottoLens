@@ -11,7 +11,6 @@ import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { cellColorBuffer } from './render/colors.ts';
-import { drawnMark } from './render/marks.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { renderGeneList, setGeneSearch } from './ui/panel.js';
 import { renderLegend } from './ui/legend.js';
@@ -44,48 +43,6 @@ function onViewStateChange({ viewState }) {
 }
 
 // ── Layer controls ────────────────────────────────────────────────────────────
-// How cells are drawn zoomed in: the launch mark, or the viewer's setting
-// over it. Empty fields show the launch mark's values as placeholders.
-function bindMarkControl() {
-  const layer = state.manifest.layers.cells;
-  const row = document.getElementById('mark-row');
-  if (!layer?.mark || !row) return;
-  const $shape = document.getElementById('mark-shape');
-  const $size  = document.getElementById('mark-size');
-  const $angle = document.getElementById('mark-angle');
-  const names = { circle: 'circles', square: 'squares', hex: 'hexagons' };
-  document.getElementById('mark-default').textContent =
-    `default (${layer.marks ? names[layer.mark.shape] : 'dots'})`;
-  $size.placeholder  = String(+layer.mark.size.toPrecision(4));
-  $angle.placeholder = String(+layer.mark.angle.toPrecision(3));
-  row.style.display = '';
-  document.getElementById('mark-row-size').style.display = '';
-  const sync = m => {
-    $shape.value = m.show === false ? 'dots' : (m.shape ?? (m.show ? layer.mark.shape : ''));
-    $size.value  = m.size ?? '';
-    $angle.value = m.angle ?? '';
-    const drawn = drawnMark(layer, m);
-    $size.disabled  = !drawn;
-    $angle.disabled = !drawn || drawn.shape === 'circle';
-  };
-  sync(store.getState().cellMark);
-  store.subscribe(s => s.cellMark, sync);
-  $shape.addEventListener('change', () => {
-    const v = $shape.value;
-    if (!v) actions.setCellMark({}, ['show', 'shape']);
-    else if (v === 'dots') actions.setCellMark({ show: false }, ['shape']);
-    else actions.setCellMark({ show: true, shape: v });
-  });
-  for (const [el, key] of [[$size, 'size'], [$angle, 'angle']]) {
-    el.addEventListener('change', () => {
-      const v = parseFloat(el.value);
-      if (el.value === '') actions.setCellMark({}, [key]);
-      else if (Number.isFinite(v) && (key !== 'size' || v > 0)) actions.setCellMark({ [key]: v });
-      else sync(store.getState().cellMark);
-    });
-  }
-}
-
 function bindLayerControl(name, checkId, sliderId, valId) {
   const check  = document.getElementById(checkId);
   const slider = document.getElementById(sliderId);
@@ -256,7 +213,6 @@ async function main() {
   bindLayerControl('tx',          'show-tx',          'alpha-tx',          'val-tx');
   bindLayerControl('annotations', 'show-annotations', 'alpha-annotations', 'val-annotations');
   bindLayerControl('img',         'show-img',         'alpha-img',         'val-img');
-  bindMarkControl();
 
   const $colSel = document.getElementById('meta-col-select');
   $colSel?.addEventListener('change', e => actions.setColorBy(e.target.value || null));

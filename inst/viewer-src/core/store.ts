@@ -146,12 +146,9 @@ export const actions = {
   addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
   clearGenes() { set({ genes: [] }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
-  // Fields in `patch` replace the mark's and `clear` drops some, back to the
-  // launch mark's; null drops them all
-  setCellMark(patch: CellMark | null, clear: (keyof CellMark)[] = []) {
-    const m: CellMark = patch ? { ...get().cellMark, ...patch } : {};
-    for (const k of clear) delete m[k];
-    set({ cellMark: m });
+  // Fields in `patch` replace the mark's; null goes back to the launch mark
+  setCellMark(patch: CellMark | null) {
+    set({ cellMark: patch ? { ...get().cellMark, ...patch } : {} });
   },
   bumpMeta() { set(s => ({ metaVersion: s.metaVersion + 1 })); },
 

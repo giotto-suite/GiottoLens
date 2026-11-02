@@ -124,7 +124,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   polygon store stays mounted as `data/polygons/`.
 - The drawn mark is the launch mark with the config's `cellMark` on top (`drawnMark()` in
   `render/marks.ts`, `.drawn_mark()` in R; keep them the same). `cellMark` is set by
-  `set_mark()` and the mark control and saved with the config.
+  `set_mark()` (R only: there is no browser control) and saved with the config.
 - Cells are drawn by `cellMarkLayer()` (`render/marks.ts`): dots, circles sized in data units
   with a pixel minimum, or squares and hexagons (`ColumnLayer`, no pixel minimum, so dots
   until a mark is as wide as a dot). Selection is centroid membership whatever the mark.

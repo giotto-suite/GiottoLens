@@ -92,9 +92,10 @@ neighbour. `launch_lens(mark =)` overrides any field. Circles are sized in data 
 are drawn by `ColumnLayer`, which has no pixel minimum, so dots stand in until a mark is as
 wide as a dot. Selection stays centroid membership whatever the mark.
 
-The launch mark is a default, not a fixed property: the mark control in the opacity panel and
-`viewer$set_mark()` change its shape, size or angle, or switch it to dots, as a setting kept
-with the rest of the configuration (`cellMark`) and so restored after a reload. Segmented
+The launch mark is a default, not a fixed property: `viewer$set_mark()` changes its shape,
+size or angle, or switches it to dots, as a setting kept with the rest of the configuration
+(`cellMark`) and so restored after a reload. It is set from R only; the viewer has no control
+for it, since the inferred mark is usually right. Segmented
 cells carry an inferred mark too, off by default; turning it on shows them at their size
 before their outlines load. For 660k VisiumHD-sized
 bins, the grid fit takes 0.3 s and the chunking 0.1 s; the neighbour spacing, used without a

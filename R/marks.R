@@ -28,8 +28,8 @@
 
 # The mark the viewer draws, as `drawnMark()` in render/marks.ts works it out:
 # the launch mark (`cells$mark`, drawn by default when `cells$marks`) with the
-# viewer's setting (`cellMark` in its config, from set_mark() or the mark
-# control) on top. NULL when cells are drawn as dots.
+# viewer's setting (`cellMark` in its config, from set_mark()) on top. NULL
+# when cells are drawn as dots.
 .drawn_mark <- function(cells, override = NULL) {
     override <- as.list(override)
     if (is.null(cells$mark) || !isTRUE(override$show %||% cells$marks)) return(NULL)

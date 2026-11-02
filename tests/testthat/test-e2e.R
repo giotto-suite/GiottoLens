@@ -114,7 +114,7 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     expect_identical(br$errors(), character())
 })
 
-test_that("the cell mark is set from R or the control, survives a reload, and resets", {
+test_that("the cell mark is set from R, survives a reload, and resets", {
     fx <- lens_bins_fixture()
     v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
     on.exit(v$close(), add = TRUE)
@@ -129,7 +129,6 @@ test_that("the cell mark is set from R or the control, survives a reload, and re
     # From R: fields merge onto the launch mark
     v$set_mark(shape = "circle", size = 3)
     expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
-    expect_true(browser_wait(br, "document.getElementById('mark-shape').value === 'circle'"))
     expect_identical(v$describe()$cells$mark, list(shape = "circle", size = 3, angle = 10))
 
     # Saved with the viewer's settings: back after a reload
@@ -138,19 +137,19 @@ test_that("the cell mark is set from R or the control, survives a reload, and re
         priv$config_json %||% "", fixed = TRUE)))
     br$js("location.reload()")
     Sys.sleep(0.3)
-    # The control shows the restored setting once the page has its config
-    expect_true(browser_wait(br, "document.getElementById('mark-size')?.value === '3'"))
+    # The page has the restored setting once it has its config
+    expect_true(browser_wait(br, "window.__giottolens?.store.getState().cellMark?.size === 3"))
     expect_true(pump_until(function() v$connected()))
     v$set_view(x = 60, y = -60, zoom = 4)
     expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
 
-    # From the control: dots, then back to the launch mark
-    br$js("(() => { const s = document.getElementById('mark-shape'); s.value = 'dots'; s.dispatchEvent(new Event('change')); })()")
+    # Dots, then back to the launch mark
+    v$set_mark(show = FALSE)
     expect_true(pump_until(function() identical(layer()[[1]], "cell-centroids")))
     expect_identical(v$describe()$cells$mark, NULL)
     v$set_mark()
     expect_true(pump_until(function() identical(layer(), list("cell-squares", 1L))))
-    expect_true(browser_wait(br, "document.getElementById('mark-shape').value === ''"))
+    expect_true(browser_wait(br, "Object.keys(window.__giottolens.store.getState().cellMark).length === 0"))
     expect_identical(br$errors(), character())
 })
 
