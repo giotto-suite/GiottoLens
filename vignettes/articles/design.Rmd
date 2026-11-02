@@ -67,10 +67,12 @@ behind RStudio Server's proxy (adr/0006). `SECURITY.md` describes the model for 
 
 ## Cells
 
-The viewer numbers cells by concatenating the polygon tiles in manifest order: tile `t` holds
-cells `offset[t] .. offset[t] + n[t] - 1`. R builds this table once at launch
-(`cells.parquet`: centroid x, y and the ID) and keeps the IDs; the browser loads the centroids
-into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
+The viewer numbers cells by concatenating the cell layer's tiles in manifest order: tile `t`
+holds cells `offset[t] .. offset[t] + n[t] - 1`. The tiles are the polygon store's or, for a
+spatial unit with only spatial locations (spots, bins), grid chunks of about 16k cells that R
+sorts the locations into. R builds this table once at launch (`cells.parquet`: centroid x, y
+and the ID) and keeps the IDs; the browser loads the centroids into two `Float32Array`s and
+never needs a string ID (adr/0002, adr/0010). Consequences:
 
 - A polygon tile row maps to its cell by addition, so colouring and selection highlighting
   of outlines need no lookup.
@@ -79,6 +81,25 @@ into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
 - Metadata pushed with `push_metadata()` is written in the same order, one typed array per
   column (categories as integer codes with their levels), so the browser joins nothing.
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
+
+Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in
+data units and an angle (adr/0010). R works it out at launch: bins whose cell metadata has
+`array_row` and `array_col` are squares from a fit of x and y against the grid indices, which
+gives the spacing and rotation exactly and refuses grids that are not square (Visium's
+hexagonal spots); other cells are circles as wide as the median distance to their nearest
+neighbour. `launch_lens(mark =)` overrides any field. Circles are sized in data units with a
+2 px minimum, so they are dots zoomed out and grow to their true size; squares and hexagons
+are drawn by `ColumnLayer`, which has no pixel minimum, so dots stand in until a mark is as
+wide as a dot. Selection stays centroid membership whatever the mark.
+
+The launch mark is a default, not a fixed property: `viewer$set_mark()` changes its shape,
+size or angle, or switches it to dots, as a setting kept with the rest of the configuration
+(`cellMark`) and so restored after a reload. It is set from R only; the viewer has no control
+for it, since the inferred mark is usually right. Segmented
+cells carry an inferred mark too, off by default; turning it on shows them at their size
+before their outlines load. For 660k VisiumHD-sized
+bins, the grid fit takes 0.3 s and the chunking 0.1 s; the neighbour spacing, used without a
+grid, 0.9 s.
 
 ## Selection rules
 

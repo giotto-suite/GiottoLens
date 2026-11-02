@@ -102,6 +102,7 @@ async function main() {
   // path-prefixing proxy; fetch resolves them, but keep them absolute anyway
   for (const layer of Object.values(state.manifest.layers))
     for (const t of layer.tiles ?? []) {
+      if (!t.url) continue;   // a cell chunk without polygons has no file
       t.url = new URL(t.url, document.baseURI).href;
       if (t.file) t.file = new URL(t.file, document.baseURI).href;
     }
@@ -109,7 +110,7 @@ async function main() {
   const imagesLoaded = loadImages(state.manifest.images ?? []);
 
   const txLayer   = state.manifest.layers.transcripts;
-  const polyLayer = state.manifest.layers.polygons;
+  const cellLayer = state.manifest.layers.cells;
   state.geneIndex = new Map((txLayer?.genes ?? []).map((g, i) => [g, i]));
   if (!txLayer) {
     // Polygons-only launch: no gene list or transcript controls
@@ -119,11 +120,11 @@ async function main() {
     document.querySelector('[data-mode="txlasso"]')?.remove();
   }
   // Points-only launch: transcripts are all there is to show
-  if (txLayer && !polyLayer) actions.setLayer('tx', { show: true });
+  if (txLayer && !cellLayer) actions.setLayer('tx', { show: true });
 
-  if (polyLayer) {
+  if (cellLayer) {
     $status('loading cells…');
-    state.cells = await loadCells(polyLayer);
+    state.cells = await loadCells(cellLayer);
     const { n, x, y } = state.cells;
     state.cellPositions = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) { state.cellPositions[i * 2] = x[i]; state.cellPositions[i * 2 + 1] = y[i]; }

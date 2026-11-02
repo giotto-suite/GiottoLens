@@ -15,7 +15,8 @@ launch_lens(
   url_prefix = NULL,
   open = TRUE,
   transfer = c("auto", "whole", "columns"),
-  images = NULL
+  images = NULL,
+  mark = NULL
 )
 
 serve_lens(...)
@@ -31,7 +32,9 @@ when \code{x} is a giotto object.}
 \code{"rna"}). \code{NULL} launches without transcripts.}
 
 \item{spat_unit}{Spatial unit key when \code{x} is a giotto object (default
-\code{"cell"}). \code{NULL} launches without polygons.}
+\code{"cell"}). Its polygons are the cells; a spatial unit without polygons
+uses its spatial locations, such as Visium spots or VisiumHD bins. \code{NULL}
+launches without cells.}
 
 \item{port}{Port for the HTTP + WebSocket server. \code{NULL} (default)
 picks a free one. Launching on the port of a running viewer closes that
@@ -62,6 +65,14 @@ object: \code{NULL} (default) for all of its images, image names, or \code{FALSE
 for none. The first is shown at launch and the others are listed, off.
 The viewer reads each image's TIFF file (\verb{@file_path}) in place, by
 tile; images without one are skipped with a message.}
+
+\item{mark}{How cells without polygons are drawn once zoomed in: a
+list with any of \code{shape} (\code{"circle"}, \code{"square"} or \code{"hex"}), \code{size}
+(across, in data units) and \code{angle} (degrees). Fields left out are worked
+out: bins with \code{array_row} and \code{array_col} in their cell metadata are
+squares fitted to the bin grid, other cells circles as wide as the median
+distance to their nearest neighbour. Polygon cells are drawn as dots
+until their outlines load, or as this mark when one is given.}
 
 \item{...}{Passed to \code{\link[=launch_lens]{launch_lens()}}.}
 }

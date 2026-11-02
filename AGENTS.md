@@ -34,7 +34,8 @@ R/
   server.R     httpuv app: static paths, Range data handler, WebSocket token/Origin
   protocol.R   message types, parsing, selection bitmasks
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
-  export.R     export_manifest(): manifest.json + cells.parquet from tile stores
+  export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
+  marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
@@ -46,7 +47,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
   selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
-  render/     render.js, schedule.js (requestRender), colors.ts
+  render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
               dom.js, images.js
   panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
@@ -109,11 +110,24 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
 
-### Cells and selection (adr/0001, adr/0002)
+### Cells and selection (adr/0001, adr/0002, adr/0010)
 
-- Cell index `i` = polygon tiles concatenated in manifest order; tile rows are cells
-  `offset .. offset + n - 1`. The browser holds centroids and metadata as typed arrays by
-  index and no string IDs; R holds the IDs (`private$cell_ids`) and translates.
+- Cell index `i` = the cell layer's tiles concatenated in manifest order; tile rows are cells
+  `offset .. offset + n - 1`. The tiles are the polygon store's, or, for a spatial unit
+  without polygons, grid chunks of its spatial locations (`.build_cells_xy()`), which have no
+  file. The browser holds centroids and metadata as typed arrays by index and no string IDs;
+  R holds the IDs (`private$cell_ids`) and translates.
+- Manifest `layers.cells`: `cells` (the table), `tiles`, `geometry` (whether tiles hold
+  polygons; outlines are fetched only then), `mark` (`shape`, `size` in data units, `angle`
+  in degrees: the launch mark, inferred or from `launch_lens(mark =)`) and `marks` (whether
+  it is drawn by default: spatial locations yes, polygons only with a launch mark). The
+  polygon store stays mounted as `data/polygons/`.
+- The drawn mark is the launch mark with the config's `cellMark` on top (`drawnMark()` in
+  `render/marks.ts`, `.drawn_mark()` in R; keep them the same). `cellMark` is set by
+  `set_mark()` (R only: there is no browser control) and saved with the config.
+- Cells are drawn by `cellMarkLayer()` (`render/marks.ts`): dots, circles sized in data units
+  with a pixel minimum, or squares and hexagons (`ColumnLayer`, no pixel minimum, so dots
+  until a mark is as wide as a dot). Selection is centroid membership whatever the mark.
 - A selection is one rule per source (`spatial`, `scatter`, `hist:<col>`, `meta`, `panel:*`,
   `r`), combined with OR, or AND in cross-filter mode. Rules evaluate to `Uint8Array` masks
   over all cells, never only loaded tiles; masks are a cache keyed by rule object (rules are
@@ -214,7 +228,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`set_layer()`, `set_mark()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

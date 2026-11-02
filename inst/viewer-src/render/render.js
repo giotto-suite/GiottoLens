@@ -6,6 +6,7 @@ import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from '../core/const
 import { txDrawTiles, visibleTiles } from '../data/tiles.js';
 import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
+import { cellMarkLayer, drawnMark } from './marks.ts';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
 import { MultiscaleImageLayer } from '@vivjs/layers';
 
@@ -81,8 +82,9 @@ export function renderLayers(viewState) {
   };
 
   if (s.layers.poly.show && s.layers.poly.alpha > 0 && state.cells) {
-    const polyLayer = state.manifest.layers.polygons;
-    const tiles     = outlines ? visibleTiles(viewState, polyLayer.tiles, viewportSize()) : [];
+    const cellLayer = state.manifest.layers.cells;
+    const geometry  = !!cellLayer.geometry;
+    const tiles     = outlines && geometry ? visibleTiles(viewState, cellLayer.tiles, viewportSize()) : [];
     const loaded    = tiles.map(t => [t, state.cache.get(`polygons:${t.index}`)]).filter(([, d]) => d);
     const colors    = state.cellColors;
     const mask      = sel.mask;
@@ -115,17 +117,16 @@ export function renderLayers(viewState) {
       }));
     }
 
-    // Centroids for every cell, from the cell table: the whole sample shows at
-    // once. Hidden where outlines are drawn and all their tiles are in.
-    if (!outlines || loaded.length < tiles.length) {
-      layers.push(new ScatterplotLayer({
-        id: 'cell-centroids',
+    // Every cell from the cell table, as a dot or its mark: the whole sample
+    // shows at once. Hidden where outlines are drawn and all their tiles are in.
+    if (!geometry || !outlines || loaded.length < tiles.length) {
+      layers.push(cellMarkLayer({
+        mark: drawnMark(cellLayer, s.cellMark), zoom: viewState.zoom,
         data: once(colors, () => ({ length: state.cells.n, attributes: {
           getPosition:  { value: state.cellPositions, size: 2 },
           getFillColor: { value: colors, size: 4, normalized: true },
         } })),
-        getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
-        opacity: s.layers.poly.alpha, pickable: true,
+        opacity: s.layers.poly.alpha,
         onHover: onHoverCell(i => i),
       }));
     }

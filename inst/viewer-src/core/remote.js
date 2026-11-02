@@ -61,6 +61,11 @@ export function initRemote() {
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
   });
 
+  onMessage('set_mark', ({ mark, reset }) => {
+    if (!state.manifest?.layers?.cells) throw new Error('the viewer has no cells');
+    actions.setCellMark(reset ? null : mark);
+  });
+
   onMessage('set_image', ({ name, show, color, contrast }) => {
     const img = store.getState().images[name];
     if (!img) throw new Error(`no image '${name}'`);

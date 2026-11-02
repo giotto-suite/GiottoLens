@@ -209,3 +209,61 @@ test_that("without the Origin check the token alone admits a socket", {
     expect_true(.ws_allowed(req, "abc", check_origin = FALSE))
     expect_false(.ws_allowed(modifyList(req, list(PATH_INFO = "/lens/x/ws")), "abc", check_origin = FALSE))
 })
+
+test_that("a spatial unit without polygons launches from its spatial locations", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    expect_setequal(priv$cell_ids, fx$xy$cell_ID)
+
+    m <- jsonlite::fromJSON(file.path(priv$session, "manifest.json"), simplifyVector = FALSE)
+    expect_false(m$layers$cells$geometry)
+    expect_identical(m$layers$cells$mark$shape, "square")
+    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
+    expect_equal(m$layers$cells$mark$angle, 10, tolerance = 1e-6)
+    expect_null(m$layers$transcripts)
+
+    # Metadata and R-side selection work as for polygon cells
+    v$push_metadata(fx$meta[, c("cell_ID", "half")])
+    v$select(lens_categories("half", "left"))
+    expect_setequal(v$selection, fx$meta$cell_ID[fx$meta$half == "left"])
+})
+
+test_that("a given mark overrides the inferred one", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        mark = list(shape = "circle"))
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(file.path(get("private", v$.__enclos_env__)$session,
+        "manifest.json"), simplifyVector = FALSE)
+    expect_identical(m$layers$cells$mark$shape, "circle")
+    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
+    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
+        "circle")
+})
+
+test_that("an unknown spat_unit lists units with polygons or locations", {
+    fx <- lens_bins_fixture()
+    expect_error(launch_lens(fx$g, spat_unit = "cell", feat_type = NULL, open = FALSE),
+        "available: bin")
+})
+
+test_that("set_mark checks its arguments, and describe() reports the cells", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_mark(shape = "star"), "\\[set_mark\\] mark shape")
+    expect_error(v$set_mark(size = 0), "\\[set_mark\\] mark size")
+    expect_error(v$set_mark(show = NA), "\\[set_mark\\] show")
+    d <- v$describe()
+    expect_identical(d$cells$source, "locations")
+    expect_identical(d$cells$mark$shape, "square")
+    expect_output(print(d), "900 from spatial locations, drawn as squares 2 across at 10 degrees")
+
+    fx2 <- lens_fixture()
+    p <- launch_lens(fx2$gpoints, open = FALSE)
+    on.exit(p$close(), add = TRUE)
+    expect_error(p$set_mark(size = 1), "no cells")
+    expect_null(p$describe()$cells)
+})

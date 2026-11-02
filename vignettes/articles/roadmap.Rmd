@@ -73,6 +73,17 @@ queries over transcripts, the work runs in R next to the files.
 - **Range serving off R's main thread** for remote viewing through R (a background process
   or a small native file server). Object stores such as S3 already serve ranges concurrently.
 
+## Cells without polygons
+
+Cells from spatial locations, drawn as marks, are in place (design.Rmd "Cells", adr/0010).
+Next:
+
+1. **Binned features as a texture** (adr/0011). VisiumHD 2 µm `giottoBinPoints` as a layer
+   next to transcripts, coloured by gene from values R reads out of the counts store. Needs
+   the per-cell data channel ("Panels from GiottoVisuals specs", item 4).
+2. **Platform mark sizes**, such as Visium's spot diameter from its scale factors, where the
+   neighbour spacing overstates the mark.
+
 ## Images
 
 In place (design.Rmd "Images"): each image's TIFF file read by tile in the browser with Viv,

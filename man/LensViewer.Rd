@@ -39,6 +39,7 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-set_view}{\code{LensViewer$set_view()}}
     \item \href{#method-LensViewer-color_by}{\code{LensViewer$color_by()}}
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
+    \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-show_genes}{\code{LensViewer$show_genes()}}
     \item \href{#method-LensViewer-screenshot}{\code{LensViewer$screenshot()}}
@@ -74,7 +75,9 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
   url_prefix,
   transfer = "auto",
   spat_unit = NULL,
-  images = list()
+  images = list(),
+  locations = NULL,
+  mark = NULL
 )}
     \if{html}{\out{</div>}}
   }
@@ -85,8 +88,11 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
       \item{\code{port, host}}{Where to listen}
       \item{\code{url_prefix}}{Base URL the browser uses}
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{spat_unit}}{Spatial unit the polygons belong to (for \code{subset()})}
+      \item{\code{spat_unit}}{Spatial unit the cells belong to (for \code{subset()})}
       \item{\code{images}}{Named list of giottoLargeImage objects to show}
+      \item{\code{locations}}{Cells from spatial locations when there are no
+polygons (internal)}
+      \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
     }
     \if{html}{\out{</div>}}
   }
@@ -294,6 +300,34 @@ config (layers, colouring, rules, mode), view and counts.
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_mark"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_mark}{}}}
+\subsection{\code{LensViewer$set_mark()}}{
+  Set how cells are drawn once zoomed in: as dots, or as
+circles, squares or hexagons of a size and angle. Fields given
+replace the viewer's and the others stay; with no arguments the
+mark goes back to the one from launch (see \code{launch_lens(mark =)}).
+The setting is saved with the viewer's and survives a reload. Cells
+with polygons show their outlines over any mark once zoomed in
+close.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_mark(shape = NULL, size = NULL, angle = NULL, show = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{shape}}{\code{"circle"}, \code{"square"} or \code{"hex"}}
+      \item{\code{size}}{Width in data units (a hexagon across its flats)}
+      \item{\code{angle}}{Rotation in degrees, for squares and hexagons}
+      \item{\code{show}}{\code{FALSE} draws dots, \code{TRUE} the mark}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_image"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_image}{}}}
 \subsection{\code{LensViewer$set_image()}}{
@@ -386,9 +420,10 @@ full colour}
 \if{latex}{\out{\hypertarget{method-LensViewer-describe}{}}}
 \subsection{\code{LensViewer$describe()}}{
   A plain-text summary of the viewer for a person or an
-agent that cannot see the screen: the view in data coordinates,
-layers, colouring, the selection and its rules, and optionally what
-the selection holds in one metadata column.
+agent that cannot see the screen: where the cells come from and how
+they are drawn, the view in data coordinates, layers, colouring, the
+selection and its rules, and optionally what the selection holds in
+one metadata column.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$describe(by = NULL, top = 10L)}

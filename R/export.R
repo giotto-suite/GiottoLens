@@ -17,11 +17,14 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     invisible(output)
 }
 
-# Writes manifest.json (and cells.parquet) and returns the cell IDs in the
-# viewer's cell order (NULL without polygons). `images`: manifest entries from
-# .image_entries().
+# Writes manifest.json (and cells.parquet). Cells come from the polygon tiles,
+# or without polygons from `locations` (from .spat_locations()) (adr/0010).
+# `mark`: a user mark (.check_mark()). `images`: manifest entries from
+# .image_entries(). Returns the cell IDs in the viewer's cell order
+# (`cell_ids`, NULL without cells) and the cell layer's `source`, `mark` and
+# `marks` (whether the mark is drawn by default).
 .export_session <- function(gpoints, gpolygons, output, transfer = "auto",
-                            images = list()) {
+                            images = list(), locations = NULL, mark = NULL) {
     layers <- list()
     extent <- NULL
     cells  <- NULL
@@ -29,10 +32,25 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 
     if (!is.null(gpolygons)) {
         cells <- .build_cells(gpolygons@spatVector)
-        layers$polygons <- .layer_manifest(gpolygons@spatVector, "polygons", cells$tiles)
-        layers$polygons$cells <- list(url = "session/cells.parquet", n = nrow(cells$table))
+        layers$cells <- .layer_manifest(gpolygons@spatVector, "polygons", cells$tiles)
+        layers$cells$geometry <- TRUE
+        # Segmented cells are dots until their outlines load, unless a mark is
+        # given at launch or turned on in the viewer; this is its default then
+        layers$cells$mark  <- .cell_mark(cells$table$x, cells$table$y, mark = mark)
+        layers$cells$marks <- !is.null(mark)
+    } else if (!is.null(locations)) {
+        cells <- .build_cells_xy(locations$xy)
+        m <- .cell_mark(locations$xy$x, locations$xy$y, locations$grid, mark)
+        layers$cells <- list(
+            type = "cells", geometry = FALSE, mark = m, marks = TRUE,
+            extent = .xy_extent(locations$xy, m$size / 2),
+            tiles = .chunk_manifest(cells$tiles)
+        )
+    }
+    if (!is.null(cells)) {
+        layers$cells$cells <- list(url = "session/cells.parquet", n = nrow(cells$table))
         .write_cells(cells$table, file.path(dirname(output), "cells.parquet"))
-        extent <- .merge_extent(extent, layers$polygons$extent)
+        extent <- .merge_extent(extent, layers$cells$extent)
     }
     if (!is.null(gpoints)) {
         layers$transcripts <- .layer_manifest(gpoints@spatVector, "transcripts")
@@ -42,11 +60,16 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     if (!length(layers))
         stop("[export_manifest] provide gpoints and/or gpolygons", call. = FALSE)
 
-    manifest <- list(version = "0.4.0", extent = extent, transfer = transfer,
+    manifest <- list(version = "0.5.0", extent = extent, transfer = transfer,
         layers = layers)
     if (length(images)) manifest$images <- images
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
-    cells$table$cell_ID
+    list(
+        cell_ids = cells$table$cell_ID,
+        source   = if (!is.null(gpolygons)) "polygons" else if (!is.null(locations)) "locations",
+        mark     = layers$cells$mark,
+        marks    = layers$cells$marks
+    )
 }
 
 # Directories the server mounts under data/<layer>/ (layer name → store path)
@@ -91,7 +114,7 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 
     disk_ext <- store@params$disk_extent  # xmin, xmax, ymin, ymax
     out <- list(
-        type   = if (layer == "polygons") "polygons" else "points",
+        type   = if (layer == "polygons") "cells" else "points",
         uid    = store@uid,
         extent = list(
             xmin = disk_ext[[1]], xmax = disk_ext[[2]],
@@ -121,11 +144,12 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 
 # ── Cells ────────────────────────────────────────────────────────────────────
 #
-# The viewer numbers cells 0..N-1 by concatenating the polygon tiles in
-# manifest order. Each tile is then a contiguous range of cell indices, so the
-# browser maps a tile row to its cell by addition, keeps per-cell data in
-# typed arrays, and never needs string IDs. R keeps the IDs and translates
-# (adr/0002).
+# The viewer numbers cells 0..N-1 in the order of the cell table: the polygon
+# tiles concatenated in manifest order, or spatial locations sorted into grid
+# chunks (adr/0010). Each tile or chunk is then a contiguous range of cell
+# indices, so the browser maps a tile row to its cell by addition, prunes
+# rule evaluation by chunk bounds, keeps per-cell data in typed arrays, and
+# never needs string IDs. R keeps the IDs and translates (adr/0002).
 
 .build_cells <- function(store) {
     tile_idx <- store@tiles@metadata$tile
@@ -158,6 +182,56 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
             cymin = rng(function(p) min(p$y_index)), cymax = rng(function(p) max(p$y_index))
         )
     )
+}
+
+# Cells from spatial locations (`xy`: cell_ID, x, y), sorted into a square
+# grid of chunks of about `per_chunk` cells, numbered row by row; empty
+# chunks are dropped and cells keep their input order within a chunk.
+.build_cells_xy <- function(xy, per_chunk = 16384L) {
+    n <- nrow(xy)
+    k <- max(1L, as.integer(ceiling(sqrt(n / per_chunk))))
+    bin <- function(v) {
+        r <- range(v)
+        if (r[2L] == r[1L]) return(integer(n))
+        pmin(k - 1L, as.integer(floor((v - r[1L]) / (r[2L] - r[1L]) * k)))
+    }
+    chunk <- bin(xy$y) * k + bin(xy$x)
+    o     <- order(chunk, method = "radix")  # stable
+    chunk <- chunk[o]
+    table <- data.frame(cell_ID = as.character(xy$cell_ID[o]), x = xy$x[o], y = xy$y[o])
+    dup <- anyDuplicated(table$cell_ID)
+    if (dup)
+        warning("[export_manifest] cell ID '", table$cell_ID[dup],
+            "' appears more than once in the spatial locations", call. = FALSE)
+    ids <- unique(chunk)
+    n_per <- tabulate(match(chunk, ids), length(ids))
+    xs <- split(table$x, chunk)
+    ys <- split(table$y, chunk)
+    list(
+        table = table,
+        tiles = data.frame(
+            index = seq_along(ids) - 1L, offset = c(0L, cumsum(n_per)[-length(n_per)]),
+            n = n_per,
+            cxmin = vapply(xs, min, 0), cxmax = vapply(xs, max, 0),
+            cymin = vapply(ys, min, 0), cymax = vapply(ys, max, 0),
+            row.names = NULL
+        )
+    )
+}
+
+# Manifest entries for chunks that have no tile file: cell ranges and bounds
+.chunk_manifest <- function(tiles) {
+    lapply(seq_len(nrow(tiles)), function(i) {
+        t <- tiles[i, ]
+        list(index = t$index, offset = t$offset, n = t$n,
+            xmin = t$cxmin, xmax = t$cxmax, ymin = t$cymin, ymax = t$cymax,
+            cbounds = c(t$cxmin, t$cxmax, t$cymin, t$cymax))
+    })
+}
+
+.xy_extent <- function(xy, pad = 0) {
+    list(xmin = min(xy$x) - pad, xmax = max(xy$x) + pad,
+        ymin = min(xy$y) - pad, ymax = max(xy$y) + pad)
 }
 
 # The viewer reads x and y into Float32Arrays at boot; cell_ID is only read
