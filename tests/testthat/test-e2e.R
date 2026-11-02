@@ -395,7 +395,7 @@ test_that("a reload brings back the layout, panels, settings and brushes", {
     expect_true(pump_until(function() identical(brush_of("histogram"), list(bin0 = c(3, 6)))))
     expect_true(pump_until(function() identical(brush_of("sc"), sc_brush)))
     # ...and can be dragged: the range follows the brush
-    xy <- br$js("(() => { const v = window.__giottolens.panel('histogram').view, r = v.container().querySelector('canvas').getBoundingClientRect(), o = v.origin(); return [r.left + o[0] + v.scale('x')(4.5), r.top + o[1] + v.height() / 2]; })()")
+    xy <- br$js("(() => { const v = window.__giottolens.panel('histogram').view, r = v.container().querySelector('canvas').getBoundingClientRect(), o = v.origin().map((z, i) => z + (i ? v.padding().top : v.padding().left)); return [r.left + o[0] + v.scale('x')(4.5), r.top + o[1] + v.height() / 2]; })()")
     p0 <- c(xy[[1]], xy[[2]])
     send("mouseMoved", p0); send("mousePressed", p0)
     for (dx in seq(5, 30, by = 5)) send("mouseMoved", p0 + c(dx, 0))
@@ -406,6 +406,103 @@ test_that("a reload brings back the layout, panels, settings and brushes", {
     # Dropping the rule elsewhere clears the histogram's brush
     v$select(NULL, source = "hist:score", replace = FALSE)
     expect_true(browser_wait(br, "Object.keys(window.__giottolens.panel('histogram')?.view?.signal('brush') ?? {}).length === 0"))
+    expect_identical(br$errors(), character())
+})
+
+
+test_that("the density panel bins two columns, and its rectangle is two ranges", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    m <- transform(fx$meta, umap_1 = score, umap_2 = seq_len(nrow(fx$meta)) / 10)
+    suppressMessages(v$push_metadata(m))
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
+
+    # Added from the + menu, titled by its columns
+    br$js("document.querySelector('.dock-add').click()")
+    br$js("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === 'density').click()")
+    expect_true(browser_wait(br, "window.__giottolens.panel('density')?.view != null"))
+    p <- v$panels()
+    expect_identical(p$title[p$id == "density"], "umap_1 \u00d7 umap_2")
+
+    # A rectangle from R is drawn as the brush, and selects the cells in both ranges
+    box <- function() {
+        b <- br$js("JSON.stringify(window.__giottolens.panel('density')?.view?.signal('brush') ?? null)")
+        if (is.null(b)) NULL else lapply(jsonlite::fromJSON(b), function(r) round(r, 6))
+    }
+    rule <- lens_intersect(lens_range("umap_1", 2, 6), lens_range("umap_2", 2, 6))
+    v$select(rule, source = "density")
+    inside <- function(r) m$cell_ID[m$umap_1 >= r[[1]] & m$umap_1 <= r[[2]] & m$umap_2 >= r[[3]] & m$umap_2 <= r[[4]]]
+    expect_setequal(v$selection, inside(c(2, 6, 2, 6)))
+    expect_true(pump_until(function() identical(box(), list(x = c(2, 6), y = c(2, 6)))))
+    expect_true(any(grepl("lens_intersect(lens_range(", v$rules(code = TRUE), fixed = TRUE)))
+    # The bins sit where Vega draws the plot: its origin plus its padding
+    expect_true(br$js("(() => { const v = window.__giottolens.panel('density').view, c = v.container().querySelector('svg'),
+      t = document.querySelector('[data-panel=density] canvas'),
+      cr = c.getBoundingClientRect(), tr = t.getBoundingClientRect(), p = v.padding(), o = v.origin();
+      return Math.abs(tr.left - (cr.left + o[0] + p.left)) < 0.5 && Math.abs(tr.top - (cr.top + o[1] + p.top)) < 0.5 &&
+        Math.abs(tr.width - v.width()) < 0.5 && Math.abs(tr.height - v.height()) < 0.5; })()"))
+
+    # Dragging the rectangle moves both ranges; the selection follows
+    xy <- br$js("(() => { const v = window.__giottolens.panel('density').view, r = v.container().querySelector('svg').getBoundingClientRect(), o = v.origin().map((z, i) => z + (i ? v.padding().top : v.padding().left)); return [r.left + o[0] + v.scale('x')(4), r.top + o[1] + v.scale('y')(4)]; })()")
+    p0 <- c(xy[[1]], xy[[2]])
+    send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    send("mouseMoved", p0); send("mousePressed", p0)
+    for (d in seq(4, 24, by = 4)) send("mouseMoved", p0 + c(d, -d))
+    send("mouseReleased", p0 + c(24, -24))
+    moved <- function() {
+        r <- Filter(function(x) identical(x$source, "density"), v$selection_rules)
+        if (!length(r)) return(NULL)
+        unlist(lapply(r[[1]]$params$parts, function(q) c(q$params$min, q$params$max)))
+    }
+    expect_true(pump_until(function() { r <- moved(); !is.null(r) && r[[1]] > 2.1 && r[[3]] > 2.1 }))
+    r <- moved()
+    expect_equal(c(r[[2]] - r[[1]], r[[4]] - r[[3]]), c(4, 4), tolerance = 1e-6)
+    expect_true(pump_until(function() setequal(v$selection, inside(r))))
+
+    # The wheel zooms the plot, not the rectangle; Shift+drag pans; the button resets
+    dom <- function() unlist(br$js("window.__giottolens.panel('density').view.scale('x').domain()"))
+    full <- dom()
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = p0[1], y = p0[2], deltaX = 0, deltaY = -300)
+    expect_true(pump_until(function() diff(dom()) < diff(full) * 0.9))
+    zoomed <- dom()
+    expect_identical(moved(), r)
+    shift <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2], modifiers = 8L,
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    q0 <- p0 + c(0, 40)
+    shift("mouseMoved", q0); shift("mousePressed", q0)
+    for (d in seq(10, 60, by = 10)) shift("mouseMoved", q0 + c(d, 0))
+    shift("mouseReleased", q0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < zoomed[1] - 1e-9))
+    expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
+    expect_identical(moved(), r)
+    # The hand tool: a plain drag pans, and leaves the rectangle alone
+    tool <- function(t) br$js(sprintf("document.querySelector('[data-panel=density] .stats-controls button[title^=\"%s\"]').click()", t))
+    width <- diff(dom())
+    tool("pan")
+    # Rebuilt for the new tool, at the same zoom
+    expect_true(pump_until(function() isTRUE(tryCatch(abs(diff(dom()) - width) < 1e-6 &&
+        br$js("window.__giottolens.panel('density')?.view != null"), error = function(e) FALSE))))
+    Sys.sleep(0.2); later::run_now(0.1)
+    before <- dom()
+    send("mouseMoved", q0); send("mousePressed", q0)
+    for (d in seq(10, 60, by = 10)) send("mouseMoved", q0 + c(d, 0))
+    send("mouseReleased", q0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < before[1] - 1e-9))
+    expect_identical(moved(), r)
+    tool("select")
+    br$js("document.querySelector('[data-panel=density] .stats-controls button[title^=\"zoom to fit\"]').click()")
+    expect_true(pump_until(function() isTRUE(all.equal(dom(), full))))
+    expect_true(pump_until(function() { b <- box(); !is.null(b$x) && isTRUE(all.equal(b$x, r[1:2], tolerance = 1e-6)) }))
+
+    # A reload brings the panel and its rectangle back
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('density')?.view != null"))
+    expect_true(pump_until(function() { b <- box(); !is.null(b$x) && isTRUE(all.equal(b$x, r[1:2], tolerance = 1e-6)) }))
     expect_identical(br$errors(), character())
 })
 

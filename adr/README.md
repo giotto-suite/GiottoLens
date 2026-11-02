@@ -63,3 +63,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0009](0009-panels-docked-with-dockview-config-held-by-r.md) | Panels are docked with dockview-core 4; R holds the saved config | Accepted | 2026-11-02 |
 | [0010](0010-cells-are-a-table-drawn-as-marks.md) | Cells are a table drawn as marks; polygons are optional detail | Proposed | 2026-11-02 |
 | [0011](0011-binned-features-drawn-as-a-texture.md) | Binned feature data is drawn as a texture | Proposed | 2026-11-02 |
+| [0012](0012-density-panel-drawn-as-one-image.md) | The density panel is drawn as one image, its rectangle as two ranges | Accepted | 2026-11-02 |
