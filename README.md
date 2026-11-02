@@ -143,7 +143,8 @@ cd inst/viewer-src
 npm ci
 npm test            # vitest
 npm run typecheck   # tsc
-npm run build       # writes inst/viewer/ for local use; CI builds and commits it after merge
+npm run build:dev   # writes inst/viewer-dev/ (untracked), which load_all() serves while it is
+                    # newer than inst/viewer/; CI builds and commits inst/viewer/ after merge
 ```
 
 ```r

@@ -780,12 +780,17 @@ print.lens_description <- function(x, ...) {
     list(spec = spec, rows = rows)
 }
 
-.viewer_dir <- function() {
-    dir <- system.file("viewer", package = "GiottoLens")
-    if (!nzchar(dir) || !file.exists(file.path(dir, "index.html")))
+# The committed bundle, inst/viewer/, unless a local build in inst/viewer-dev/
+# (`npm run build:dev`, never committed) is newer. A pull that updates the
+# committed bundle makes it newer again, so a stale local build is not served.
+.viewer_dir <- function(pkg = system.file(package = "GiottoLens")) {
+    index <- file.path(pkg, c("viewer-dev", "viewer"), "index.html")
+    found <- file.exists(index)
+    if (!any(found))
         stop("[GiottoLens] cannot find the viewer bundle; reinstall GiottoLens ",
-            "or run `npm run build` in inst/viewer-src", call. = FALSE)
-    dir
+            "or run `npm run build:dev` in inst/viewer-src", call. = FALSE)
+    if (all(found) && file.mtime(index[[1L]]) <= file.mtime(index[[2L]])) found[[1L]] <- FALSE
+    dirname(index[found][[1L]])
 }
 
 # Convert polygon input to a list of {name, coords} for push_polygons.

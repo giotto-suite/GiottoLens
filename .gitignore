@@ -4,6 +4,8 @@
 .Ruserdata
 *.Rproj
 node_modules/
+# local viewer builds (npm run build:dev); inst/viewer/ is CI's
+inst/viewer-dev/
 .DS_Store
 # rendered vignettes (only the .Rmd is tracked)
 vignettes/articles/*.html
