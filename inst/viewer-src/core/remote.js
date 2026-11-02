@@ -6,6 +6,7 @@ import { onMessage, sendToR } from './comms.js';
 import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
+import { listPanels } from '../panels/dock.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
@@ -21,7 +22,8 @@ function viewInfo(vs) {
 
 export function initRemote() {
   onMessage('get_state', () => ({
-    config: { ...getConfig(), annotations: undefined },
+    config: { ...getConfig(), annotations: undefined, layout: undefined },
+    panels: listPanels(),
     view: state.currentViewState && viewInfo(state.currentViewState),
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,

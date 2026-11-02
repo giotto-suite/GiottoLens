@@ -408,6 +408,8 @@ LensViewer <- R6::R6Class("LensViewer",
                 view = st$view, color_by = st$config$colorBy,
                 layers = if (!is.null(st)) vapply(st$config$layers, function(l) isTRUE(l$show), NA),
                 images = if (!is.null(st)) vapply(st$config$images, function(l) isTRUE(l$show), NA),
+                panels = if (!is.null(st)) vapply(st$panels, function(p)
+                    if (isTRUE(p$visible)) p$id else paste0(p$id, " (behind)"), ""),
                 combine = private$combine,
                 rules = vapply(private$rule_set, function(r) r$kind %||% "", ""),
                 selected = length(self$selection),
@@ -527,22 +529,43 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self$set_view(bounds = c(x[1L] - px, x[2L] + px, y[1L] - py, y[2L] + py)))
         },
 
-        #' @description Show a Vega-Lite chart in one of the stats panes, for
-        #'   example from `GiottoVisuals::renderSpec(..., engine = "vegalite")`.
-        #'   Rows with a `cell_ID` are linked to the viewer: they dim when not
-        #'   selected, and an interval param named `brush` selects their cells.
+        #' @description Show a Vega-Lite chart as a docked panel, for example
+        #'   from `GiottoVisuals::renderSpec(..., engine = "vegalite")`. Rows
+        #'   with a `cell_ID` are linked to the viewer: they dim when not
+        #'   selected, and an interval param named `brush` selects their cells
+        #'   (selection source `panel:<id>`). Works before a browser connects,
+        #'   and the panel comes back after a page reload.
         #' @param spec A Vega-Lite spec (list or JSON string) with inline
         #'   `data$values`, or a spec without data plus `data`
         #' @param data Optional data.frame for the spec (large data is sent as
         #'   a parquet file rather than inline)
-        #' @param pane Stats pane to replace (1 or 2)
-        #' @param title Pane title
-        push_panel = function(spec, data = NULL, pane = 2L, title = NULL) {
+        #' @param id Panel id. A panel already docked under this id is
+        #'   replaced where it is; `NULL` makes a new one (`"panel-1"`, ...).
+        #' @param title Tab title (default: the spec's title, else the id)
+        #' @param where Where a new panel goes: `"tab"` (a tab next to `ref`),
+        #'   or `"right"` / `"below"` (a split beside `ref`, or at the edge of
+        #'   the panel area without one)
+        #' @param ref Id of the panel to place it next to (see `panels()`);
+        #'   `NULL` for the active panel
+        #' @return The panel id, invisibly.
+        push_panel = function(spec, data = NULL, id = NULL, title = NULL,
+                              where = c("tab", "right", "below"), ref = NULL) {
+            where <- match.arg(where)
+            if (is.null(id)) {
+                repeat {
+                    private$panel_seq <- private$panel_seq + 1L
+                    id <- paste0("panel-", private$panel_seq)
+                    if (is.null(private$pushed[[id]])) break
+                }
+            }
+            .check_panel_id(id)
+            if (!is.null(ref)) .check_panel_id(ref, "ref", builtin_ok = TRUE)
             if (is.character(spec)) spec <- jsonlite::fromJSON(spec, simplifyVector = FALSE)
             taken <- .spec_take_data(unclass(spec))
             spec  <- taken$spec
             rows  <- data %||% taken$rows
-            payload <- list(pane = as.integer(pane), title = title, spec = spec)
+            payload <- list(id = id, title = title, where = where, ref = ref, spec = spec)
+            private$drop_panel_file(id)
             if (!is.null(rows)) {
                 rows <- as.data.frame(rows)
                 if ("cell_ID" %in% names(rows) && !is.null(private$cell_ids)) {
@@ -553,15 +576,56 @@ LensViewer <- R6::R6Class("LensViewer",
                 if (nrow(rows) > 5000L) {
                     dir <- file.path(private$session, "panels")
                     dir.create(dir, showWarnings = FALSE)
-                    f <- sprintf("panel_%d_%.0f.parquet", pane, as.numeric(Sys.time()) * 1000)
+                    f <- sprintf("%s_%.0f.parquet", id, as.numeric(Sys.time()) * 1000)
                     arrow::write_parquet(rows, file.path(dir, f))
                     payload$data_url <- paste0("session/panels/", f)
                 } else {
                     payload$spec$data <- list(values = rows)
                 }
             }
-            self$send("push_panel", payload)
+            # Kept so a reload or a new tab gets it back (see `ready`)
+            private$pushed[[id]] <- payload
+            if (self$connected()) private$broadcast(.encode_ws_message("push_panel", payload))
+            else message("[LensViewer] panel '", id, "' is shown when the viewer connects")
+            invisible(id)
+        },
+
+        #' @description Close a docked panel: one pushed with `push_panel()`
+        #'   or a built-in one (`"scatter"`, `"histogram"`, ...). The viewer's
+        #'   `+` menu adds built-in panels back.
+        #' @param id Panel id (see `panels()`)
+        remove_panel = function(id) {
+            .check_panel_id(id, builtin_ok = TRUE)
+            private$drop_panel_file(id)
+            private$pushed[[id]] <- NULL
+            if (self$connected()) private$broadcast(.encode_ws_message("remove_panel", list(id = id)))
             invisible(self)
+        },
+
+        #' @description The docked panels: id, kind (`"scatter"`,
+        #'   `"histogram"` or `"spec"` for a pushed chart), tab title, the group
+        #'   of tabs it is in, and whether it is in view (not behind another
+        #'   tab). With no browser connected, only the pushed panels R holds.
+        #' @return A data frame.
+        panels = function() {
+            if (self$connected()) {
+                p <- self$state()$panels
+                return(data.frame(
+                    id      = vapply(p, function(x) x$id, ""),
+                    kind    = vapply(p, function(x) x$kind, ""),
+                    title   = vapply(p, function(x) x$title, ""),
+                    group   = vapply(p, function(x) as.character(x$group), ""),
+                    visible = vapply(p, function(x) isTRUE(x$visible), NA),
+                    stringsAsFactors = FALSE))
+            }
+            p <- private$pushed
+            data.frame(
+                id      = names(p) %||% character(),
+                kind    = rep("spec", length(p)),
+                title   = vapply(p, function(x) x$title %||% x$spec$title %||% x$id, ""),
+                group   = rep(NA_character_, length(p)),
+                visible = rep(NA, length(p)),
+                stringsAsFactors = FALSE, row.names = NULL)
         },
 
         #' @description Push polygon overlays from R into the viewer.
@@ -637,6 +701,9 @@ LensViewer <- R6::R6Class("LensViewer",
         meta_table  = NULL,
         rule_set    = list(),
         combine     = "or",
+        config_json = NULL,     # the page's saved config, as it sent it (JSON text)
+        pushed      = list(),   # push_panel() payloads by id, in push order
+        panel_seq   = 0L,
         next_id     = 0L,
         req_id      = 0L,
         replies     = list(),
@@ -676,6 +743,11 @@ LensViewer <- R6::R6Class("LensViewer",
             r$data
         },
 
+        drop_panel_file = function(id) {
+            url <- private$pushed[[id]]$data_url
+            if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
+        },
+
         add_log = function(action, detail) {
             entry <- list(time = as.numeric(Sys.time()), action = action, detail = detail)
             private$log_entries <- utils::tail(c(private$log_entries, list(entry)), 200L)
@@ -706,6 +778,10 @@ LensViewer <- R6::R6Class("LensViewer",
                                 warning("[LensViewer] the viewer bundle speaks protocol ",
                                     .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
                                     "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
+                            # The saved config first, so a reload comes back as
+                            # it was; then the data and panels it refers to
+                            ws$send(.encode_ws_message("restore", list(
+                                config = priv$config_json, panels = as.list(names(priv$pushed)))))
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
                             if (length(priv$rule_set))
@@ -713,6 +789,14 @@ LensViewer <- R6::R6Class("LensViewer",
                                     ws$send(.encode_ws_message("set_rule", list(source = src,
                                         rule = priv$rule_set[[src]], replace = FALSE,
                                         combine = priv$combine)))
+                            for (p in priv$pushed)
+                                ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                        },
+                        config = if (is.character(dat$json) && length(dat$json) == 1L)
+                            priv$config_json <- dat$json,
+                        panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {
+                            priv$drop_panel_file(dat$id)
+                            priv$pushed[[dat$id]] <- NULL
                         },
                         reply = if (!is.null(parsed$id))
                             priv$replies[[as.character(parsed$id)]] <- list(
@@ -785,6 +869,7 @@ print.lens_description <- function(x, ...) {
         line("layers", paste(names(x$layers)[x$layers], collapse = ", "))
         if (length(x$images))
             line("images", paste0(names(x$images), ifelse(x$images, "", " (off)"), collapse = ", "))
+        if (length(x$panels)) line("panels", paste(x$panels, collapse = ", "))
         line("colour by", x$color_by %||% "none")
     }
     line("selected", sprintf("%s cells%s", format(x$selected, big.mark = ","),
@@ -796,6 +881,19 @@ print.lens_description <- function(x, ...) {
         print(x$breakdown)
     }
     invisible(x)
+}
+
+# Panel ids name a dock slot, a selection source (`panel:<id>`) and a file:
+# letters, digits, `_`, `.`, `-`. The built-in panels' ids (scatter,
+# histogram, and scatter-2, ... for ones added in the viewer) are the
+# viewer's, so push_panel() cannot take them.
+.check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
+    if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
+        stop("[LensViewer] `", arg, "` must be one string of letters, digits, '_', '.' or '-'",
+            call. = FALSE)
+    if (!builtin_ok && grepl("^(scatter|histogram)(-[0-9]+)?$", id))
+        stop("[LensViewer] '", id, "' is a built-in panel; pick another id", call. = FALSE)
+    invisible(id)
 }
 
 # Pull a spec's data out so it can be linked and sent separately: inline

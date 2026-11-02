@@ -1,14 +1,16 @@
 // Scatter panel over two metadata columns (UMAP, PCA, …): one point per cell,
-// drawn from the typed metadata arrays. A lasso emits a 'scatter' rule.
+// drawn from the typed metadata arrays. A lasso emits a rule from source
+// 'scatter' (the default panel) or 'scatter:<panel id>' (one added later).
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
 import { cellColorBuffer } from '../render/colors.ts';
 import { clientToWorld, worldToClient, fitZoom } from '../ui/dom.js';
-import { buildControlBar, chartArea, setTitle } from './controls.js';
+import { buildControlBar, chartArea, whenVisible } from './controls.js';
 import { Deck, OrthographicView, ScatterplotLayer } from 'deck.gl';
 
-export function createScatterPanel(body) {
+export function createScatterPanel(body, ctx) {
+  const source   = ctx.id === 'scatter' ? 'scatter' : `scatter:${ctx.id}`;
   const cols     = [...state.meta.values()];
   const numeric  = cols.filter(c => c.kind === 'continuous').map(c => c.name);
   const dims     = numeric.filter(c => /umap|tsne|pca/i.test(c));
@@ -32,7 +34,6 @@ export function createScatterPanel(body) {
     { icon: 'maximize-2', title: 'zoom to fit', onClick: () => homeVS && deck?.setProps({ viewState: { ...homeVS } }) },
   ]);
   const area = chartArea(body);
-  setTitle(body, 'scatter');
 
   function setMode(m) {
     mode = m;
@@ -133,7 +134,7 @@ export function createScatterPanel(body) {
     window.addEventListener('mouseup', () => {
       if (!active) return;
       active = false;
-      if (dragged && ring.length >= 3) lassoScatter(ring, ctrls.x.value, ctrls.y.value, op);
+      if (dragged && ring.length >= 3) lassoScatter(ring, ctrls.x.value, ctrls.y.value, op, source);
       ring = [];
       clearLasso();
     }, opts);
@@ -158,11 +159,14 @@ export function createScatterPanel(body) {
 
   ['x', 'y'].forEach(k => ctrls[k].addEventListener('change', load, { signal: listeners.signal }));
   ctrls.color.addEventListener('change', recolor, { signal: listeners.signal });
-  unsub.push(store.subscribe(s => s.selection.version, reselect));
-  unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) recolor(); }));
+  // Hidden behind another tab, it catches up when shown
+  const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor);
+  unsub.push(store.subscribe(s => s.selection.version, sel.update));
+  unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));
   load();
 
   return {
+    show() { col.show(); sel.show(); },
     destroy() {
       unsub.forEach(u => u());
       listeners.abort();

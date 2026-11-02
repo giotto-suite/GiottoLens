@@ -20,9 +20,8 @@ import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
 import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
-import { createScatterPanel } from './panels/scatter.js';
-import { createHistogramPanel } from './panels/histogram.js';
-import { createSpecPanel } from './panels/spec.js';
+import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
 import { createIcons, icons } from 'lucide';
@@ -92,22 +91,6 @@ async function loadImages(entries) {
   });
 }
 
-// ── Stats panels ──────────────────────────────────────────────────────────────
-// Pane i shows either a built-in panel or a spec pushed from R; a pushed spec
-// stays until replaced, and metadata reloads leave it alone.
-const _panels = [null, null];
-const _pushed = [false, false];
-const _paneBody = i => document.getElementById(`stats-body-${i + 1}`);
-function setPanel(i, panel) {
-  _panels[i]?.destroy();
-  _panels[i] = panel;
-}
-function initPanels() {
-  if (!state.meta?.size) return;
-  if (!_pushed[0]) setPanel(0, createScatterPanel(_paneBody(0)));
-  if (!_pushed[1]) setPanel(1, createHistogramPanel(_paneBody(1)));
-}
-
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function main() {
   $status('loading manifest…');
@@ -148,7 +131,7 @@ async function main() {
   }
 
   // Split first so the canvas has its final size when the zoom is fitted
-  const mainSplit = Split(['#spatial-pane', '#stats-column'], {
+  const mainSplit = Split(['#spatial-pane', '#dock'], {
     sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
     onDragEnd: () => {
       window.dispatchEvent(new Event('resize'));
@@ -186,6 +169,7 @@ async function main() {
   initInput();
   initReleaseGuard();
   initRuleStrip();
+  initDock(document.getElementById('dock'));
 
   let statsOpen      = true;
   let lastStatsSizes = [65, 35];
@@ -203,9 +187,6 @@ async function main() {
   });
   document.getElementById('btn-stats-toggle')?.classList.add('active');
 
-  document.querySelectorAll('.stats-collapse-btn').forEach(btn =>
-    btn.addEventListener('click', () => btn.closest('.stats-pane').classList.toggle('stats-collapsed'))
-  );
   document.querySelectorAll('.section-hd').forEach(hd =>
     hd.addEventListener('click', () => hd.closest('[id]').classList.toggle('section-collapsed'))
   );
@@ -253,16 +234,11 @@ async function main() {
     else recolorCells();
     // Rules on metadata columns re-evaluate against the new table
     recompute({ reset: true });
-    initPanels();
+    refreshBuiltins();
   });
 
-  onMessage('push_panel', async ({ pane, ...panel }) => {
-    const i = Math.min(2, Math.max(1, pane ?? 2)) - 1;
-    _pushed[i] = true;
-    _panels[i]?.destroy();
-    _panels[i] = null;
-    setPanel(i, await createSpecPanel(_paneBody(i), panel));
-  });
+  onMessage('push_panel', pushPanel);
+  onMessage('remove_panel', ({ id }) => { removePanel(id); });
 
   onMessage('push_polygons', ({ polygons }) =>
     actions.addAnnotations((polygons ?? []).map(p => ({
@@ -274,6 +250,10 @@ async function main() {
   initImagePanel();
 
   initRemote();
+  // The saved config comes from R on connect ('restore'), over the defaults
+  // set above, images included
+  initPersist();
+  store.persist.rehydrate();
   initComms();   // after every handler is registered
 
   renderGeneList();
@@ -282,7 +262,7 @@ async function main() {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panels: _panels };
+window.__giottolens = { state, store, actions, panel: panelHandle };
 
 main().catch(err => {
   $status('error: ' + err.message);

@@ -50,6 +50,8 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-view_bounds}{\code{LensViewer$view_bounds()}}
     \item \href{#method-LensViewer-zoom_to}{\code{LensViewer$zoom_to()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
+    \item \href{#method-LensViewer-remove_panel}{\code{LensViewer$remove_panel()}}
+    \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
     \item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
     \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
     \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
@@ -517,13 +519,22 @@ viewer shows)}
 \if{html}{\out{<a id="method-LensViewer-push_panel"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-push_panel}{}}}
 \subsection{\code{LensViewer$push_panel()}}{
-  Show a Vega-Lite chart in one of the stats panes, for
-example from \code{GiottoVisuals::renderSpec(..., engine = "vegalite")}.
-Rows with a \code{cell_ID} are linked to the viewer: they dim when not
-selected, and an interval param named \code{brush} selects their cells.
+  Show a Vega-Lite chart as a docked panel, for example
+from \code{GiottoVisuals::renderSpec(..., engine = "vegalite")}. Rows
+with a \code{cell_ID} are linked to the viewer: they dim when not
+selected, and an interval param named \code{brush} selects their cells
+(selection source \verb{panel:<id>}). Works before a browser connects,
+and the panel comes back after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$push_panel(spec, data = NULL, pane = 2L, title = NULL)}
+    \preformatted{LensViewer$push_panel(
+  spec,
+  data = NULL,
+  id = NULL,
+  title = NULL,
+  where = c("tab", "right", "below"),
+  ref = NULL
+)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
@@ -533,10 +544,58 @@ selected, and an interval param named \code{brush} selects their cells.
 \code{data$values}, or a spec without data plus \code{data}}
       \item{\code{data}}{Optional data.frame for the spec (large data is sent as
 a parquet file rather than inline)}
-      \item{\code{pane}}{Stats pane to replace (1 or 2)}
-      \item{\code{title}}{Pane title}
+      \item{\code{id}}{Panel id. A panel already docked under this id is
+replaced where it is; \code{NULL} makes a new one (\code{"panel-1"}, ...).}
+      \item{\code{title}}{Tab title (default: the spec's title, else the id)}
+      \item{\code{where}}{Where a new panel goes: \code{"tab"} (a tab next to \code{ref}),
+or \code{"right"} / \code{"below"} (a split beside \code{ref}, or at the edge of
+the panel area without one)}
+      \item{\code{ref}}{Id of the panel to place it next to (see \code{panels()});
+\code{NULL} for the active panel}
     }
     \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The panel id, invisibly.
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-remove_panel"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-remove_panel}{}}}
+\subsection{\code{LensViewer$remove_panel()}}{
+  Close a docked panel: one pushed with \code{push_panel()}
+or a built-in one (\code{"scatter"}, \code{"histogram"}, ...). The viewer's
+\code{+} menu adds built-in panels back.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$remove_panel(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Panel id (see \code{panels()})}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-panels"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-panels}{}}}
+\subsection{\code{LensViewer$panels()}}{
+  The docked panels: id, kind (\code{"scatter"},
+\code{"histogram"} or \code{"spec"} for a pushed chart), tab title, the group
+of tabs it is in, and whether it is in view (not behind another
+tab). With no browser connected, only the pushed panels R holds.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$panels()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data frame.
   }
 }
 

@@ -111,10 +111,16 @@ R-side evaluation (see the roadmap).
 
 ## Browser state and rendering
 
-Configuration (layers, colouring, rules, combine mode, annotations, tool settings) lives in
-a zustand store and changes only through its actions; it can be saved as JSON. Runtime data
-(deck instance, caches, loaded tables, in-progress drawing) is kept apart. Every store change
-requests a render, batched to one per animation frame.
+Configuration (layers, colouring, rules, combine mode, annotations, tool settings, panel
+layout) lives in a zustand store and changes only through its actions; it can be saved as
+JSON. Runtime data (deck instance, caches, loaded tables, in-progress drawing) is kept apart.
+Every store change requests a render, batched to one per animation frame.
+
+The configuration outlives a page reload through R (adr/0009). zustand's `persist`
+middleware sends it as JSON text when it changes, merged over 300 ms; R keeps the latest copy
+as it came and sends it back before anything else when a page connects. R rather than browser
+storage holds it because R outlives the page and already restores the rules and pushed
+panels, and a save to file can start from its copy (issue #21).
 
 deck.gl compares `data` by reference, so binary data objects are built once per underlying
 array. Rebuilding them each render had deck re-triangulate every polygon tile and re-upload
@@ -207,17 +213,26 @@ session can work with the viewer as well as the user can: read it (`describe()`,
 
 The protocol is request/reply: a message from R with an `id` is answered by the browser with
 the handler's result or error. A tab announces `ready` once its handlers are registered, and
-R then sends it the current metadata and rules, so reloads and new tabs match. Browser errors
+R then sends it the saved configuration, the current metadata, rules and pushed panels, so
+reloads and new tabs match. Browser errors
 are forwarded and printed in the R console.
 
 ## Panels
 
-The stats column holds a scatter of any two metadata columns and a histogram or bar chart,
-both drawn from the typed arrays and linked by the selection rules. `push_panel()` adds any
-Vega-Lite spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`; rows with a
+Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
+spatial view itself is not a panel. The built-in panels are a scatter of any two metadata
+columns and a histogram or bar chart, both drawn from the typed arrays and linked by the
+selection rules; the `+` menu adds more. `push_panel()` adds any Vega-Lite spec, including
+GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and `ref`; rows with a
 `cell_ID` are linked, and an interval brush named `brush` becomes a selection rule. Mosaic is
 not used: linking comes from the rules, and aggregation from typed-array scans (about 1 ms per
 million cells) or from R.
+
+Each panel has a stable id that names its slot, its selection source and its data file, so
+moving a panel changes nothing else. R keeps every pushed chart until it is closed and sends
+it again to a new page. A panel behind another tab skips selection updates and catches up
+when it comes into view. A panel draws its brush from its own rule, wherever the rule came
+from (a brush, R, a reload), so a restored range can still be dragged.
 
 ## The large-data path
 

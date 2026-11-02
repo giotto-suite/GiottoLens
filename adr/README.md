@@ -60,3 +60,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0006](0006-localhost-token-advisory-origin.md) | Serve on localhost under a per-launch token path; the Origin check is advisory | Accepted | 2026-10-30 |
 | [0007](0007-interactive-selection-not-through-spatrelate.md) | Interactive selection does not go through `spatRelate()` | Accepted | 2026-10-30 |
 | [0008](0008-images-read-by-the-browser-from-the-tiff.md) | Images are read by the browser from their TIFF file, JPEG-2000 decoded in workers | Accepted | 2026-10-31 |
+| [0009](0009-panels-docked-with-dockview-config-held-by-r.md) | Panels are docked with dockview-core 4; R holds the saved config | Accepted | 2026-11-02 |
