@@ -53,7 +53,7 @@ re-uploads.
 
 ```bash
 cd inst/viewer-src
-npm test && npm run typecheck && npm run build     # to test locally; then git restore ../viewer
+npm test && npm run typecheck && npm run build:dev   # inst/viewer-dev/, untracked; served while newer
 ```
 
 ```r

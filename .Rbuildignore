@@ -10,3 +10,4 @@
 ^adr$
 ^\.claude$
 ^SECURITY\.md$
+^inst/viewer-dev$

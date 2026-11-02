@@ -37,7 +37,7 @@ R/
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores
   metadata.R   prep_meta(), .write_metadata()
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
-inst/viewer-src/  Vite source (edit here, then npm run build)
+inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   main.js            bootstrap and wiring
   core/       state.js (runtime), store.ts (config + selection), comms.js (protocol),
               remote.js (R commands), constants.js
@@ -49,13 +49,14 @@ inst/viewer-src/  Vite source (edit here, then npm run build)
   panels/     scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
+inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
 adr/          decision records
 ```
 
 ## Workflow
 
 ```bash
-cd inst/viewer-src && npm ci && npm test && npm run typecheck && npm run build
+cd inst/viewer-src && npm ci && npm test && npm run typecheck && npm run build:dev
 ```
 
 ```r
@@ -66,10 +67,12 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - **Branches.** Feature branches open PRs against `dev` and are deleted on merge. `dev` →
   `main` is a release: bump the version in `DESCRIPTION`. Rulesets block deleting or
   force-pushing `dev` and `main`.
-- **Never commit `inst/viewer/`.** Build it locally to test, then `git restore inst/viewer`
-  before committing; a PR that changes it fails CI. After a merge into `dev`, CI builds it
-  and commits it there; a release PR into `main` fails if `dev`'s bundle does not match its
-  source. Installs from `dev` or `main` need no Node, and no CI writes to `main`.
+- **Never commit `inst/viewer/`.** Build locally with `npm run build:dev`, which writes the
+  untracked `inst/viewer-dev/`; `.viewer_dir()` serves it while it is newer than
+  `inst/viewer/`. `npm run build` writes `inst/viewer/` itself (CI's build); after using it,
+  `git restore inst/viewer`. A PR that changes `inst/viewer/` fails CI. After a merge into
+  `dev`, CI builds it and commits it there; a release PR into `main` fails if `dev`'s bundle
+  does not match its source. Installs from `dev` or `main` need no Node, and no CI writes to `main`.
 - The R-CMD-check CI job cannot install the suite's dependency chain yet; test locally.
 
 ## Key invariants

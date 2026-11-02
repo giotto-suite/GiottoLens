@@ -103,3 +103,21 @@ test_that(".data_response serves ranges and refuses paths outside a mount", {
     # A NUL is a 404, not an R error
     expect_identical(.data_response(req("/lens/tok/data/m/sub/f.bin%00.txt"), mounts, "/lens/tok")$status, 404L)
 })
+
+test_that("a local build in viewer-dev is served while it is newer than the committed bundle", {
+    pkg <- tempfile("pkg")
+    on.exit(unlink(pkg, recursive = TRUE), add = TRUE)
+    index <- function(d) file.path(pkg, d, "index.html")
+    expect_error(.viewer_dir(pkg), "cannot find the viewer bundle")
+    for (d in c("viewer", "viewer-dev")) {
+        dir.create(file.path(pkg, d), recursive = TRUE)
+        writeLines("<html></html>", index(d))
+    }
+    Sys.setFileTime(index("viewer"), Sys.time() - 60)
+    expect_identical(.viewer_dir(pkg), file.path(pkg, "viewer-dev"))
+    # A pull that updates the committed bundle makes it the newer one
+    Sys.setFileTime(index("viewer"), Sys.time() + 60)
+    expect_identical(.viewer_dir(pkg), file.path(pkg, "viewer"))
+    unlink(file.path(pkg, "viewer"), recursive = TRUE)
+    expect_identical(.viewer_dir(pkg), file.path(pkg, "viewer-dev"))
+})
