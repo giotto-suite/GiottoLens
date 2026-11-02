@@ -36,7 +36,11 @@ A cell layer is three parts:
 - **Mark:** `{shape, size, angle}` for one cell at true size; shape is circle, square or
   hex, size is in data units. R infers it: a fit of x, y against `array_row`/`array_col`
   when the metadata has them (exact spacing and angle), otherwise the median
-  nearest-neighbour spacing and angle 0. `launch_lens(mark =)` overrides any field.
+  nearest-neighbour spacing and angle 0. `launch_lens(mark =)` overrides any field. This
+  launch mark is a default: the viewer's configuration holds a setting over it (from
+  `set_mark()` or the mark control), saved and restored with the rest of the configuration.
+  Cells from spatial locations draw their mark by default; segmented cells carry one but
+  draw dots until it is turned on.
 - **Geometry (optional):** polygon tiles aligned with the chunks.
 
 The browser draws marks in data units: dots when zoomed out, true size when zoomed in.
@@ -62,8 +66,9 @@ replace the marks once their tiles load, as they replace dots today.
   on the roadmap.
 - One mark per layer: datasets whose cells need individual sizes are out of scope. Revisit
   if one turns up.
-- Open: whether segmented datasets default to a sized mark at mid zoom. Until decided they
-  keep today's fixed-size dots.
+- An inferred mark is computed for every cell layer, also segmented ones that may never
+  draw it: one neighbour-spacing pass at launch (0.9 s for 660k cells).
+- Changing the mark needs no relaunch, and a wrong inferred size is fixed in the viewer.
 
 ## Alternatives considered
 

@@ -234,7 +234,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param port,host Where to listen
         #' @param url_prefix Base URL the browser uses
         #' @param transfer Tile transfer mode, see [launch_lens()]
-        #' @param spat_unit Spatial unit the polygons belong to (for `subset()`)
+        #' @param spat_unit Spatial unit the cells belong to (for `subset()`)
         #' @param images Named list of giottoLargeImage objects to show
         #' @param locations Cells from spatial locations when there are no
         #'   polygons (internal)
@@ -252,9 +252,11 @@ LensViewer <- R6::R6Class("LensViewer",
                 recursive = TRUE, showWarnings = FALSE)
             imgs <- .image_entries(images)
             private$image_names <- vapply(imgs$entries, `[[`, "", "name")
-            private$cell_ids <- .export_session(gpoints, gpolygons,
+            cl <- .export_session(gpoints, gpolygons,
                 output = file.path(private$session, "manifest.json"), transfer = transfer,
                 images = imgs$entries, locations = locations, mark = mark)
+            private$cell_ids <- cl$cell_ids
+            if (!is.null(cl$source)) private$cells <- cl[c("source", "mark", "marks")]
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host, .layer_mounts(gpoints, gpolygons), imgs$files)
             assign(as.character(port), self, envir = .lens_registry)
@@ -387,6 +389,31 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Set how cells are drawn once zoomed in: as dots, or as
+        #'   circles, squares or hexagons of a size and angle. Fields given
+        #'   replace the viewer's and the others stay; with no arguments the
+        #'   mark goes back to the one from launch (see `launch_lens(mark =)`).
+        #'   The setting is saved with the viewer's and survives a reload. Cells
+        #'   with polygons show their outlines over any mark once zoomed in
+        #'   close.
+        #' @param shape `"circle"`, `"square"` or `"hex"`
+        #' @param size Width in data units (a hexagon across its flats)
+        #' @param angle Rotation in degrees, for squares and hexagons
+        #' @param show `FALSE` draws dots, `TRUE` the mark
+        set_mark = function(shape = NULL, size = NULL, angle = NULL, show = NULL) {
+            if (is.null(private$cells))
+                stop("[set_mark] the viewer has no cells", call. = FALSE)
+            m <- Filter(Negate(is.null), list(shape = shape, size = size, angle = angle))
+            if (length(m)) .check_mark(m, "set_mark")
+            if (!is.null(show)) {
+                if (!(is.logical(show) && length(show) == 1L && !is.na(show)))
+                    stop("[set_mark] show is TRUE or FALSE", call. = FALSE)
+                m$show <- show
+            }
+            private$request("set_mark", if (length(m)) list(mark = m) else list(reset = TRUE))
+            invisible(self)
+        },
+
         #' @description Show or hide an image, or set its colour or contrast;
         #'   `NULL` arguments leave a setting as is. Images draw under the
         #'   cells, each in its own colour, added together;
@@ -445,9 +472,10 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description A plain-text summary of the viewer for a person or an
-        #'   agent that cannot see the screen: the view in data coordinates,
-        #'   layers, colouring, the selection and its rules, and optionally what
-        #'   the selection holds in one metadata column.
+        #'   agent that cannot see the screen: where the cells come from and how
+        #'   they are drawn, the view in data coordinates, layers, colouring, the
+        #'   selection and its rules, and optionally what the selection holds in
+        #'   one metadata column.
         #' @param by Metadata column to break the selection down by (pushed
         #'   with `push_metadata()`); categories are counted, numbers summarised
         #' @param top Number of categories to list
@@ -458,6 +486,9 @@ LensViewer <- R6::R6Class("LensViewer",
             n   <- length(private$cell_ids)
             out <- list(
                 url = self$url, connected = self$connected(), n_cells = n,
+                cells = if (!is.null(private$cells)) list(
+                    source = private$cells$source,
+                    mark = .drawn_mark(private$cells, st$config$cellMark)),
                 view = st$view, color_by = st$config$colorBy,
                 layers = if (!is.null(st)) vapply(st$config$layers, function(l) isTRUE(l$show), NA),
                 images = if (!is.null(st)) vapply(st$config$images, function(l) isTRUE(l$show), NA),
@@ -745,6 +776,7 @@ LensViewer <- R6::R6Class("LensViewer",
         session     = NULL,
         image_names = character(),
         cell_ids    = NULL,
+        cells       = NULL,     # source, launch mark and whether it is drawn
         spat_unit   = NULL,
         sel_seq     = 0L,
         server      = NULL,
@@ -914,7 +946,10 @@ print.lens_description <- function(x, ...) {
     cat("GiottoLens viewer\n")
     line("url", x$url)
     line("browser", if (x$connected) "connected" else "not connected")
-    line("cells", format(x$n_cells, big.mark = ","))
+    line("cells", paste0(format(x$n_cells, big.mark = ","), if (!is.null(x$cells))
+        sprintf(" from %s, drawn as %s",
+            if (x$cells$source == "polygons") "polygons" else "spatial locations",
+            .mark_text(x$cells$mark))))
     if (!is.null(x$view)) {
         b <- signif(unlist(x$view$bounds), 6)
         line("view", sprintf("x %s to %s, y %s to %s (zoom %.2f)", b[1], b[2], b[3], b[4], x$view$zoom))

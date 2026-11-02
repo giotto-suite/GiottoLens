@@ -16,6 +16,14 @@ export interface ImageVis {
   color?: [number, number, number];
   contrast?: [number, number];   // pixel values drawn as black and as full colour
 }
+// The viewer's change to the cell layer's launch mark (render/marks.ts
+// drawnMark()); a field left out keeps the launch mark's
+export interface CellMark {
+  show?: boolean;
+  shape?: 'circle' | 'square' | 'hex';
+  size?: number;
+  angle?: number;
+}
 export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush';
 export type Combine = 'or' | 'and';
 
@@ -33,6 +41,7 @@ export interface Config {
   colorAll: boolean;
   genes: number[];              // selected gene indices into manifest genes
   colorBy: string | null;       // metadata column colouring the cells
+  cellMark: CellMark;           // how cells are drawn zoomed in, over the launch mark
   rules: Record<string, Rule>;  // selection rule per source
   combine: Combine;             // 'and' = crossfilter
   annotations: Annotation[];
@@ -63,6 +72,7 @@ export const initialConfig = (): Config => ({
   colorAll: false,
   genes: [],
   colorBy: null,
+  cellMark: {},
   rules: {},
   combine: 'or',
   annotations: [],
@@ -136,6 +146,13 @@ export const actions = {
   addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
   clearGenes() { set({ genes: [] }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  // Fields in `patch` replace the mark's and `clear` drops some, back to the
+  // launch mark's; null drops them all
+  setCellMark(patch: CellMark | null, clear: (keyof CellMark)[] = []) {
+    const m: CellMark = patch ? { ...get().cellMark, ...patch } : {};
+    for (const k of clear) delete m[k];
+    set({ cellMark: m });
+  },
   bumpMeta() { set(s => ({ metaVersion: s.metaVersion + 1 })); },
 
   setRule(source: string, rule: Rule | null) {

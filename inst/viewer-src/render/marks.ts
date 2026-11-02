@@ -4,11 +4,21 @@
 // squares and hexagons, has no pixel minimum, so dots stand in for them until
 // they are as wide as a dot.
 import { ScatterplotLayer, ColumnLayer } from 'deck.gl';
+import type { CellMark } from '../core/store.ts';
 
 export interface Mark {
   shape: 'circle' | 'square' | 'hex';
   size: number;     // across, in data units (a hexagon across its flats)
   angle: number;    // degrees
+}
+
+// The mark drawn for a cell layer: its launch mark (manifest `mark`, drawn by
+// default when `marks`) with the viewer's setting on top; undefined for dots.
+// R's .drawn_mark() is the same.
+export function drawnMark(layer: { mark?: Mark; marks?: boolean } | undefined,
+                          setting: CellMark): Mark | undefined {
+  if (!layer?.mark || !(setting.show ?? layer.marks)) return undefined;
+  return { ...layer.mark, ...setting, show: undefined } as Mark;
 }
 
 // Radius of a cell dot in pixels

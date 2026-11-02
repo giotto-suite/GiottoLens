@@ -193,6 +193,13 @@
     .legend-overflow { font-size: 10px; color: #4b5563; padding-top: 2px; }
     .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; font-family: monospace; }
+    .mark-row .mark-pad { width: 13px; flex-shrink: 0; }
+    .mark-row select, .mark-row input[type=number] {
+      min-width: 0; padding: 1px 4px; background: #1f2937; border: 1px solid #374151;
+      border-radius: 3px; color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
+    }
+    .mark-row select, .mark-row input[type=number] { flex: 1; }
+    .mark-row :disabled { opacity: 0.35; }
     #meta-col-select {
       flex: 1; padding: 4px 6px; background: #1f2937;
       border: 1px solid #374151; border-radius: 4px;
@@ -476,6 +483,23 @@
           <label>cells</label>
           <input type="range" id="alpha-poly" min="0" max="100" value="60">
           <span class="alpha-val" id="val-poly">60</span>
+        </div>
+        <div class="alpha-row mark-row" id="mark-row" style="display:none">
+          <span class="mark-pad"></span>
+          <label for="mark-shape">zoomed in</label>
+          <select id="mark-shape" title="How cells are drawn zoomed in">
+            <option value="" id="mark-default">default</option>
+            <option value="dots">dots</option>
+            <option value="circle">circles</option>
+            <option value="square">squares</option>
+            <option value="hex">hexagons</option>
+          </select>
+        </div>
+        <div class="alpha-row mark-row" id="mark-row-size" style="display:none">
+          <span class="mark-pad"></span>
+          <label for="mark-size">size/angle</label>
+          <input type="number" id="mark-size" min="0" step="any" title="Size in data units">
+          <input type="number" id="mark-angle" step="any" title="Angle in degrees">
         </div>
         <div class="alpha-row">
           <input type="checkbox" id="show-tx">

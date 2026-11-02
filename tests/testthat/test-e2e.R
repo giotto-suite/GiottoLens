@@ -114,6 +114,64 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     expect_identical(br$errors(), character())
 })
 
+test_that("the cell mark is set from R or the control, survives a reload, and resets", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    layer <- function() br$js("(() => { const l = window.__giottolens.state.deckgl.props.layers.find(l => l.id.startsWith('cell-')); return l && [l.id, l.props.getRadius ?? l.props.radius]; })()")
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 60, y = -60, zoom = 4)
+    expect_true(pump_until(function() identical(layer(), list("cell-squares", 1L))))
+
+    # From R: fields merge onto the launch mark
+    v$set_mark(shape = "circle", size = 3)
+    expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
+    expect_true(browser_wait(br, "document.getElementById('mark-shape').value === 'circle'"))
+    expect_identical(v$describe()$cells$mark, list(shape = "circle", size = 3, angle = 10))
+
+    # Saved with the viewer's settings: back after a reload
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"cellMark":{"shape":"circle","size":3}',
+        priv$config_json %||% "", fixed = TRUE)))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    # The control shows the restored setting once the page has its config
+    expect_true(browser_wait(br, "document.getElementById('mark-size')?.value === '3'"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 60, y = -60, zoom = 4)
+    expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
+
+    # From the control: dots, then back to the launch mark
+    br$js("(() => { const s = document.getElementById('mark-shape'); s.value = 'dots'; s.dispatchEvent(new Event('change')); })()")
+    expect_true(pump_until(function() identical(layer()[[1]], "cell-centroids")))
+    expect_identical(v$describe()$cells$mark, NULL)
+    v$set_mark()
+    expect_true(pump_until(function() identical(layer(), list("cell-squares", 1L))))
+    expect_true(browser_wait(br, "document.getElementById('mark-shape').value === ''"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("segmented cells take a mark when it is turned on", {
+    fx <- lens_fixture()
+    v  <- launch_lens(NULL, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    ids <- "window.__giottolens.state.deckgl.props.layers.map(l => l.id)"
+    expect_true(pump_until(function() v$connected(), 20))
+    # Below outline zoom: dots by default
+    v$set_view(x = 50, y = -50, zoom = -3)
+    expect_true(browser_wait(br, sprintf("%s.includes('cell-centroids')", ids)))
+    expect_identical(v$describe()$cells$mark, NULL)
+    v$set_mark(show = TRUE)
+    expect_true(browser_wait(br, sprintf("%s.includes('cell-circles')", ids)))
+    expect_identical(v$describe()$cells$mark$shape, "circle")
+    expect_identical(br$errors(), character())
+})
+
 test_that("selections do not depend on what is loaded, and match R", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)

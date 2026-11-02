@@ -90,7 +90,13 @@ hexagonal spots); other cells are circles as wide as the median distance to thei
 neighbour. `launch_lens(mark =)` overrides any field. Circles are sized in data units with a
 2 px minimum, so they are dots zoomed out and grow to their true size; squares and hexagons
 are drawn by `ColumnLayer`, which has no pixel minimum, so dots stand in until a mark is as
-wide as a dot. Selection stays centroid membership whatever the mark. For 660k VisiumHD-sized
+wide as a dot. Selection stays centroid membership whatever the mark.
+
+The launch mark is a default, not a fixed property: the mark control in the opacity panel and
+`viewer$set_mark()` change its shape, size or angle, or switch it to dots, as a setting kept
+with the rest of the configuration (`cellMark`) and so restored after a reload. Segmented
+cells carry an inferred mark too, off by default; turning it on shows them at their size
+before their outlines load. For 660k VisiumHD-sized
 bins, the grid fit takes 0.3 s and the chunking 0.1 s; the neighbour spacing, used without a
 grid, 0.9 s.
 

@@ -52,6 +52,7 @@ viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
+viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
 viewer$show_genes(c("CD3E", "MS4A1"))
 viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"),

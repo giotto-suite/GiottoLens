@@ -6,7 +6,7 @@ import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from '../core/const
 import { txDrawTiles, visibleTiles } from '../data/tiles.js';
 import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
-import { cellMarkLayer } from './marks.ts';
+import { cellMarkLayer, drawnMark } from './marks.ts';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
 import { MultiscaleImageLayer } from '@vivjs/layers';
 
@@ -121,7 +121,7 @@ export function renderLayers(viewState) {
     // shows at once. Hidden where outlines are drawn and all their tiles are in.
     if (!geometry || !outlines || loaded.length < tiles.length) {
       layers.push(cellMarkLayer({
-        mark: cellLayer.mark, zoom: viewState.zoom,
+        mark: drawnMark(cellLayer, s.cellMark), zoom: viewState.zoom,
         data: once(colors, () => ({ length: state.cells.n, attributes: {
           getPosition:  { value: state.cellPositions, size: 2 },
           getFillColor: { value: colors, size: 4, normalized: true },

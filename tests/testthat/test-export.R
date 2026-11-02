@@ -8,7 +8,9 @@ test_that("export_manifest writes page-relative tile URLs and sizes", {
     expect_setequal(names(m$layers), c("transcripts", "cells"))
     expect_identical(m$layers$cells$id_col, "poly_ID")
     expect_true(m$layers$cells$geometry)
-    expect_null(m$layers$cells$mark)
+    # Segmented cells carry a mark for the viewer to turn on, drawn as dots by default
+    expect_false(m$layers$cells$marks)
+    expect_identical(m$layers$cells$mark$shape, "circle")
     expect_setequal(unlist(m$layers$transcripts$genes), c("Actb", "Cd3e", "Ms4a1", "Epcam"))
     # The cell layer's tiles are the polygon store, mounted as polygons/
     mount <- c(cells = "polygons", transcripts = "transcripts")
@@ -67,11 +69,14 @@ test_that("cells from spatial locations are chunked and carry a mark", {
         x = ((i * 0.6180339887) %% 1) * 1000, y = -((i * 0.7548776662) %% 1) * 500)
     out <- file.path(tempfile("session"), "manifest.json")
     on.exit(unlink(dirname(out), recursive = TRUE), add = TRUE)
-    ids <- .export_session(NULL, NULL, out, locations = list(xy = xy))
+    res <- .export_session(NULL, NULL, out, locations = list(xy = xy))
+    ids <- res$cell_ids
+    expect_identical(res$source, "locations")
     m <- jsonlite::fromJSON(out, simplifyVector = FALSE)
 
     cl <- m$layers$cells
     expect_false(cl$geometry)
+    expect_true(cl$marks)
     expect_null(cl$tiles[[1]]$url)
     expect_identical(cl$mark$shape, "circle")
     expect_gt(cl$mark$size, 0)
@@ -103,6 +108,7 @@ test_that("a given mark is written for polygon cells too", {
     .export_session(NULL, fx$gpolygons, out, mark = list(shape = "square"))
     m <- jsonlite::fromJSON(out, simplifyVector = FALSE)
     expect_true(m$layers$cells$geometry)
+    expect_true(m$layers$cells$marks)
     expect_identical(m$layers$cells$mark$shape, "square")
     # The fixture's cells are 10 apart
     expect_equal(m$layers$cells$mark$size, 10, tolerance = 1e-5)

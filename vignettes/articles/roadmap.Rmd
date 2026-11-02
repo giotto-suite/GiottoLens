@@ -81,8 +81,7 @@ Next:
 1. **Binned features as a texture** (adr/0011). VisiumHD 2 µm `giottoBinPoints` as a layer
    next to transcripts, coloured by gene from values R reads out of the counts store. Needs
    the per-cell data channel ("Panels from GiottoVisuals specs", item 4).
-2. **Sized marks for segmented cells** at mid zoom, before outlines load (open in adr/0010).
-3. **Platform mark sizes**, such as Visium's spot diameter from its scale factors, where the
+2. **Platform mark sizes**, such as Visium's spot diameter from its scale factors, where the
    neighbour spacing overstates the mark.
 
 ## Images

@@ -7,22 +7,45 @@
 
 .mark_shapes <- c("circle", "square", "hex")
 
-# A mark given to launch_lens(): a list with any of shape, size and angle
-.check_mark <- function(mark) {
+# A mark given to launch_lens() or set_mark(): a list with any of shape, size
+# and angle. `site` names the caller in errors.
+.check_mark <- function(mark, site = "launch_lens") {
     if (is.null(mark)) return(NULL)
+    bad <- function(...) stop(sprintf("[%s] ", site), ..., call. = FALSE)
     if (!is.list(mark) || is.null(names(mark)) ||
         !all(names(mark) %in% c("shape", "size", "angle")))
-        stop("[launch_lens] `mark` is a list with any of shape, size and angle",
-            call. = FALSE)
+        bad("`mark` is a list with any of shape, size and angle")
     num1 <- function(v) is.numeric(v) && length(v) == 1L && is.finite(v)
     if (!is.null(mark$shape) &&
         !(is.character(mark$shape) && length(mark$shape) == 1L && mark$shape %in% .mark_shapes))
-        stop("[launch_lens] mark shape is \"circle\", \"square\" or \"hex\"", call. = FALSE)
+        bad("mark shape is \"circle\", \"square\" or \"hex\"")
     if (!is.null(mark$size) && !(num1(mark$size) && mark$size > 0))
-        stop("[launch_lens] mark size is a positive number in data units", call. = FALSE)
+        bad("mark size is a positive number in data units")
     if (!is.null(mark$angle) && !num1(mark$angle))
-        stop("[launch_lens] mark angle is a number of degrees", call. = FALSE)
+        bad("mark angle is a number of degrees")
     mark
+}
+
+# The mark the viewer draws, as `drawnMark()` in render/marks.ts works it out:
+# the launch mark (`cells$mark`, drawn by default when `cells$marks`) with the
+# viewer's setting (`cellMark` in its config, from set_mark() or the mark
+# control) on top. NULL when cells are drawn as dots.
+.drawn_mark <- function(cells, override = NULL) {
+    override <- as.list(override)
+    if (is.null(cells$mark) || !isTRUE(override$show %||% cells$marks)) return(NULL)
+    m <- utils::modifyList(cells$mark, override[intersect(names(override), c("shape", "size", "angle"))])
+    # JSON gives whole numbers back as integers
+    m$size  <- as.numeric(m$size)
+    m$angle <- as.numeric(m$angle)
+    m
+}
+
+# "squares 2 across at 10 degrees", for describe()
+.mark_text <- function(m) {
+    if (is.null(m)) return("dots")
+    shape <- c(circle = "circles", square = "squares", hex = "hexagons")[[m$shape]]
+    turn  <- if (m$shape != "circle" && m$angle != 0) sprintf(" at %s degrees", signif(m$angle, 3))
+    sprintf("%s %s across%s", shape, signif(m$size, 4), turn %||% "")
 }
 
 # The mark for cells at `x`, `y`: the user's fields first, then a fit of the

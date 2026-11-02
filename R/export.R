@@ -17,11 +17,12 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     invisible(output)
 }
 
-# Writes manifest.json (and cells.parquet) and returns the cell IDs in the
-# viewer's cell order (NULL without cells). Cells come from the polygon tiles,
+# Writes manifest.json (and cells.parquet). Cells come from the polygon tiles,
 # or without polygons from `locations` (from .spat_locations()) (adr/0010).
 # `mark`: a user mark (.check_mark()). `images`: manifest entries from
-# .image_entries().
+# .image_entries(). Returns the cell IDs in the viewer's cell order
+# (`cell_ids`, NULL without cells) and the cell layer's `source`, `mark` and
+# `marks` (whether the mark is drawn by default).
 .export_session <- function(gpoints, gpolygons, output, transfer = "auto",
                             images = list(), locations = NULL, mark = NULL) {
     layers <- list()
@@ -33,14 +34,15 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         cells <- .build_cells(gpolygons@spatVector)
         layers$cells <- .layer_manifest(gpolygons@spatVector, "polygons", cells$tiles)
         layers$cells$geometry <- TRUE
-        # Segmented cells keep fixed-size dots unless a mark is given
-        if (!is.null(mark))
-            layers$cells$mark <- .cell_mark(cells$table$x, cells$table$y, mark = mark)
+        # Segmented cells are dots until their outlines load, unless a mark is
+        # given at launch or turned on in the viewer; this is its default then
+        layers$cells$mark  <- .cell_mark(cells$table$x, cells$table$y, mark = mark)
+        layers$cells$marks <- !is.null(mark)
     } else if (!is.null(locations)) {
         cells <- .build_cells_xy(locations$xy)
         m <- .cell_mark(locations$xy$x, locations$xy$y, locations$grid, mark)
         layers$cells <- list(
-            type = "cells", geometry = FALSE, mark = m,
+            type = "cells", geometry = FALSE, mark = m, marks = TRUE,
             extent = .xy_extent(locations$xy, m$size / 2),
             tiles = .chunk_manifest(cells$tiles)
         )
@@ -62,7 +64,12 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         layers = layers)
     if (length(images)) manifest$images <- images
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
-    cells$table$cell_ID
+    list(
+        cell_ids = cells$table$cell_ID,
+        source   = if (!is.null(gpolygons)) "polygons" else if (!is.null(locations)) "locations",
+        mark     = layers$cells$mark,
+        marks    = layers$cells$marks
+    )
 }
 
 # Directories the server mounts under data/<layer>/ (layer name → store path)

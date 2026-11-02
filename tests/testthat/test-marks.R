@@ -73,3 +73,17 @@ test_that(".check_mark rejects malformed marks", {
     expect_error(.check_mark(list(size = -1)), "positive")
     expect_error(.check_mark(list(angle = NA_real_)), "degrees")
 })
+
+test_that(".drawn_mark puts the viewer's setting over the launch mark", {
+    bins <- list(mark = list(shape = "square", size = 2, angle = 10), marks = TRUE)
+    segmented <- list(mark = list(shape = "circle", size = 10, angle = 0), marks = FALSE)
+    expect_identical(.drawn_mark(bins), bins$mark)
+    expect_null(.drawn_mark(segmented))
+    expect_identical(.drawn_mark(segmented, list(show = TRUE)), segmented$mark)
+    expect_identical(.drawn_mark(bins, list(shape = "circle", size = 3)),
+        list(shape = "circle", size = 3, angle = 10))
+    expect_null(.drawn_mark(bins, list(show = FALSE, size = 3)))
+    expect_identical(.mark_text(bins$mark), "squares 2 across at 10 degrees")
+    expect_identical(.mark_text(segmented$mark), "circles 10 across")
+    expect_identical(.mark_text(NULL), "dots")
+})

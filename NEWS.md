@@ -15,6 +15,10 @@
   fitted to the bin grid when the cell metadata has `array_row` and `array_col`, otherwise
   circles as wide as the spacing between cells. `launch_lens(mark =)` sets the shape, size or
   angle.
+* The mark can be changed while the viewer runs, from the opacity panel or with
+  `viewer$set_mark()`, and is kept across a reload. Segmented cells can show a mark too,
+  before their outlines load. `viewer$describe()` says where the cells come from and how they
+  are drawn.
 
 # GiottoLens 0.1.4
 
