@@ -1,16 +1,12 @@
 # GiottoLens 0.1.4
 
-* Images: `launch_lens(g)` shows the object's images under the cells, read by tile from
-  each image's TIFF file in place: pyramidal OME-TIFFs (including Xenium's JPEG-2000 files)
-  and COGs. The first is shown; the others are listed in the new Images panel.
-* Each image has its own colour and contrast (one slider with two handles), and shown images
-  add up like the channels of one image. RGB images such as H&E are recognised from the file
-  and drawn in their own colours beneath the others.
-* Flipped, rotated and registered images are drawn where GiottoClass places them.
-* `launch_lens(images =)` picks which images to include, and `viewer$set_image()` shows,
-  hides, colours or sets the contrast of one from R.
-* An image that cannot be read by tile (not a TIFF, or large and stored without tiles or a
-  pyramid) is skipped with a message rather than loaded whole.
+* Image support added:
+  * Compatability for pyramidal OME-TIFF (Xenium's JPEG-2000 files) and COG.
+  * Affine transformed images are supported.
+  * `launch_lens(images =)` picks which images to include, and `viewer$set_image()` shows,
+    hides, colours or sets the contrast of one from R.
+  * An image that cannot be read by tile (not a TIFF, or large and stored without tiles or a
+    pyramid) is skipped with a message rather than loaded whole.
 
 # GiottoLens 0.1.3
 
