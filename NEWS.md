@@ -8,6 +8,13 @@
 * Reloading the page keeps the panels, layers, images, colouring, genes and annotations.
 * The histogram and pushed charts draw their brush from their selection rule, so a range
   restored after a reload or set from R can still be dragged.
+* Cells without polygons: a spatial unit with only spatial locations (Visium spots, VisiumHD
+  bins, centroid-only cells) launches with `launch_lens(g, spat_unit =)` and gets metadata,
+  selection and panels like polygon cells, without a GiottoDisk store.
+* Such cells are drawn as dots zoomed out and as marks at their true size zoomed in: squares
+  fitted to the bin grid when the cell metadata has `array_row` and `array_col`, otherwise
+  circles as wide as the spacing between cells. `launch_lens(mark =)` sets the shape, size or
+  angle.
 
 # GiottoLens 0.1.4
 

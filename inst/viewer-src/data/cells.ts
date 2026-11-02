@@ -1,7 +1,7 @@
-// All cells as typed arrays, indexed 0..N-1 in the order R wrote them:
-// polygon tiles concatenated in manifest order, so tile t holds cells
-// offset .. offset + n - 1. Selections, colours and metadata use this index
-// (adr/0002).
+// All cells as typed arrays, indexed 0..N-1 in the order R wrote them: the
+// cell layer's tiles (polygon tiles, or chunks of spatial locations)
+// concatenated in manifest order, so tile t holds cells offset .. offset +
+// n - 1. Selections, colours and metadata use this index (adr/0002, adr/0010).
 import { rangeBuffer, readColumns } from './parquet.ts';
 
 export interface CellTile {
@@ -19,12 +19,12 @@ export interface Cells {
   url: string;
 }
 
-export async function loadCells(polyLayer: any): Promise<Cells | null> {
-  if (!polyLayer?.cells) return null;
-  const url = new URL(polyLayer.cells.url, document.baseURI).href;
+export async function loadCells(cellLayer: any): Promise<Cells | null> {
+  if (!cellLayer?.cells) return null;
+  const url = new URL(cellLayer.cells.url, document.baseURI).href;
   const cols = await readColumns(await rangeBuffer(url), ['x', 'y']);
-  const n = polyLayer.cells.n;
-  const tiles: CellTile[] = polyLayer.tiles
+  const n = cellLayer.cells.n;
+  const tiles: CellTile[] = cellLayer.tiles
     .map((t: any) => ({ index: t.index, offset: t.offset, n: t.n, bounds: t.cbounds }))
     .sort((a: CellTile, b: CellTile) => a.offset - b.offset);
   return { n, x: Float32Array.from(cols.x), y: Float32Array.from(cols.y), tiles, url };

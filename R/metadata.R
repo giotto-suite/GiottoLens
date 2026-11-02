@@ -124,9 +124,9 @@ prep_meta <- function(
 .write_metadata <- function(meta, dir, cell_ids) {
     if (!"cell_ID" %in% names(meta))
         stop("[push_metadata] metadata needs a `cell_ID` column matching the ",
-            "polygon IDs", call. = FALSE)
+            "cell IDs", call. = FALSE)
     if (is.null(cell_ids))
-        stop("[push_metadata] the viewer has no polygons to attach metadata to",
+        stop("[push_metadata] the viewer has no cells to attach metadata to",
             call. = FALSE)
     # Dots and other characters break identifiers downstream; sanitising can
     # merge names, so make them unique again
@@ -134,10 +134,10 @@ prep_meta <- function(
     row <- match(cell_ids, as.character(meta$cell_ID))
     unmatched <- nrow(meta) - sum(!is.na(row))
     if (all(is.na(row)))
-        stop("[push_metadata] no cell_ID matches a polygon ID in the viewer",
+        stop("[push_metadata] no cell_ID matches a cell in the viewer",
             call. = FALSE)
     if (unmatched > 0L)
-        message("[push_metadata] ", unmatched, " metadata row(s) have no polygon ",
+        message("[push_metadata] ", unmatched, " metadata row(s) have no cell ",
             "in the viewer and are not shown")
 
     data_cols <- setdiff(names(meta), "cell_ID")

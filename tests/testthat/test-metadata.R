@@ -3,7 +3,7 @@ test_that(".write_metadata writes rows in cell order with category codes", {
     on.exit(unlink(dir, recursive = TRUE), add = TRUE)
     ids <- c("c1", "c2", "c3")
     expect_error(.write_metadata(data.frame(id = 1), dir, ids), "cell_ID")
-    expect_error(.write_metadata(data.frame(cell_ID = "c1", v = 1), dir, NULL), "no polygons")
+    expect_error(.write_metadata(data.frame(cell_ID = "c1", v = 1), dir, NULL), "no cells")
     expect_error(.write_metadata(data.frame(cell_ID = "zz", v = 1), dir, ids), "no cell_ID matches")
     expect_error(.write_metadata(data.frame(cell_ID = "c1"), dir, ids), "no columns")
 

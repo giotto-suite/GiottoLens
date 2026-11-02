@@ -14,12 +14,13 @@ export function updateTiles(viewState) {
   const { layers } = store.getState();
   const size      = viewportSize();
   const txLayer   = state.manifest.layers.transcripts;
-  const polyLayer = state.manifest.layers.polygons;
+  const cellLayer = state.manifest.layers.cells;
   const wantTx    = layers.tx.show && txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
   // Centroids come from the cell table at every zoom; tiles are only for
-  // outlines, fetched half a zoom level before they are drawn
-  const wantPoly  = layers.poly.show && polyLayer && viewState.zoom >= POLYGON_ZOOM_THRESHOLD - 0.5;
-  const polyTiles = wantPoly ? visibleTiles(viewState, polyLayer.tiles, size) : [];
+  // outlines, fetched half a zoom level before they are drawn, and only when
+  // the cells have polygons (adr/0010)
+  const wantPoly  = layers.poly.show && cellLayer?.geometry && viewState.zoom >= POLYGON_ZOOM_THRESHOLD - 0.5;
+  const polyTiles = wantPoly ? visibleTiles(viewState, cellLayer.tiles, size) : [];
   const txTiles   = wantTx ? visibleTiles(viewState, txLayer.tiles, size) : [];
   const inScope   = new Set([
     ...polyTiles.map(t => `polygons:${t.index}`),

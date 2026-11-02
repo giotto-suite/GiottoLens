@@ -61,3 +61,5 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0007](0007-interactive-selection-not-through-spatrelate.md) | Interactive selection does not go through `spatRelate()` | Accepted | 2026-10-30 |
 | [0008](0008-images-read-by-the-browser-from-the-tiff.md) | Images are read by the browser from their TIFF file, JPEG-2000 decoded in workers | Accepted | 2026-10-31 |
 | [0009](0009-panels-docked-with-dockview-config-held-by-r.md) | Panels are docked with dockview-core 4; R holds the saved config | Accepted | 2026-11-02 |
+| [0010](0010-cells-are-a-table-drawn-as-marks.md) | Cells are a table drawn as marks; polygons are optional detail | Proposed | 2026-11-02 |
+| [0011](0011-binned-features-drawn-as-a-texture.md) | Binned feature data is drawn as a texture | Proposed | 2026-11-02 |

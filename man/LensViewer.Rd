@@ -74,7 +74,9 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
   url_prefix,
   transfer = "auto",
   spat_unit = NULL,
-  images = list()
+  images = list(),
+  locations = NULL,
+  mark = NULL
 )}
     \if{html}{\out{</div>}}
   }
@@ -87,6 +89,9 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
       \item{\code{spat_unit}}{Spatial unit the polygons belong to (for \code{subset()})}
       \item{\code{images}}{Named list of giottoLargeImage objects to show}
+      \item{\code{locations}}{Cells from spatial locations when there are no
+polygons (internal)}
+      \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
     }
     \if{html}{\out{</div>}}
   }
