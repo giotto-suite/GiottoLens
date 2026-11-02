@@ -1,7 +1,7 @@
 # GiottoLens 0.1.4
 
 * Image support added:
-  * Compatability for pyramidal OME-TIFF (Xenium's JPEG-2000 files) and COG.
+  * Compatibility for pyramidal OME-TIFF (Xenium's JPEG-2000 files) and COG.
   * Affine transformed images are supported.
   * `launch_lens(images =)` picks which images to include, and `viewer$set_image()` shows,
     hides, colours or sets the contrast of one from R.
