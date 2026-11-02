@@ -242,32 +242,45 @@
       display: flex; overflow: hidden;
     }
     #spatial-pane { position: relative; overflow: hidden; min-width: 150px; }
-    #stats-column {
-      display: flex; flex-direction: column; overflow: hidden;
-      background: #0d1117; border-left: 1px solid #1f2937; min-width: 0;
+    /* The docked panels (panels/dock.ts): dockview's dark theme in the viewer's colours */
+    #dock { position: relative; overflow: hidden; min-width: 0; background: #0d1117; border-left: 1px solid #1f2937; }
+    .dockview-theme-dark.lens-dock {
+      --dv-group-view-background-color: #0d1117;
+      --dv-tabs-and-actions-container-background-color: #111827;
+      --dv-activegroup-visiblepanel-tab-background-color: #0d1117;
+      --dv-inactivegroup-visiblepanel-tab-background-color: #0d1117;
+      --dv-activegroup-hiddenpanel-tab-background-color: #111827;
+      --dv-inactivegroup-hiddenpanel-tab-background-color: #111827;
+      --dv-activegroup-visiblepanel-tab-color: #d1d5db;
+      --dv-inactivegroup-visiblepanel-tab-color: #9ca3af;
+      --dv-activegroup-hiddenpanel-tab-color: #6b7280;
+      --dv-inactivegroup-hiddenpanel-tab-color: #4b5563;
+      --dv-tab-divider-color: #1f2937;
+      --dv-separator-border: #1f2937;
+      --dv-tabs-and-actions-container-height: 28px;
+      --dv-tabs-and-actions-container-font-size: 11px;
+      --dv-drag-over-background-color: rgba(59, 130, 246, 0.25);
+      --dv-paneview-active-outline-color: #3b82f6;
+      font-family: monospace;
     }
-    .stats-pane {
-      display: flex; flex-direction: column; flex: 1; overflow: hidden;
-      min-height: 32px; border-bottom: 1px solid #1f2937;
+    .lens-dock .dv-tab { padding: 0 8px; }
+    .lens-dock .dv-default-tab-action { padding: 2px; }
+    .stats-pane-body { position: absolute; inset: 0; overflow: auto; display: flex; flex-direction: column; color: #d1d5db; }
+    .panel-note { margin: auto; padding: 16px; color: #4b5563; font-size: 11px; text-align: center; }
+    .dock-actions { position: relative; height: 100%; display: flex; align-items: center; padding: 0 6px; }
+    .dock-add { background: none; border: none; color: #6b7280; font: 14px monospace; cursor: pointer; padding: 0 4px; }
+    .dock-add:hover { color: #d1d5db; }
+    .dock-menu {
+      display: none; position: absolute; top: 100%; right: 4px; z-index: 1000; flex-direction: column;
+      background: #111827; border: 1px solid #374151; border-radius: 4px; padding: 3px 0; min-width: 100px;
     }
-    .stats-pane:last-child { border-bottom: none; }
-    .stats-pane.stats-collapsed { flex: 0 0 32px; }
-    .stats-pane-header {
-      height: 32px; flex-shrink: 0; display: flex; align-items: center;
-      justify-content: space-between; padding: 0 10px;
-      border-bottom: 1px solid #1f2937; user-select: none; cursor: default;
+    .dock-menu.open { display: flex; }
+    .dock-menu button, .dock-empty button {
+      background: none; border: none; color: #9ca3af; font: 11px monospace; text-align: left;
+      padding: 4px 10px; cursor: pointer;
     }
-    .stats-pane.stats-collapsed .stats-pane-header { border-bottom: none; }
-    .stats-pane-title { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.05em; }
-    .stats-pane-body { flex: 1; overflow: auto; position: relative; min-height: 0; }
-    .stats-collapse-btn {
-      background: none; border: none; padding: 2px 3px; color: #4b5563;
-      cursor: pointer; display: flex; align-items: center;
-    }
-    .stats-collapse-btn:hover { color: #9ca3af; }
-    .stats-collapse-btn svg { width: 13px; height: 13px; transition: transform 0.15s; }
-    .stats-collapsed .stats-collapse-btn svg { transform: rotate(180deg); }
-    .stats-pane-body { display: flex; flex-direction: column; }
+    .dock-menu button:hover, .dock-empty button:hover { background: #1f2937; color: #e5e7eb; }
+    .dock-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #4b5563; font-size: 11px; }
     .stats-controls { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; border-bottom: 1px solid #1f2937; }
     .stats-ctrl-wrap { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.04em; }
     .stats-ctrl-sel {
@@ -415,22 +428,7 @@
       <div id="status">initializing…</div>
     </div><!-- /spatial-pane -->
 
-    <div id="stats-column">
-      <div class="stats-pane" id="stats-pane-1">
-        <div class="stats-pane-header">
-          <span class="stats-pane-title">Panel 1</span>
-          <button class="stats-collapse-btn" title="collapse"><i data-lucide="chevron-up"></i></button>
-        </div>
-        <div class="stats-pane-body" id="stats-body-1"></div>
-      </div>
-      <div class="stats-pane" id="stats-pane-2">
-        <div class="stats-pane-header">
-          <span class="stats-pane-title">Panel 2</span>
-          <button class="stats-collapse-btn" title="collapse"><i data-lucide="chevron-up"></i></button>
-        </div>
-        <div class="stats-pane-body" id="stats-body-2"></div>
-      </div>
-    </div><!-- /stats-column -->
+    <div id="dock"></div>
 
   </div><!-- /main-layout -->
 

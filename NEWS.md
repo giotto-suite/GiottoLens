@@ -1,3 +1,14 @@
+# GiottoLens (development version)
+
+* Panels dock beside the spatial view as tabs and splits that can be dragged around, closed,
+  and added back from the `+` menu.
+* `viewer$push_panel()` takes `id`, `where` (`"tab"`, `"right"`, `"below"`) and `ref` to place
+  a chart, and returns its id; pushing to an existing id replaces that chart in place. The
+  `pane` argument is gone. `viewer$remove_panel()` and `viewer$panels()` are new.
+* Reloading the page keeps the panels, layers, images, colouring, genes and annotations.
+* The histogram and pushed charts draw their brush from their selection rule, so a range
+  restored after a reload or set from R can still be dragged.
+
 # GiottoLens 0.1.4
 
 * Image support added:

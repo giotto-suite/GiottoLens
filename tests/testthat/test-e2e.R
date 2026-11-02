@@ -32,7 +32,7 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     v$push_metadata(fx$meta)
     expect_true(browser_wait(br,
         "document.getElementById('meta-col-select').options.length === 3"))
-    expect_true(browser_wait(br, "!!document.querySelector('#stats-body-2 canvas')"))
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
 
     # Everything comes from this server: works offline, one DuckDB
     external <- br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => !u.startsWith(location.origin))")
@@ -171,14 +171,14 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_identical(br$errors(), character())
 })
 
-test_that("push_panel shows a Vega-Lite spec linked to the selection", {
+test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
     v$push_metadata(fx$meta)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "window.__giottolens?.panels[1] != null"))
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram') != null"))
 
     spec <- list(
         mark = "point",
@@ -186,16 +186,23 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
         encoding = list(x = list(field = "score", type = "quantitative"),
                         y = list(field = "rank", type = "quantitative"))
     )
-    v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))), title = "score")
-    expect_true(browser_wait(br, "window.__giottolens.panels[1]?.view != null"))
-    expect_true(browser_wait(br,
-        "document.querySelector('#stats-pane-2 .stats-pane-title').textContent === 'score'"))
-    # Issue #3: the chart, axes and titles fit inside the pane
-    fits <- br$js("(() => { const a = document.querySelector('#stats-body-2 .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panels[1].view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
+    id <- v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))),
+        title = "score", where = "right")
+    expect_identical(id, "panel-1")
+    expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
+    p <- v$panels()
+    expect_setequal(p$id, c("scatter", "histogram", "panel-1"))
+    expect_identical(p$title[p$id == "panel-1"], "score")
+    expect_identical(p$kind[p$id == "panel-1"], "spec")
+    # "right" with no ref: its own group, beside the others; all in view
+    expect_false(p$group[p$id == "panel-1"] %in% p$group[p$id != "panel-1"])
+    expect_true(all(p$visible))
+    # Issue #3: the chart, axes and titles fit inside the panel
+    fits <- br$js("(() => { const a = document.querySelector('[data-panel=\"panel-1\"] .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panel('panel-1').view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
     expect_true(fits)
 
     # Dragging a brush on the chart selects exactly the cells inside it
-    box <- br$js("(() => { const r = document.querySelector('#stats-body-2 canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    box <- br$js("(() => { const r = document.querySelector('[data-panel=\"panel-1\"] canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
     pt <- function(fx_, fy_) c(box[[1]] + fx_ * box[[3]], box[[2]] + fy_ * box[[4]])
     send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
         button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
@@ -204,6 +211,7 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
     for (f in seq(0.4, 0.7, by = 0.05)) send("mouseMoved", pt(f, f))
     send("mouseReleased", pt(0.7, 0.7))
     expect_true(pump_until(function() length(v$selection) > 0))
+    expect_identical(names(get("private", v$.__enclos_env__)$rule_set), "panel:panel-1")
     m <- transform(fx$meta, rank = seq_len(nrow(fx$meta)))
     s_ <- m[m$cell_ID %in% v$selection, ]
     inside <- m$score >= min(s_$score) & m$score <= max(s_$score) &
@@ -214,7 +222,97 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
     # A metadata reload keeps the pushed panel
     v$push_metadata(fx$meta)
     Sys.sleep(0.5); later::run_now(0.2)
-    expect_true(br$js("document.querySelector('#stats-pane-2 .stats-pane-title').textContent === 'score'"))
+    expect_true(br$js("window.__giottolens.panel('panel-1')?.view != null"))
+
+    # Pushing to the same id replaces the chart in place; a tab joins its group
+    v$push_panel(spec, data = transform(fx$meta, rank = rev(seq_len(nrow(fx$meta)))),
+        id = "panel-1", title = "score 2")
+    v$push_panel(list(mark = "bar", encoding = list(x = list(field = "a", type = "nominal"))),
+        data = data.frame(a = c("x", "y")), id = "bars", ref = "histogram")
+    expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
+    p <- v$panels()
+    expect_identical(p$title[p$id == "panel-1"], "score 2")
+    expect_identical(p$group[p$id == "bars"], p$group[p$id == "histogram"])
+    expect_false(p$visible[p$id == "histogram"])   # behind the new tab
+
+    v$remove_panel("bars")
+    v$remove_panel("scatter")
+    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1"))))
+    expect_identical(br$errors(), character())
+})
+
+test_that("a reload brings back the layout, panels, settings and brushes", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    v$push_metadata(fx$meta)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
+
+    spec <- list(mark = "point",
+        params = list(list(name = "brush", select = list(type = "interval"))),
+        encoding = list(x = list(field = "score", type = "quantitative"),
+                        y = list(field = "rank", type = "quantitative")))
+    v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))), id = "sc", where = "below")
+    expect_true(browser_wait(br, "window.__giottolens.panel('sc')?.view != null"))
+    v$remove_panel("scatter")
+    v$set_layer("poly", alpha = 0.25)
+    v$color_by("leiden_clus")
+
+    # A range from R shows as the histogram's brush
+    # A brush's extent, rounded: Vega keeps it through pixel space
+    brush_of <- function(id) {
+        b <- br$js(sprintf("JSON.stringify(window.__giottolens.panel('%s')?.view?.signal('brush') ?? null)", id))
+        if (is.null(b)) return(NULL)
+        lapply(jsonlite::fromJSON(b), function(r) round(r, 6))
+    }
+    v$select(lens_range("score", 3, 6), source = "hist:score")
+    expect_true(pump_until(function() identical(brush_of("histogram"), list(bin0 = c(3, 6)))))
+    # and a brush dragged on the pushed chart is added to it
+    box <- br$js("(() => { const r = document.querySelector('[data-panel=\"sc\"] canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    pt <- function(fx_, fy_) c(box[[1]] + fx_ * box[[3]], box[[2]] + fy_ * box[[4]])
+    send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    send("mouseMoved", pt(0.3, 0.2)); send("mousePressed", pt(0.3, 0.2))
+    for (f in seq(0.35, 0.6, by = 0.05)) send("mouseMoved", pt(f, f))
+    send("mouseReleased", pt(0.6, 0.6))
+    expect_true(pump_until(function() setequal(v$rules()$source, c("hist:score", "panel:sc"))))
+    sc_brush <- brush_of("sc")
+    expect_setequal(names(sc_brush), c("score", "rank"))
+    n_sel <- length(v$selection)
+    before <- v$panels()
+    # The page's config has reached R
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"alpha":0.25', priv$config_json %||% "", fixed = TRUE) &&
+        !grepl('"scatter"', priv$config_json, fixed = TRUE)))
+
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('sc')?.view != null"))
+    expect_true(browser_wait(br, "window.__giottolens.panel('histogram')?.view != null"))
+    after <- v$panels()
+    expect_identical(after$id, before$id)
+    expect_identical(after$group == after$group[1], before$group == before$group[1])
+    st <- v$state()
+    expect_identical(st$config$layers$poly$alpha, 0.25)
+    expect_identical(st$config$colorBy, "leiden_clus")
+    expect_identical(st$selected, n_sel)
+    # Both brushes are drawn again, so they can be dragged on
+    expect_true(pump_until(function() identical(brush_of("histogram"), list(bin0 = c(3, 6)))))
+    expect_true(pump_until(function() identical(brush_of("sc"), sc_brush)))
+    # ...and can be dragged: the range follows the brush
+    xy <- br$js("(() => { const v = window.__giottolens.panel('histogram').view, r = v.container().querySelector('canvas').getBoundingClientRect(), o = v.origin(); return [r.left + o[0] + v.scale('x')(4.5), r.top + o[1] + v.height() / 2]; })()")
+    p0 <- c(xy[[1]], xy[[2]])
+    send("mouseMoved", p0); send("mousePressed", p0)
+    for (dx in seq(5, 30, by = 5)) send("mouseMoved", p0 + c(dx, 0))
+    send("mouseReleased", p0 + c(30, 0))
+    hist_rule <- function() Filter(function(r) identical(r$source, "hist:score"), v$selection_rules)[[1]]
+    expect_true(pump_until(function() hist_rule()$params$min > 3.2))
+    expect_equal(hist_rule()$params$max - hist_rule()$params$min, 3, tolerance = 1e-6)
+    # Dropping the rule elsewhere clears the histogram's brush
+    v$select(NULL, source = "hist:score", replace = FALSE)
+    expect_true(browser_wait(br, "Object.keys(window.__giottolens.panel('histogram')?.view?.signal('brush') ?? {}).length === 0"))
     expect_identical(br$errors(), character())
 })
 
@@ -417,8 +515,12 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     for (l in lines) eval(parse(text = l))
     expect_setequal(v$selection, sel)
 
-    # × drops one rule; the toggle hides the strip
-    br$js("document.querySelector('#rule-strip .rule-chip[data-source=\"hist:score\"] .rule-chip-x').click()")
+    # × drops one rule; the toggle hides the strip. The rules R just re-sent
+    # reach the page on the socket, which can lag this test's own commands
+    x_js <- "document.querySelector('#rule-strip .rule-chip[data-source=\"hist:score\"] .rule-chip-x')"
+    expect_true(browser_wait(br, sprintf("!!%s && window.__giottolens.store.getState().selection.count === %d",
+        x_js, length(sel))))
+    br$js(paste0(x_js, ".click()"))
     expect_true(pump_until(function() length(v$selection) > n_both))
     expect_identical(v$rules()$source, "spatial")
     br$js("document.getElementById('btn-rules').click()")

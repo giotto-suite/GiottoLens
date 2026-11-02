@@ -9,7 +9,7 @@
 // { type: 'reply', id, data | error }.
 
 // Bump when the message format changes; R warns on a mismatch
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 
 let ws             = null;
 let reconnectTimer = null;

@@ -67,11 +67,14 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_true(pump_until(function() evil$state$closed))
     expect_false(v$connected())
 
-    # Metadata pushed before any tab connects is written and sent on connect
+    # Metadata pushed before any tab connects is written and sent on connect,
+    # after the (empty) saved config
     v$push_metadata(fx$meta)
     a <- ws_client(ws_url(v), origin = sub("/lens/.*$", "", v$url))
-    expect_true(pump_until(function() length(a$state$msgs) > 0))
-    expect_identical(a$state$msgs[[1]]$type, "load_metadata")
+    expect_true(pump_until(function() length(a$state$msgs) > 1))
+    expect_identical(a$state$msgs[[1]]$type, "restore")
+    expect_null(a$state$msgs[[1]]$data$config)
+    expect_identical(a$state$msgs[[2]]$type, "load_metadata")
     expect_true(v$connected())
 
     ids <- get("private", v$.__enclos_env__)$cell_ids
@@ -102,6 +105,56 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
 
     a$ws$close(); b$ws$close()
     expect_true(pump_until(function() !v$connected()))
+})
+
+test_that("R keeps the page's config and pushed panels for the next page", {
+    fx <- lens_fixture()
+    skip_if_not_installed("websocket")
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+
+    # Pushed with no tab open: kept, and listed
+    expect_message(id <- v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)),
+        "when the viewer connects")
+    expect_identical(id, "panel-1")
+    big <- data.frame(a = seq_len(6000L))
+    expect_message(v$push_panel(list(mark = "point"), data = big, id = "big", where = "below"))
+    expect_identical(v$panels()$id, c("panel-1", "big"))
+    expect_error(v$push_panel(list(mark = "bar"), id = "scatter"), "built-in")
+    expect_error(v$push_panel(list(mark = "bar"), id = "a b"), "letters")
+    expect_error(v$push_panel(list(mark = "bar"), where = "left"), "should be one of")
+    priv <- get("private", v$.__enclos_env__)
+    session <- priv$session
+    expect_length(list.files(file.path(session, "panels")), 1L)
+
+    a <- ws_client(ws_url(v))
+    expect_true(pump_until(function() length(Filter(function(m) m$type == "push_panel", a$state$msgs)) == 2L))
+    pushed <- Filter(function(m) m$type == "push_panel", a$state$msgs)
+    expect_identical(vapply(pushed, function(m) m$data$id, ""), c("panel-1", "big"))
+    expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
+    expect_identical(pushed[[2]]$data$where, "below")
+    expect_match(pushed[[2]]$data$data_url, "^session/panels/big_")
+    expect_identical(a$state$msgs[[1]]$data$panels, list("panel-1", "big"))
+
+    # The page's config comes back verbatim to the next page
+    cfg <- '{"state":{"layers":{"poly":{"show":false,"alpha":0.3}},"images":{},"genes":[]},"version":1}'
+    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    # Closed in the page: R drops it and its file
+    a$ws$send('{"type":"panel_closed","data":{"id":"big"}}')
+    expect_true(pump_until(function() identical(names(priv$pushed), "panel-1")))
+    expect_length(list.files(file.path(session, "panels")), 0L)
+    a$ws$close()
+    expect_true(pump_until(function() !v$connected()))
+
+    b <- ws_client(ws_url(v))
+    expect_true(pump_until(function() length(b$state$msgs) > 0))
+    expect_identical(b$state$msgs[[1]]$data$config, cfg)
+    expect_identical(b$state$msgs[[1]]$data$panels, list("panel-1"))
+    v$remove_panel("panel-1")
+    expect_true(pump_until(function() any(vapply(b$state$msgs, function(m) m$type == "remove_panel", NA))))
+    b$ws$close()
+    expect_true(pump_until(function() !v$connected()))
+    expect_identical(nrow(v$panels()), 0L)
 })
 
 test_that("relaunching on a port closes the old viewer and close() cleans up", {

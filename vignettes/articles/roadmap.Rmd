@@ -22,24 +22,25 @@ implemented, and small known gaps are GitHub issues.
 ## Panels from GiottoVisuals specs
 
 GiottoVisuals writes the plot spec, GiottoLens docks it as a panel, and the panel
-crossfilters with every other view. `push_panel()` already shows any Vega-Lite spec and
-links rows that carry a `cell_ID`. Next:
+crossfilters with every other view. `push_panel()` already docks any Vega-Lite spec where R
+places it, links rows that carry a `cell_ID`, and survives a page reload. Next:
 
-1. **Docking.** More panes or tabs, placed by `push_panel()` and movable in the viewer,
-   instead of replacing one of the two stats panes.
-2. **Crossfilter into pushed panels.** Show the other sources only, as the built-in
+1. **Crossfilter into pushed panels.** Show the other sources only, as the built-in
    histogram does, rather than dimming by the whole selection.
-3. **Brushes as typed rules.** A brush on a metadata column becomes a `range` or
+2. **Brushes as typed rules.** A brush on a metadata column becomes a `range` or
    `categories` rule rather than a list of cells, so R can evaluate and describe it.
-4. **Aggregate charts at scale.** Vega-Lite re-aggregates its rows on every change, which
+3. **Aggregate charts at scale.** Vega-Lite re-aggregates its rows on every change, which
    slows near a million rows. For aggregate marks the viewer or R computes the aggregates from
    the selection masks and Vega-Lite draws only those; GiottoVisuals marks such specs.
-5. **Per-cell data beyond metadata.** A shared per-cell store, filled from R on demand, for
+4. **Per-cell data beyond metadata.** A shared per-cell store, filled from R on demand, for
    gene-heavy panels (heatmaps, dot plots).
 
 Target panels: metadata histogram or bar, expression heatmap or dot plot of the selected
 cells, UMAP coloured by any `spatValues`. Done when one spec renders the same through ggplot,
 fastplotR and GiottoLens and a brush on it crossfilters the other views.
+
+The viewer's state (layout, panels, settings, rules) is kept by R while it runs; saving it to
+a file and restoring it in a later session is issue #21.
 
 ## The large-data path
 

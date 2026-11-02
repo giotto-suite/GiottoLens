@@ -40,8 +40,8 @@ R/
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
 inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   main.js            bootstrap and wiring
-  core/       state.js (runtime), store.ts (config + selection), comms.js (protocol),
-              remote.js (R commands), constants.js
+  core/       state.js (runtime), store.ts (config + selection), persist.ts (config saved
+              through R), comms.js (protocol), remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
@@ -49,7 +49,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   render/     render.js, schedule.js (requestRender), colors.ts
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
               dom.js, images.js
-  panels/     scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
+  panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
+              spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -136,14 +137,19 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
+- The config except rules and combine mode is saved through R (`core/persist.ts`, adr/0009):
+  sent on change as JSON text, kept verbatim in `private$config_json`, returned in `restore`.
+  Nothing is sent before the restore, so defaults never overwrite it. Bump `CONFIG_VERSION`
+  in `store.ts` and extend `migrate` when a saved field changes meaning.
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 2)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 3)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
-- A tab sends `ready` once its handlers are registered; R then sends metadata and rules.
+- A tab sends `ready` once its handlers are registered; R then sends the saved config
+  (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 
@@ -191,11 +197,25 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
 
+### Panels (adr/0009)
+
+- Only chart panels dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
+  not a panel. A panel's id names its slot, its selection source (`scatter` or
+  `scatter:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
+- A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip
+  work while `ctx.visible()` is false (`whenVisible()` in `controls.js`) and catch up in `show()`.
+- R keeps every pushed payload (`private$pushed`) until `remove_panel()` or `panel_closed`,
+  and re-sends it on `ready`. Built-in panels rebuild from metadata (`refreshBuiltins()`).
+- A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
+  its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
+  extent by field) so a rebuilt chart can draw it again.
+
 ### R API (the agent API)
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
+`set_layer()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
 `lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as

@@ -4,16 +4,19 @@
 // and reports the brush, which becomes a 'range' or 'categories' rule.
 // Grey bars: all cells. Blue: cells passing every *other* source (crossfilter)
 // or the whole selection ('or' mode).
+// The brush shows the panel's rule wherever the rule came from (this brush, R,
+// the rules restored after a reload), so a restored range can still be
+// scrubbed; a rule changed elsewhere redraws the chart to match.
 import { state } from '../core/state.js';
-import { store } from '../core/store.ts';
-import { maskExcept, setRangeRule, setCategoryRule } from '../selection/selection.ts';
-import { buildControlBar, chartArea, setTitle } from './controls.js';
+import { store, actions } from '../core/store.ts';
+import { maskExcept, setRangeRule } from '../selection/selection.ts';
+import { buildControlBar, chartArea, whenVisible } from './controls.js';
 
 const BINS = 40;
 let _embed = null;   // vega-embed, loaded on first use (keeps it out of first paint)
 const loadEmbed = () => (_embed ??= import('vega-embed').then(m => m.default));
 
-export function createHistogramPanel(body) {
+export function createHistogramPanel(body, ctx) {
   const cols = [...state.meta.values()];
   const def  = cols.find(c => c.kind === 'continuous' && !/umap|tsne|pca/i.test(c.name)) ?? cols[0];
   const ctrls = buildControlBar(body, [
@@ -21,6 +24,7 @@ export function createHistogramPanel(body) {
   ]);
   const area = chartArea(body);
   let view = null, col = null, source = null, edges = null, gen = 0;
+  let own = null;   // the rule this panel last set or drew
   const unsub = [];
 
   function counts() {
@@ -46,7 +50,18 @@ export function createHistogramPanel(body) {
     return Array.from(all, (a, j) => ({ bin0: edges[j], bin1: edges[j + 1], all: a, sel: fg ? sel[j] : 0 }));
   }
 
-  function spec(c, rows) {
+  const ruleOf = () => (source ? store.getState().rules[source] : undefined) ?? null;
+  const same = (a, b) => (!a && !b) || (!!a && !!b && a.kind === b.kind && a.space === b.space &&
+    !a.negate === !b.negate && JSON.stringify(a.params) === JSON.stringify(b.params));
+
+  // The brush's starting value from a rule on this column, if any
+  function brushFrom(c, rule) {
+    if (!rule || rule.space !== c.name || rule.negate) return undefined;
+    if (c.kind === 'categorical') return rule.kind === 'categories' ? rule.params.values.map(label => ({ label })) : undefined;
+    return rule.kind === 'range' ? { x: [rule.params.min, rule.params.max] } : undefined;
+  }
+
+  function spec(c, rows, value) {
     const cat = c.kind === 'categorical';
     const x = cat
       ? { field: 'label', type: 'nominal', sort: '-y', axis: { labelLimit: 80, title: null } }
@@ -59,8 +74,8 @@ export function createHistogramPanel(body) {
       data: { name: 'bins', values: rows },
       layer: [
         { params: [cat
-            ? { name: 'pick', select: { type: 'point', fields: ['label'], toggle: 'true' } }
-            : { name: 'brush', select: { type: 'interval', encodings: ['x'] } }],
+            ? { name: 'pick', select: { type: 'point', fields: ['label'], toggle: 'true' }, ...(value && { value }) }
+            : { name: 'brush', select: { type: 'interval', encodings: ['x'] }, ...(value && { value }) }],
           mark: { type: 'bar', color: '#4b5563' },
           encoding: { x, ...x2, y: { field: 'all', type: 'quantitative', title: null } } },
         { mark: { type: 'bar', color: '#3b82f6', opacity: 0.85 },
@@ -76,15 +91,15 @@ export function createHistogramPanel(body) {
   async function draw() {
     const my = ++gen;
     view?.finalize(); view = null;
-    if (source) setRangeRule(source, col, null);
     col = ctrls.col.value;
     source = `hist:${col}`;
     const c = state.meta.get(col);
     if (!c) return;
-    setTitle(body, col);
+    ctx.setTitle(col);
     const embed = await loadEmbed();
     if (my !== gen) return;
-    const res = await embed(area, spec(c, counts()), { actions: false, renderer: 'canvas' });
+    own = ruleOf();
+    const res = await embed(area, spec(c, counts(), brushFrom(c, own)), { actions: false, renderer: 'canvas' });
     if (my !== gen) { res.view.finalize(); return; }
     view = res.view;
     const cat = c.kind === 'categorical';
@@ -97,8 +112,13 @@ export function createHistogramPanel(body) {
       frame ||= requestAnimationFrame(() => {
         frame = 0;
         if (my !== gen) return;   // redrawn for another column meanwhile
-        if (cat) setCategoryRule(source, col, latest?.label ?? null);
-        else setRangeRule(source, col, latest?.bin0 ?? null);
+        const values = latest?.label, range = latest?.bin0;
+        const rule = cat
+          ? (values?.length ? { source, kind: 'categories', space: col, params: { values } } : null)
+          : (range ? { source, kind: 'range', space: col, params: { min: range[0], max: range[1] } } : null);
+        if (same(rule, ruleOf())) return;   // e.g. the brush drawn from the rule
+        own = rule;
+        actions.setRule(source, rule);
       });
     });
   }
@@ -108,12 +128,27 @@ export function createHistogramPanel(body) {
     view.data('bins', counts()).runAsync();
   }
 
-  ctrls.col.addEventListener('change', draw);
-  unsub.push(store.subscribe(s => s.selection.version, refresh));
-  unsub.push(store.subscribe(s => s.combine, refresh));
+  ctrls.col.addEventListener('change', () => {
+    // The old column's rule goes with it
+    own = null;
+    if (source) setRangeRule(source, col, null);
+    draw();
+  });
+  // A rule on this column set or dropped elsewhere: draw the brush to match
+  unsub.push(store.subscribe(s => s.rules, () => {
+    const r = ruleOf();
+    if (r === own || same(r, own)) return;
+    own = r;
+    draw();
+  }));
+  const counted = whenVisible(ctx, refresh);
+  unsub.push(store.subscribe(s => s.selection.version, counted.update));
+  unsub.push(store.subscribe(s => s.combine, counted.update));
   draw();
 
   return {
+    show: counted.show,
+    get view() { return view; },
     destroy() {
       gen++;
       unsub.forEach(u => u());

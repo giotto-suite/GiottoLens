@@ -52,7 +52,10 @@ viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
 viewer$show_genes(c("CD3E", "MS4A1"))
-viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"))
+viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"),
+                  where = "right")                # a docked panel; returns its id
+viewer$panels()                                   # what is docked, and where
+viewer$remove_panel("panel-1")
 viewer$push_polygons(regions)                     # SpatVector, sf or WKT
 viewer$screenshot("view.png")
 ```

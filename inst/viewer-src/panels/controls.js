@@ -1,4 +1,4 @@
-// Shared pieces of the stats panels: control bar, chart area, title
+// Shared pieces of the stats panels: control bar, chart area, hidden-panel updates
 import { createIcons, icons } from 'lucide';
 
 // fields: [{ key, label, options: [value | { value, label }], value }]
@@ -56,7 +56,13 @@ export function chartArea(body) {
   return a;
 }
 
-export function setTitle(body, title) {
-  const h = body.closest('.stats-pane')?.querySelector('.stats-pane-title');
-  if (h) h.textContent = title;
+// Runs `fn` now if the panel is in view, otherwise once it comes into view
+// (a background tab): `update()` where the panel would redraw, and the
+// returned `show` as the panel's PanelHandle.show (panels/dock.ts).
+export function whenVisible(ctx, fn) {
+  let stale = false;
+  return {
+    update() { if (ctx.visible()) { stale = false; fn(); } else stale = true; },
+    show() { if (stale) { stale = false; fn(); } },
+  };
 }
