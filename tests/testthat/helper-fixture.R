@@ -43,6 +43,43 @@ lens_fixture <- local({
     }
 })
 
+# The fixture as a giotto object with two images over the same 100 x 100
+# extent: "stain", a 1200 x 1200 16-bit COG (three overview levels) bright in
+# its top-left quadrant, so the drawn orientation can be checked; and "he", a
+# 600 x 600 RGB COG, JPEG-compressed (YCbCr, as H&E files are), red in its
+# top-left quadrant and blue elsewhere.
+lens_image_fixture <- local({
+    fx <- NULL
+    function() {
+        base <- lens_fixture()
+        if (!is.null(fx)) return(fx)
+        m <- matrix(100L, 1200L, 1200L)
+        m[1:600, 1:600] <- 4000L
+        file <- tempfile("stain", fileext = ".tif")
+        terra::writeRaster(terra::rast(m), file, filetype = "COG", datatype = "INT2U",
+            gdal = c("BLOCKSIZE=256", "COMPRESS=DEFLATE"))
+        img <- GiottoClass::createGiottoLargeImage(file, name = "stain", verbose = FALSE)
+        terra::ext(img) <- c(0, 100, -100, 0)
+
+        red <- matrix(0L, 600L, 600L)
+        red[1:300, 1:300] <- 255L
+        he <- terra::rast(list(terra::rast(red), terra::rast(0L * red), terra::rast(255L - red)))
+        rgb_file <- tempfile("he", fileext = ".tif")
+        terra::writeRaster(he, rgb_file, filetype = "COG", datatype = "INT1U",
+            gdal = c("BLOCKSIZE=256", "COMPRESS=JPEG"))
+        rgb_img <- GiottoClass::createGiottoLargeImage(rgb_file, name = "he", verbose = FALSE)
+        terra::ext(rgb_img) <- c(0, 100, -100, 0)
+        sw <- function(...) suppressMessages(suppressWarnings(...))
+        g <- sw(GiottoClass::giotto())
+        g <- sw(GiottoClass::setGiotto(g, base$gpolygons, verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, base$gpoints, verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, img, verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, rgb_img, verbose = FALSE))
+        fx <<- c(base, list(g = g, image_file = file, rgb_file = rgb_file))
+        fx
+    }
+})
+
 .Random.seed_or_null <- function() {
     if (exists(".Random.seed", globalenv())) get(".Random.seed", globalenv())
 }

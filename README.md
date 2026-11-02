@@ -50,6 +50,7 @@ viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
+viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
 viewer$show_genes(c("CD3E", "MS4A1"))
 viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"))
 viewer$push_polygons(regions)                     # SpatVector, sf or WKT
@@ -104,6 +105,10 @@ and the toolbar's rules button hides the strip.
   view's selection; Shift adds to it, Alt (Option) or Ctrl/Cmd subtracts from it, and × on
   its rule drops it. Sources combine as a union, or intersect in cross-filter mode.
   Selections cover all cells, not only those loaded.
+- **Images:** the object's images under the cells, each from its own TIFF file by tile
+  (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
+  colour and contrast each and add up like the channels of one image; RGB images (H&E) are
+  recognised from the file and drawn in their own colours beneath them.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
@@ -121,6 +126,8 @@ launch_lens()                        deck.gl (OrthographicView, Y up)
                     metadata          Vega-Lite panels (loaded on demand)
     files/          tile stores, whole
     data/           the same, by Range
+    image/<k>       image files,      Viv layers; JPEG-2000 decoded in
+                    by Range          workers (OpenJPEG WASM)
     ws              WebSocket ◄────►  requests, selections, logs, errors
 ```
 

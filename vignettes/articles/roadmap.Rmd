@@ -74,10 +74,11 @@ queries over transcripts, the work runs in R next to the files.
 
 ## Images
 
-Viv (deck.gl layers for OME-TIFF and OME-Zarr) with per-channel contrast and blending: COGs
-written by the suite through a custom pixel source first, then vendor OME-TIFFs, with
-JPEG-2000 decoded either in R or by a browser decoder. The viewer is on deck.gl 9.4, which
-Viv 0.23 requires; still needs multi-page image selection in GiottoClass.
+In place (design.Rmd "Images"): each image's TIFF file read by tile in the browser with Viv,
+pyramids from SubIFDs or COG overviews, JPEG-2000 decoded in workers, colour and contrast
+per image. Next: an image's page other than 1 (needs a page index in GiottoClass); retiring
+`dev/atera_images.R` once GiottoDisk's VRT fix puts the real file in `@file_path` (if images
+end up anywhere else, `.image_source()` is the one place to change); OME-Zarr; multi-sample (spaces) placement; intensity values in the tooltip.
 
 ## Plugins
 

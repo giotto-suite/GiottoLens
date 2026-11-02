@@ -14,7 +14,8 @@ launch_lens(
   host = "127.0.0.1",
   url_prefix = NULL,
   open = TRUE,
-  transfer = c("auto", "whole", "columns")
+  transfer = c("auto", "whole", "columns"),
+  images = NULL
 )
 
 serve_lens(...)
@@ -55,6 +56,12 @@ file in one request (fastest when the browser and R share a machine),
 (fewer bytes, for slow links such as SSH port forwards). \code{"auto"}
 (default) starts with whole tiles on a localhost URL and switches to
 columns if tiles arrive slowly.}
+
+\item{images}{Images to show under the cells when \code{x} is a giotto
+object: \code{NULL} (default) for all of its images, image names, or \code{FALSE}
+for none. The first is shown at launch and the others are listed, off.
+The viewer reads each image's TIFF file (\verb{@file_path}) in place, by
+tile; images without one are skipped with a message.}
 
 \item{...}{Passed to \code{\link[=launch_lens]{launch_lens()}}.}
 }

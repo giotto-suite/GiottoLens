@@ -35,6 +35,11 @@
 #'   (fewer bytes, for slow links such as SSH port forwards). `"auto"`
 #'   (default) starts with whole tiles on a localhost URL and switches to
 #'   columns if tiles arrive slowly.
+#' @param images     Images to show under the cells when `x` is a giotto
+#'   object: `NULL` (default) for all of its images, image names, or `FALSE`
+#'   for none. The first is shown at launch and the others are listed, off.
+#'   The viewer reads each image's TIFF file (`@file_path`) in place, by
+#'   tile; images without one are skipped with a message.
 #' @return A [LensViewer]; call `$close()` to stop the server.
 #' @export
 launch_lens <- function(
@@ -46,10 +51,12 @@ launch_lens <- function(
     host       = "127.0.0.1",
     url_prefix = NULL,
     open       = TRUE,
-    transfer   = c("auto", "whole", "columns")
+    transfer   = c("auto", "whole", "columns"),
+    images     = NULL
 ) {
     transfer <- match.arg(transfer)
     layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
+    imgs   <- .pick_images(x, images)
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -62,7 +69,7 @@ launch_lens <- function(
     viewer <- LensViewer$new(
         gpoints = layers$gpoints, gpolygons = layers$gpolygons,
         port = port, host = host, url_prefix = url_prefix, transfer = transfer,
-        spat_unit = if (inherits(x, "giotto")) spat_unit
+        spat_unit = if (inherits(x, "giotto")) spat_unit, images = imgs
     )
     if (open) .open_viewer(viewer$url)
     message("Viewer: ", viewer$url)
@@ -179,8 +186,9 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param url_prefix Base URL the browser uses
         #' @param transfer Tile transfer mode, see [launch_lens()]
         #' @param spat_unit Spatial unit the polygons belong to (for `subset()`)
+        #' @param images Named list of giottoLargeImage objects to show
         initialize = function(gpoints, gpolygons, port, host, url_prefix,
-                              transfer = "auto", spat_unit = NULL) {
+                              transfer = "auto", spat_unit = NULL, images = list()) {
             self$port         <- port
             private$spat_unit <- spat_unit
             private$token     <- .rand_id(24L)
@@ -189,10 +197,13 @@ LensViewer <- R6::R6Class("LensViewer",
                 paste0(port, "-", .rand_id(8L)))
             dir.create(file.path(private$session, "metadata"),
                 recursive = TRUE, showWarnings = FALSE)
+            imgs <- .image_entries(images)
+            private$image_names <- vapply(imgs$entries, `[[`, "", "name")
             private$cell_ids <- .export_session(gpoints, gpolygons,
-                output = file.path(private$session, "manifest.json"), transfer = transfer)
+                output = file.path(private$session, "manifest.json"), transfer = transfer,
+                images = imgs$entries)
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
-            private$start_server(host, .layer_mounts(gpoints, gpolygons))
+            private$start_server(host, .layer_mounts(gpoints, gpolygons), imgs$files)
             assign(as.character(port), self, envir = .lens_registry)
         },
 
@@ -316,10 +327,36 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Show or hide a layer, or set its opacity
-        #' @param name `"poly"`, `"tx"` or `"annotations"`
+        #' @param name `"poly"`, `"tx"`, `"annotations"` or `"img"` (all images)
         #' @param show,alpha Visibility and opacity (0–1); `NULL` leaves as is
         set_layer = function(name, show = NULL, alpha = NULL) {
             private$request("set_layer", list(name = name, show = show, alpha = alpha))
+            invisible(self)
+        },
+
+        #' @description Show or hide an image, or set its colour or contrast;
+        #'   `NULL` arguments leave a setting as is. Images draw under the
+        #'   cells, each in its own colour, added together;
+        #'   `set_layer("img", alpha = )` sets their opacity. RGB images
+        #'   (`state()$config$images[[name]]$rgb`) draw in their own colours and
+        #'   take only `show`.
+        #' @param name Image name (see `describe()`)
+        #' @param show Visibility
+        #' @param color Colour, as a name or hex string (`"#3d7dff"`)
+        #' @param contrast `c(low, high)`: pixel values shown as black and as
+        #'   full colour
+        set_image = function(name, show = NULL, color = NULL, contrast = NULL) {
+            if (!is.character(name) || length(name) != 1L || !name %in% private$image_names)
+                stop("[LensViewer] `name` must be one of the viewer's images: ",
+                    if (length(private$image_names)) paste(private$image_names, collapse = ", ")
+                    else "none", call. = FALSE)
+            if (!is.null(color))
+                color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            if (!is.null(contrast) && (!is.numeric(contrast) || length(contrast) != 2L))
+                stop("[LensViewer] `contrast` must be c(low, high)", call. = FALSE)
+            private$request("set_image", list(name = name, show = show,
+                color = if (!is.null(color)) as.list(color),
+                contrast = if (!is.null(contrast)) as.list(as.numeric(contrast))))
             invisible(self)
         },
 
@@ -370,6 +407,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 url = self$url, connected = self$connected(), n_cells = n,
                 view = st$view, color_by = st$config$colorBy,
                 layers = if (!is.null(st)) vapply(st$config$layers, function(l) isTRUE(l$show), NA),
+                images = if (!is.null(st)) vapply(st$config$images, function(l) isTRUE(l$show), NA),
                 combine = private$combine,
                 rules = vapply(private$rule_set, function(r) r$kind %||% "", ""),
                 selected = length(self$selection),
@@ -588,6 +626,7 @@ LensViewer <- R6::R6Class("LensViewer",
     private = list(
         token       = NULL,
         session     = NULL,
+        image_names = character(),
         cell_ids    = NULL,
         spat_unit   = NULL,
         sel_seq     = 0L,
@@ -646,7 +685,7 @@ LensViewer <- R6::R6Class("LensViewer",
             for (ws in as.list(private$conns)) try(ws$send(json), silent = TRUE)
         },
 
-        start_server = function(host, mounts) {
+        start_server = function(host, mounts, images = list()) {
             priv <- private
             pub  <- self
             handlers <- list(
@@ -713,6 +752,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     mounts      = mounts,
                     token       = private$token,
                     ws_handlers = handlers,
+                    images      = images,
                     # RStudio Server's proxy changes the Origin; the token
                     # still guards the socket
                     check_origin = .ide() != "rstudio-server"
@@ -743,6 +783,8 @@ print.lens_description <- function(x, ...) {
         line("view", sprintf("x %s to %s, y %s to %s (zoom %.2f)", b[1], b[2], b[3], b[4], x$view$zoom))
         if (!is.null(x$in_view)) line("in view", paste(format(x$in_view, big.mark = ","), "cells"))
         line("layers", paste(names(x$layers)[x$layers], collapse = ", "))
+        if (length(x$images))
+            line("images", paste0(names(x$images), ifelse(x$images, "", " (off)"), collapse = ", "))
         line("colour by", x$color_by %||% "none")
     }
     line("selected", sprintf("%s cells%s", format(x$selected, big.mark = ","),

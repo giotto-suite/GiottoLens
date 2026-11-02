@@ -59,3 +59,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0005](0005-own-point-decoder-sampling-before-decode.md) | Transcript tiles use an own JS decoder that samples before decoding | Accepted | 2026-10-30 |
 | [0006](0006-localhost-token-advisory-origin.md) | Serve on localhost under a per-launch token path; the Origin check is advisory | Accepted | 2026-10-30 |
 | [0007](0007-interactive-selection-not-through-spatrelate.md) | Interactive selection does not go through `spatRelate()` | Accepted | 2026-10-30 |
+| [0008](0008-images-read-by-the-browser-from-the-tiff.md) | Images are read by the browser from their TIFF file, JPEG-2000 decoded in workers | Accepted | 2026-10-31 |

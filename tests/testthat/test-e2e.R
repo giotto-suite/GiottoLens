@@ -425,3 +425,99 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     expect_true(browser_wait(br, "document.getElementById('rule-strip').style.display === 'none'"))
     expect_identical(br$errors(), character())
 })
+
+test_that("images draw under the cells in data coordinates, and R sets them", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$g, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    loaded <- paste0("(() => { const L = window.__giottolens?.state.deckgl?.layerManager?.getLayers() ?? [];",
+        " const im = L.filter(l => /^img-/.test(l.id) && !l.parent);",
+        " return im.length === 1 && im.every(l => l.isLoaded); })()")
+    expect_true(browser_wait(br, loaded))
+
+    # Pyramid from the COG's overview IFDs; contrast from the smallest level
+    img <- br$js("(() => { const i = window.__giottolens.state.images.get('stain');
+        return { levels: i.levels.length, width: i.width }; })()")
+    expect_identical(img, list(levels = 4L, width = 1200L))
+    st <- v$state()$config$images$stain
+    expect_true(st$show)
+    # (GDAL's overviews resample with cubic overshoot at the quadrant's edge)
+    expect_equal(unlist(st$contrast), c(100, 4000), tolerance = 0.1)
+
+    v$set_layer("poly", show = FALSE)
+    v$set_image("stain", color = "white", contrast = c(0, 4000))
+    expect_identical(unlist(v$state()$config$images$stain$color), c(255L, 255L, 255L))
+    expect_error(v$set_image("nope"), "must be one of the viewer's images: stain, he")
+    pump_until(function() FALSE, 0.3)
+    expect_true(browser_wait(br, loaded))
+
+    # The bright quadrant is the image's first rows and columns: top left
+    px <- function(x, y) br$js(sprintf(
+        "window.__giottolens.state.deckgl.getViewports()[0].project([%f, %f])", x, y))
+    shot <- png::readPNG(v$screenshot())
+    at <- function(p) shot[round(p[[2L]]) + 1L, round(p[[1L]]) + 1L, 1L]
+    expect_gt(at(px(25, -25)), 0.8)
+    expect_lt(at(px(75, -75)), 0.2)
+    expect_lt(at(px(75, -25)), 0.2)
+
+    # The contrast thumbs cannot pass each other, by pointer or keyboard
+    br$js("(() => { const [lo, hi] = document.querySelectorAll('#img-list .range2 input');
+        lo.value = 3000; lo.dispatchEvent(new Event('input'));
+        hi.value = 1000; hi.dispatchEvent(new Event('input')); })()")
+    ct <- unlist(v$state()$config$images$stain$contrast)
+    expect_identical(ct, c(3000L, 3001L))
+
+    # The RGB image is told apart by its TIFF tags: drawn in its own colours,
+    # with no colour or contrast to set
+    v$set_image("stain", show = FALSE)
+    expect_false(v$describe()$images[["stain"]])
+    v$set_image("he", show = TRUE)
+    he <- v$state()$config$images$he
+    expect_true(he$rgb)
+    expect_null(he$contrast)
+    expect_error(v$set_image("he", contrast = c(0, 10)), "RGB image; it has no colour or contrast")
+    expect_true(br$js("document.querySelectorAll('#img-list .img-item')[1].querySelector('.range2') === null"))
+    pump_until(function() FALSE, 0.3)
+    expect_true(browser_wait(br, loaded))
+    shot <- png::readPNG(v$screenshot())
+    tl <- shot[round(px(25, -25)[[2L]]) + 1L, round(px(25, -25)[[1L]]) + 1L, 1:3]
+    br_ <- shot[round(px(75, -75)[[2L]]) + 1L, round(px(75, -75)[[1L]]) + 1L, 1:3]
+    expect_gt(tl[1L], 0.8); expect_lt(tl[3L], 0.2)
+    expect_gt(br_[3L], 0.8); expect_lt(br_[1L], 0.2)
+    expect_identical(br$errors(), character())
+})
+
+test_that("flipped and rotated images are drawn where GiottoClass places them", {
+    fx <- lens_image_fixture()
+    turned <- GiottoClass::spin(GiottoClass::flip(fx$g@images$stain, direction = "horizontal"),
+        30, x0 = 10, y0 = 5)
+    turned@name <- "turned"
+    g <- suppressMessages(suppressWarnings(GiottoClass::setGiotto(fx$g, turned, verbose = FALSE)))
+    v <- launch_lens(g, open = FALSE, images = "turned")
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    loaded <- paste0("(() => { const L = window.__giottolens?.state.deckgl?.layerManager?.getLayers() ?? [];",
+        " const im = L.filter(l => /^img-/.test(l.id) && !l.parent);",
+        " return im.length === 1 && im.every(l => l.isLoaded); })()")
+    expect_true(browser_wait(br, loaded))
+    v$set_layer("poly", show = FALSE)
+    v$set_image("turned", color = "white", contrast = c(0, 4000))
+    v$set_view(bounds = as.vector(terra::ext(turned)))
+    pump_until(function() FALSE, 0.3)
+    expect_true(browser_wait(br, loaded))
+
+    # Centres of the bright and a dark quadrant, moved as GiottoClass moves points
+    at <- GiottoClass:::.affine_matrix(rbind(c(25, -25), c(75, -75)), turned@affine[])
+    shot <- png::readPNG(v$screenshot())
+    value <- function(xy) {
+        p <- br$js(sprintf("window.__giottolens.state.deckgl.getViewports()[0].project([%f, %f])",
+            xy[[1L]], xy[[2L]]))
+        shot[round(p[[2L]]) + 1L, round(p[[1L]]) + 1L, 1L]
+    }
+    expect_gt(value(at[1L, ]), 0.8)
+    expect_lt(value(at[2L, ]), 0.2)
+    expect_identical(br$errors(), character())
+})

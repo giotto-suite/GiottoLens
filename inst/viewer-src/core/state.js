@@ -7,6 +7,7 @@ export const state = {
   // App
   manifest: null, deckgl: null, tileTimer: null, currentViewState: null,
   geneIndex: null,          // Map gene name → index into manifest genes
+  images: null,             // Map image name → LensImage (data/images.ts), manifest order
 
   // Cells (data/cells.ts) and metadata (data/meta.ts)
   cells: null,              // { n, x, y, tiles, url }
