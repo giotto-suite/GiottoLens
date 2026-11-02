@@ -39,6 +39,7 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-set_view}{\code{LensViewer$set_view()}}
     \item \href{#method-LensViewer-color_by}{\code{LensViewer$color_by()}}
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
+    \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-show_genes}{\code{LensViewer$show_genes()}}
     \item \href{#method-LensViewer-screenshot}{\code{LensViewer$screenshot()}}
     \item \href{#method-LensViewer-log}{\code{LensViewer$log()}}
@@ -70,7 +71,8 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
   host,
   url_prefix,
   transfer = "auto",
-  spat_unit = NULL
+  spat_unit = NULL,
+  images = list()
 )}
     \if{html}{\out{</div>}}
   }
@@ -82,6 +84,7 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
       \item{\code{url_prefix}}{Base URL the browser uses}
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
       \item{\code{spat_unit}}{Spatial unit the polygons belong to (for \code{subset()})}
+      \item{\code{images}}{Named list of giottoLargeImage objects to show}
     }
     \if{html}{\out{</div>}}
   }
@@ -281,8 +284,36 @@ config (layers, colouring, rules, mode), view and counts.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{\code{"poly"}, \code{"tx"} or \code{"annotations"}}
+      \item{\code{name}}{\code{"poly"}, \code{"tx"}, \code{"annotations"} or \code{"img"} (all images)}
       \item{\code{show, alpha}}{Visibility and opacity (0–1); \code{NULL} leaves as is}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_image}{}}}
+\subsection{\code{LensViewer$set_image()}}{
+  Show or hide an image, or set its colour or contrast;
+\code{NULL} arguments leave a setting as is. Images draw under the
+cells, each in its own colour, added together;
+\code{set_layer("img", alpha = )} sets their opacity. RGB images
+(\code{state()$config$images[[name]]$rgb}) draw in their own colours and
+take only \code{show}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_image(name, show = NULL, color = NULL, contrast = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Image name (see \code{describe()})}
+      \item{\code{show}}{Visibility}
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
+      \item{\code{contrast}}{\code{c(low, high)}: pixel values shown as black and as
+full colour}
     }
     \if{html}{\out{</div>}}
   }

@@ -18,8 +18,10 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 }
 
 # Writes manifest.json (and cells.parquet) and returns the cell IDs in the
-# viewer's cell order (NULL without polygons).
-.export_session <- function(gpoints, gpolygons, output, transfer = "auto") {
+# viewer's cell order (NULL without polygons). `images`: manifest entries from
+# .image_entries().
+.export_session <- function(gpoints, gpolygons, output, transfer = "auto",
+                            images = list()) {
     layers <- list()
     extent <- NULL
     cells  <- NULL
@@ -40,8 +42,9 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     if (!length(layers))
         stop("[export_manifest] provide gpoints and/or gpolygons", call. = FALSE)
 
-    manifest <- list(version = "0.3.0", extent = extent, transfer = transfer,
+    manifest <- list(version = "0.4.0", extent = extent, transfer = transfer,
         layers = layers)
+    if (length(images)) manifest$images <- images
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
     cells$table$cell_ID
 }

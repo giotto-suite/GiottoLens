@@ -9,6 +9,7 @@ While a viewer runs (`launch_lens()` until `viewer$close()`), its server serves:
 
 - the viewer itself;
 - the GiottoDisk tile stores you launched it on, read-only;
+- the files of the images it shows, read-only, each file on its own (not its folder);
 - a temporary folder with the cell table and any metadata or panel data you pushed;
 - a WebSocket through which the page and R exchange selections and commands.
 

@@ -14,6 +14,7 @@ Description: An interactive web viewer for GiottoDisk-backed spatial biology dat
 License: MIT + file LICENSE
 Imports:
     arrow,
+    grDevices,
     httpuv (>= 1.5.2),
     jsonlite,
     later,
@@ -26,6 +27,7 @@ Suggests:
     curl,
     GiottoClass,
     GiottoDisk,
+    png,
     sf,
     terra,
     testthat (>= 3.0.0),

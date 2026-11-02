@@ -7,8 +7,20 @@ import { txDrawTiles, visibleTiles } from '../data/tiles.js';
 import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
+import { MultiscaleImageLayer } from '@vivjs/layers';
 
 const SEL = [255, 220, 50, 255];
+
+// Single-channel images add up: each draws its colour scaled by intensity on
+// top of the others, as the channels of one fluorescence image would. RGB
+// images (brightfield) blend normally and draw first: added, their white
+// background would wash out everything over it
+const ADDITIVE = {
+  blend: true,
+  blendColorOperation: 'add', blendColorSrcFactor: 'src-alpha', blendColorDstFactor: 'one',
+  blendAlphaOperation: 'add', blendAlphaSrcFactor: 'one', blendAlphaDstFactor: 'one',
+};
+const SELECTION = [{ t: 0, c: 0, z: 0 }];
 
 // deck.gl compares `data` by reference: a new object each render means
 // re-triangulating every polygon and re-uploading every buffer. Build each
@@ -30,6 +42,38 @@ export function renderLayers(viewState) {
 
   const selCountEl = document.getElementById('sel-count');
   if (selCountEl) selCountEl.textContent = sel.count > 0 ? `${sel.count.toLocaleString()} selected` : '';
+
+  // Images, under everything else, RGB first. A hidden image is left out
+  // rather than made invisible, so its tiles stop loading
+  if (s.layers.img.show && s.layers.img.alpha > 0 && state.images) {
+    const shown = [...state.images].filter(([name]) => s.images[name]?.show);
+    for (const [, img] of shown.filter(([, img]) => img.rgb)) {
+      layers.push(new MultiscaleImageLayer({
+        id: `img-${img.entry.url}`,
+        loader: img.levels,
+        selections: SELECTION,
+        modelMatrix: img.modelMatrix,
+        opacity: s.layers.img.alpha,
+        pickable: false,
+      }));
+    }
+    for (const [name, img] of shown.filter(([, img]) => !img.rgb)) {
+      const v = s.images[name];
+      layers.push(new MultiscaleImageLayer({
+        id: `img-${img.entry.url}`,
+        loader: img.levels,
+        selections: SELECTION,
+        colors: [v.color], contrastLimits: [v.contrast], channelsVisible: [true],
+        modelMatrix: img.modelMatrix,
+        opacity: s.layers.img.alpha,
+        // No low-resolution backdrop and no parent tiles under loaded ones:
+        // with additive blending, overlaps would draw twice as bright
+        excludeBackground: true, refinementStrategy: 'no-overlap',
+        parameters: ADDITIVE,
+        pickable: false,
+      }));
+    }
+  }
 
   const onHoverCell = idxOf => info => {
     if (!info.picked || info.index < 0) { hideCellTooltip(); return; }

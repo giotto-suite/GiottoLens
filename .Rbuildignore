@@ -11,3 +11,4 @@
 ^\.claude$
 ^SECURITY\.md$
 ^inst/viewer-dev$
+^dev$

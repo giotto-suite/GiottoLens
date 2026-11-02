@@ -6,8 +6,14 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 
-export type LayerName = 'poly' | 'tx' | 'annotations';
+export type LayerName = 'poly' | 'tx' | 'annotations' | 'img';
 export interface LayerVis { show: boolean; alpha: number }
+export interface ImageVis {
+  show: boolean;
+  rgb?: boolean;                 // a colour image: no colour or contrast of its own
+  color?: [number, number, number];
+  contrast?: [number, number];   // pixel values drawn as black and as full colour
+}
 export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush';
 export type Combine = 'or' | 'and';
 
@@ -20,6 +26,7 @@ export interface Annotation {
 
 export interface Config {
   layers: Record<LayerName, LayerVis>;
+  images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
   genes: number[];              // selected gene indices into manifest genes
@@ -46,7 +53,9 @@ export const initialConfig = (): Config => ({
     poly:        { show: true,  alpha: 0.6 },
     tx:          { show: false, alpha: 0.7 },
     annotations: { show: true,  alpha: 0.6 },
+    img:         { show: true,  alpha: 1 },
   },
+  images: {},
   txPalette: 0,
   colorAll: false,
   genes: [],
@@ -72,6 +81,9 @@ const get = store.getState;
 export const actions = {
   setLayer(name: LayerName, patch: Partial<LayerVis>) {
     set(s => ({ layers: { ...s.layers, [name]: { ...s.layers[name], ...patch } } }));
+  },
+  setImage(name: string, patch: Partial<ImageVis>) {
+    set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
   },
   setTxPalette(i: number) { set({ txPalette: i }); },
   setColorAll(on: boolean) { set({ colorAll: on }); },
