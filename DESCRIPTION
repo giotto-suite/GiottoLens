@@ -1,6 +1,6 @@
 Package: GiottoLens
 Title: Interactive Spatial Biology Viewer for GiottoDisk Data
-Version: 0.1.3
+Version: 0.1.4
 Authors@R: c(
 	person("Ruben", "Dries", email = "rubendries@gmail.com",
 		 role = c("aut", "cre"), comment = c(ORCID = "0000-0001-7650-7754")),
@@ -14,6 +14,7 @@ Description: An interactive web viewer for GiottoDisk-backed spatial biology dat
 License: MIT + file LICENSE
 Imports:
     arrow,
+    grDevices,
     httpuv (>= 1.5.2),
     jsonlite,
     later,
@@ -26,6 +27,7 @@ Suggests:
     curl,
     GiottoClass,
     GiottoDisk,
+    png,
     sf,
     terra,
     testthat (>= 3.0.0),

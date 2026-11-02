@@ -1,3 +1,13 @@
+# GiottoLens 0.1.4
+
+* Image support added:
+  * Compatibility for pyramidal OME-TIFF (Xenium's JPEG-2000 files) and COG.
+  * Affine transformed images are supported.
+  * `launch_lens(images =)` picks which images to include, and `viewer$set_image()` shows,
+    hides, colours or sets the contrast of one from R.
+  * An image that cannot be read by tile (not a TIFF, or large and stored without tiles or a
+    pyramid) is skipped with a message rather than loaded whole.
+
 # GiottoLens 0.1.3
 
 * Lasso and brush strokes work the same in both combine modes: a plain stroke replaces the

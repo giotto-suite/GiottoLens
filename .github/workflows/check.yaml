@@ -1,8 +1,9 @@
 name: check
 
+# main gets no CI runs: it only moves by release PRs, which are checked here.
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   pull_request:
 
 jobs:
@@ -23,8 +24,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # inst/viewer/ is built and committed by the bundle job after merge.
-      # Release PRs from dev carry the bundle commits made there.
+      # inst/viewer/ is built and committed on dev by the bundle job after merge.
       - name: PRs leave inst/viewer/ to CI
         if: github.event_name == 'pull_request' && github.head_ref != 'dev'
         run: |
@@ -32,10 +32,21 @@ jobs:
             echo "::error::This PR changes inst/viewer/. CI builds it after merge; run 'git restore inst/viewer' (or revert those changes) and push again."
             exit 1
           fi
+      # Release PRs (dev -> main) carry dev's bundle; it must match the source,
+      # e.g. not be merged before dev's bundle job has committed
+      - name: Release PRs carry a current inst/viewer/
+        if: github.event_name == 'pull_request' && github.head_ref == 'dev'
+        run: |
+          if [ -n "$(git status --porcelain -- ../viewer)" ]; then
+            git status --short -- ../viewer
+            echo "::error::inst/viewer/ on dev does not match its source. Wait for dev's bundle job to commit it, then rerun this check."
+            exit 1
+          fi
 
-  # Build the viewer after a merge and commit it, so installs from dev and main
-  # (install_github(), pak) get a bundle without Node. Pushes made with
-  # GITHUB_TOKEN do not start new workflow runs.
+  # Build the viewer after a merge into dev and commit it, so installs from dev
+  # and, after a release, main (install_github(), pak) get a bundle without
+  # Node. Pushes made with GITHUB_TOKEN do not start new workflow runs.
+  # Nothing here writes to main.
   bundle:
     if: github.event_name == 'push'
     needs: viewer

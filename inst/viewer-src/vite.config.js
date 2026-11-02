@@ -15,6 +15,8 @@ export default defineConfig({
   },
   // Relative asset URLs: the page is served under /lens/<token>/
   base: './',
+  // Module workers: the image worker loads geotiff's decoders on demand
+  worker: { format: 'es' },
   build: {
     outDir:      '../viewer',
     emptyOutDir: true,

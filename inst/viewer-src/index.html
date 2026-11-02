@@ -198,6 +198,36 @@
       border: 1px solid #374151; border-radius: 4px;
       color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
     }
+    #img-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #img-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    #img-list { max-height: 260px; overflow-y: auto; }
+    .img-item { margin-bottom: 6px; }
+    .img-item .alpha-row { margin-bottom: 2px; }
+    .img-name { flex: 1; color: #d1d5db; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .img-color { width: 18px; height: 14px; padding: 0; border: none; background: none; cursor: pointer; flex-shrink: 0; }
+    .img-tag { font-size: 9px; color: #9ca3af; border: 1px solid #374151; border-radius: 3px; padding: 0 3px; }
+    .img-contrast { display: flex; align-items: center; gap: 6px; padding-left: 22px; font-size: 10px; color: #9ca3af; }
+    .img-contrast span { min-width: 64px; text-align: right; font-family: monospace; }
+    .item-off .img-contrast { opacity: 0.35; }
+    /* Two thumbs on one track: two range inputs stacked, only their thumbs
+       take the pointer, so each drags its own end */
+    .range2 { position: relative; flex: 1; height: 14px; }
+    .range2-track, .range2-fill { position: absolute; top: 6px; height: 3px; border-radius: 2px; }
+    .range2-track { left: 0; right: 0; background: #374151; }
+    .range2 input[type=range] {
+      position: absolute; left: 0; top: 0; width: 100%; height: 14px; margin: 0;
+      background: none; pointer-events: none; -webkit-appearance: none; appearance: none;
+    }
+    .range2 input[type=range]::-webkit-slider-runnable-track { background: none; height: 14px; }
+    .range2 input[type=range]::-moz-range-track { background: none; }
+    .range2 input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; pointer-events: auto; cursor: pointer;
+      width: 10px; height: 10px; margin-top: 2px; border-radius: 50%; background: #d1d5db; border: none;
+    }
+    .range2 input[type=range]::-moz-range-thumb {
+      pointer-events: auto; cursor: pointer; width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; border: none;
+    }
+    .range2 input[type=range]:focus-visible::-webkit-slider-thumb { outline: 1px solid #9ca3af; }
     #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
     #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
@@ -434,6 +464,12 @@
         <div id="meta-legend"></div>
       </div>
     </div>
+    <div id="img-panel" style="display:none">
+      <h3 class="section-hd" data-target="img-body">Images<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="img-body" class="section-body">
+        <div id="img-list"></div>
+      </div>
+    </div>
     <div id="alpha-panel">
       <h3 class="section-hd" data-target="opacity-body">Opacity<i data-lucide="chevron-down" class="section-chevron"></i></h3>
       <div id="opacity-body" class="section-body">
@@ -448,6 +484,12 @@
           <label>transcripts</label>
           <input type="range" id="alpha-tx" min="0" max="100" value="70">
           <span class="alpha-val" id="val-tx">70</span>
+        </div>
+        <div class="alpha-row" id="img-alpha-row" style="display:none">
+          <input type="checkbox" id="show-img" checked>
+          <label>images</label>
+          <input type="range" id="alpha-img" min="0" max="100" value="100">
+          <span class="alpha-val" id="val-img">100</span>
         </div>
         <div class="alpha-row">
           <input type="checkbox" id="show-annotations" checked>

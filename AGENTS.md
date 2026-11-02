@@ -36,26 +36,32 @@ R/
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores
   metadata.R   prep_meta(), .write_metadata()
+  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
-inst/viewer-src/  Vite source (edit here, then npm run build)
+inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   main.js            bootstrap and wiring
   core/       state.js (runtime), store.ts (config + selection), comms.js (protocol),
               remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
-              tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js
+              tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
+              images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
   selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
   render/     render.js, schedule.js (requestRender), colors.ts
-  ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js, dom.js
+  ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
+              dom.js, images.js
   panels/     scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
+inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
 adr/          decision records
+dev/          development scripts, not in the package (dev/atera_images.R: until GiottoDisk's
+              VRT fix, points the Atera images back at their original OME-TIFFs)
 ```
 
 ## Workflow
 
 ```bash
-cd inst/viewer-src && npm ci && npm test && npm run typecheck && npm run build
+cd inst/viewer-src && npm ci && npm test && npm run typecheck && npm run build:dev
 ```
 
 ```r
@@ -66,9 +72,12 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - **Branches.** Feature branches open PRs against `dev` and are deleted on merge. `dev` →
   `main` is a release: bump the version in `DESCRIPTION`. Rulesets block deleting or
   force-pushing `dev` and `main`.
-- **Never commit `inst/viewer/`.** Build it locally to test, then `git restore inst/viewer`
-  before committing; a PR that changes it fails CI. After a merge, CI builds it and commits
-  it on `dev` or `main`, so installs from those branches need no Node.
+- **Never commit `inst/viewer/`.** Build locally with `npm run build:dev`, which writes the
+  untracked `inst/viewer-dev/`; `.viewer_dir()` serves it while it is newer than
+  `inst/viewer/`. `npm run build` writes `inst/viewer/` itself (CI's build); after using it,
+  `git restore inst/viewer`. A PR that changes `inst/viewer/` fails CI. After a merge into
+  `dev`, CI builds it and commits it there; a release PR into `main` fails if `dev`'s bundle
+  does not match its source. Installs from `dev` or `main` need no Node, and no CI writes to `main`.
 - The R-CMD-check CI job cannot install the suite's dependency chain yet; test locally.
 
 ## Key invariants
@@ -83,6 +92,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
     removed by `close()`;
   - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
   - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
+  - `.../image/<k>`: image file k only (never its folder), through `.data_response()`;
   - `.../ws`: the WebSocket.
 - httpuv `staticPath` ignores Range. Headers include `Content-Encoding: identity`
   (httpuv gzips otherwise, and fetch cannot opt out).
@@ -159,11 +169,33 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   from the cell table). One deck layer per tile. Every Range slice must be a 206; at most 6
   requests in flight per context.
 
+### Images (adr/0008)
+
+- The viewer reads `.image_source(img)` (today `@file_path`), page 1, and nothing else
+  decides the file. Non-TIFF sources (a VRT, a PNG, in memory) are skipped with a message.
+- Levels come from the TIFF itself (SubIFDs or COG overview IFDs), not OME-XML; Viv's
+  `loadOmeTiff()` misreads Xenium's per-channel files. Levels must halve and share a tile size.
+  Above 4096 px a side, a file in strips or without a pyramid is refused (`layoutProblem()`):
+  Viv would read it as one tile at every zoom.
+- A giottoAffineImage's `@affine` (applied as `xy %*% L + shift` to the raster's extent
+  coordinates) goes to the manifest as `affine` (`.image_affine()`) and is multiplied onto
+  the model matrix; the file and extent stay untransformed.
+- RGB is decided from the TIFF tags (`imageKind()`: 3 or 4 samples, 8-bit, RGB or YCbCr), not
+  in R. RGB images draw first with normal blending and have no colour or contrast.
+- One `MultiscaleImageLayer` per shown single-channel image, additive blending, `excludeBackground` and
+  `no-overlap` (overlaps would double brightness). Hidden images are left out of the layer
+  list so their tiles stop loading.
+- Decoding goes through `ImagePool` (`decode(fileDirectory, buffer)`); a decoder must be
+  registered in `img-worker.ts`, not on the main thread. Workers are ES modules
+  (`worker.format` in `vite.config.js`).
+- Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
+  R's `set_image()` and `set_layer("img")` map onto it.
+
 ### R API (the agent API)
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
+`set_layer()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
 `lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as

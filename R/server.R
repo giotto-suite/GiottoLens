@@ -14,6 +14,9 @@
 #                             thread follows symlinks, so a store with links
 #                             leading out of it goes through the handler
 #                             below instead, which checks real paths.
+#   /lens/<token>/image/<k>   image file k, one file per image, through the
+#                             Range handler (the viewer reads TIFF tiles by
+#                             Range). Only the listed files are served.
 #   /lens/<token>/ws          the WebSocket
 #
 # The viewer bundle and the data stores are never written to.
@@ -27,14 +30,16 @@
 )
 
 # `mounts`: named list of data directories (name → path).
+# `images`: named list of image files (k → path), see .image_entries().
 # `session_dir`: directory with manifest.json and metadata/.
 # `ws_handlers`: list(open = function(ws), message = function(ws, msg),
 #   close = function(ws)); `token`: the per-launch path segment.
 # `check_origin`: FALSE behind a proxy that changes the Origin (RStudio Server,
 #   Workbench); the token still guards the socket.
 .lens_app <- function(viewer_dir, session_dir, mounts, token, ws_handlers,
-                      check_origin = TRUE) {
+                      check_origin = TRUE, images = list()) {
     mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
+    images <- lapply(images, normalizePath, mustWork = TRUE)
     root <- .lens_root(token)
     static <- function(dir, index = FALSE) httpuv::staticPath(dir,
         indexhtml = index, fallthrough = FALSE, headers = .static_headers)
@@ -42,12 +47,12 @@
         if (.links_outside(m)) httpuv::excludeStaticPath() else static(m))
     paths <- c(
         stats::setNames(list(static(viewer_dir, index = TRUE), static(session_dir),
-            httpuv::excludeStaticPath()),
-            paste0(root, c("", "/session", "/data"))),
+            httpuv::excludeStaticPath(), httpuv::excludeStaticPath()),
+            paste0(root, c("", "/session", "/data", "/image"))),
         stats::setNames(files, paste0(root, "/files/", names(mounts)))
     )
     list(
-        call = function(req) .data_response(req, mounts, root),
+        call = function(req) .data_response(req, mounts, root, images),
         staticPaths = paths,
         onWSOpen = function(ws) {
             if (!.ws_allowed(ws$request, token, check_origin)) {
@@ -100,11 +105,18 @@
 # viewer download every column of every tile. This handler answers single
 # byte ranges with 206. It runs on R's main thread, so requests wait while R
 # is busy (adr/0004). `root`: the /lens/<token> prefix. It also answers
-# files/<m>/ for stores not mounted statically (.links_outside()).
+# files/<m>/ for stores not mounted statically (.links_outside()), and
+# image/<k> for the files in `images`.
 
-.data_response <- function(req, mounts, root) {
+.data_response <- function(req, mounts, root, images = list()) {
     # A %00 cannot be decoded into an R string
     path <- tryCatch(utils::URLdecode(req$PATH_INFO %||% ""), error = function(e) "")
+    image_prefix <- paste0(root, "/image/")
+    if (startsWith(path, image_prefix)) {
+        file <- images[[substring(path, nchar(image_prefix) + 1L)]]
+        if (is.null(file) || !file.exists(file)) return(.http_status(404L))
+        return(.file_response(req, file))
+    }
     m <- NULL
     for (prefix in paste0(root, c("/data/", "/files/"))) {
         if (!startsWith(path, prefix)) next
@@ -120,7 +132,11 @@
     if (!file.exists(file) || dir.exists(file)) return(.http_status(404L))
     if (!startsWith(normalizePath(file), paste0(root, "/")))
         return(.http_status(404L))
+    .file_response(req, file)
+}
 
+# One file, whole or a single byte range
+.file_response <- function(req, file) {
     method <- req$REQUEST_METHOD %||% "GET"
     if (!method %in% c("GET", "HEAD")) return(.http_status(405L))
     size    <- file.size(file)

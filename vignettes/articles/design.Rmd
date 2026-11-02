@@ -43,6 +43,7 @@ launch_lens()                               deck.gl (OrthographicView, Y up)
                      metadata, panel data    Vega-Lite panels (loaded on demand)
     files/           tile stores, whole
     data/            tile stores, by Range
+    image/<k>        image files, by Range    Viv layers, JPEG-2000 in workers
     ws               WebSocket <----------->  requests, selections, rules, logs, errors
 ```
 
@@ -144,6 +145,57 @@ ZSTD, GZIP, LZ4_RAW and Hadoop LZ4.
 
 At zoomed-out views loading is now bound by bytes, not decoding, which is what the planned
 coarse tier addresses.
+
+## Images
+
+An image is one TIFF file, page 1: `.image_source()` returns the giottoLargeImage's
+`@file_path`, and that function is the only place that decides which file the viewer reads.
+R puts the file and the image's extent in the manifest and serves the file alone at
+`image/<k>` through the Range handler; the browser does the rest (adr/0008).
+
+The browser opens each file with geotiff and builds one Viv pixel source per pyramid level,
+from the file's own structure: SubIFDs (OME-TIFF, Xenium) or the reduced-resolution IFDs
+after the first (COG overviews). Viv's `loadOmeTiff()` is not used: each of Xenium's
+per-channel files carries OME-XML for the whole channel set, which that loader reads as a
+four-channel file. A file larger than 4096 pixels a side that is stored in strips or has no
+pyramid is refused with a message, since Viv would read it whole at every zoom (the Atera
+vault's DAPI is such a file: 46543 x 28048 in 2-row strips). The extent becomes the layer's model matrix, so images sit in data
+coordinates with row 0 at the top, and Viv's zoom offset follows the matrix's scale. A
+flipped, rotated or registered image (a giottoAffineImage) keeps its file and raster
+untransformed and the transform in `@affine`; R sends that affine with the extent, and the
+browser multiplies it onto the model matrix, so the image is drawn where GiottoClass places it
+without resampling.
+
+Whether an image is RGB comes from its TIFF tags: 3 or 4 samples of 8 bits whose
+PhotometricInterpretation is RGB, or YCbCr (JPEG-compressed RGB, as H&E files usually are).
+Its pixel source then has a trailing sample dimension, and Viv draws it as colour, converting
+YCbCr in its shader. Any other multi-sample file is a channel stack, not shown yet. Deciding
+from the file rather than in R keeps `.image_source()` the only input: the raster R holds
+can describe another file (a VRT).
+
+RGB images draw first with normal blending; added, a brightfield image's white background
+would wash out everything over it. Each single-channel image is its own
+`MultiscaleImageLayer` above them, blended additively, so images add up like channels; overlapping tiles would then draw twice as bright, so there is no
+low-resolution backdrop and no parent tile under a loaded one. A hidden image is removed from
+the layer list, not made invisible, so its tiles stop loading. Default contrast is the 0.5th
+to 99.9th percentile of the nonzero pixels of the smallest level.
+
+Tiles decode in a worker pool (`data/img-pool.ts`): geotiff's decoders plus JPEG-2000 through
+OpenJPEG compiled to WASM (260 KB, loaded by the workers only). geotiff's own pool cannot take
+a decoder registered on the main thread, and leaves a tile waiting forever when decoding fails.
+
+Measured on the Atera example (four 46543 x 28048 16-bit JPEG-2000 files, 8 levels each,
+headless Chrome, browser and R on one machine):
+
+| Step | Time |
+|---|---|
+| Open four images (headers, smallest level, contrast) | 0.24 s |
+| Overview drawn | 0.31 s |
+| Jump to full resolution, three images (45 requests, 12 MB) | 0.62 s |
+| Decode one dense 1024 x 1024 tile (node, one thread) | 128 ms |
+
+Against GDAL decoding the same codestream, about 1% of pixels differ by exactly 1: rounding
+in the lossy wavelet between OpenJPEG builds.
 
 ## The R API is the agent API
 

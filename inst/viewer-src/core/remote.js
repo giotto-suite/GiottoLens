@@ -7,7 +7,7 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 
-const LAYERS = ['poly', 'tx', 'annotations'];
+const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
 // Camera plus the data-space box on screen (xmin, xmax, ymin, ymax)
 function viewInfo(vs) {
@@ -59,6 +59,15 @@ export function initRemote() {
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
   });
 
+  onMessage('set_image', ({ name, show, color, contrast }) => {
+    const img = store.getState().images[name];
+    if (!img) throw new Error(`no image '${name}'`);
+    if (img.rgb && (color || contrast))
+      throw new Error(`'${name}' is an RGB image; it has no colour or contrast to set`);
+    actions.setImage(name, { ...(show != null && { show }), ...(color && { color }),
+      ...(contrast && { contrast }) });
+  });
+
   onMessage('set_genes', ({ genes }) => {
     const idx = (genes ?? []).map(g => state.geneIndex.get(g)).filter(i => i != null);
     actions.clearGenes();
@@ -78,6 +87,10 @@ export function initRemote() {
       if (rules[src] !== prev[src]) log(rules[src] ? 'select' : 'clear', { source: src, kind: rules[src]?.kind ?? null });
   });
   store.subscribe(s => s.colorBy, c => log('color_by', { column: c }));
+  store.subscribe(s => s.images, (imgs, prev) => {
+    for (const [name, v] of Object.entries(imgs))
+      if (prev[name] && v.show !== prev[name].show) log('image', { name, show: v.show });
+  });
   store.subscribe(s => s.combine, c => log('combine', { mode: c }));
   store.subscribe(s => s.annotations.length, n => log('annotations', { count: n }));
 }

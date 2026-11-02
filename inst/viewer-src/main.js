@@ -6,6 +6,8 @@ import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
 import { loadMeta } from './data/meta.ts';
+import { openImage } from './data/images.ts';
+import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { cellColorBuffer } from './render/colors.ts';
@@ -16,6 +18,7 @@ import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
+import { initImagePanel } from './ui/images.js';
 import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
 import { createScatterPanel } from './panels/scatter.js';
 import { createHistogramPanel } from './panels/histogram.js';
@@ -69,6 +72,26 @@ function recolorCells() {
   actions.bumpMeta();
 }
 
+// ── Images ────────────────────────────────────────────────────────────────────
+// Opened in manifest order; the first is shown. One that fails to open is
+// reported to R and left out.
+const IMAGE_COLORS = [[64, 128, 255], [0, 255, 128], [255, 64, 64], [255, 200, 0], [255, 0, 255], [0, 255, 255]];
+async function loadImages(entries) {
+  if (!entries.length) return;
+  const pool = new ImagePool();
+  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool)));
+  state.images = new Map();
+  opened.forEach((r, i) => {
+    if (r.status === 'rejected') { reportError(r.reason, `image '${entries[i].name}' is not shown`); return; }
+    const img = r.value, k = state.images.size;
+    state.images.set(img.entry.name, img);
+    const channels = [...state.images.values()].filter(i => !i.rgb).length;
+    actions.setImage(img.entry.name, img.rgb ? { show: k === 0, rgb: true } : {
+      show: k === 0, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
+    });
+  });
+}
+
 // ── Stats panels ──────────────────────────────────────────────────────────────
 // Pane i shows either a built-in panel or a spec pushed from R; a pushed spec
 // stays until replaced, and metadata reloads leave it alone.
@@ -100,6 +123,7 @@ async function main() {
       if (t.file) t.file = new URL(t.file, document.baseURI).href;
     }
   setTransfer(state.manifest.transfer ?? 'auto');
+  const imagesLoaded = loadImages(state.manifest.images ?? []);
 
   const txLayer   = state.manifest.layers.transcripts;
   const polyLayer = state.manifest.layers.polygons;
@@ -206,6 +230,7 @@ async function main() {
   bindLayerControl('poly',        'show-poly',        'alpha-poly',        'val-poly');
   bindLayerControl('tx',          'show-tx',          'alpha-tx',          'val-tx');
   bindLayerControl('annotations', 'show-annotations', 'alpha-annotations', 'val-annotations');
+  bindLayerControl('img',         'show-img',         'alpha-img',         'val-img');
 
   const $colSel = document.getElementById('meta-col-select');
   $colSel?.addEventListener('change', e => actions.setColorBy(e.target.value || null));
@@ -243,6 +268,10 @@ async function main() {
     actions.addAnnotations((polygons ?? []).map(p => ({
       id: generateAnnotId(), type: 'polygon', name: p.name ?? '', coords: p.coords,
     }))));
+
+  // Before R can ask about images
+  await imagesLoaded;
+  initImagePanel();
 
   initRemote();
   initComms();   // after every handler is registered
