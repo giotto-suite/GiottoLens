@@ -6,7 +6,8 @@
 # Message types the viewer sends; anything else arriving on the socket is
 # dropped. `on()` callbacks can be registered for the first two.
 .lens_inbound_types <- c("cell_selection", "annotations_update",
-    "ready", "reply", "client_error", "log", "config", "panel_closed")
+    "ready", "reply", "client_error", "log", "config", "panel_closed",
+    "set_column_type")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Parse and validate one WebSocket text frame.

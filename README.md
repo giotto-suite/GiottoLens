@@ -52,6 +52,12 @@ viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
+viewer$set_outline(color = "black", width = 2, alpha = 1)  # cell outline colour, width (px), opacity
+viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category colour, on/off, fill opacity
+                        alpha = c(0.2, Myeloid = 1))
+viewer$set_column_type("leiden_clus", "categorical")       # numeric column shown as categories
+viewer$set_color_scale("nr_feats", preset = "viridis")      # continuous scale: preset, or
+viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colours
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
 viewer$show_genes(c("CD3E", "MS4A1"))

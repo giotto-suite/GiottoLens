@@ -1,6 +1,6 @@
 import { state } from './core/state.js';
 import { store, actions } from './core/store.ts';
-import { initComms, onMessage, reportError } from './core/comms.js';
+import { initComms, onMessage, reportError, sendToR } from './core/comms.js';
 import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
@@ -60,12 +60,61 @@ function bindLayerControl(name, checkId, sliderId, valId) {
   slider.addEventListener('input', () => actions.setLayer(name, { alpha: slider.value / 100 }));
 }
 
+// Cell outline colour, width and opacity (store.outline)
+function bindOutlineControl() {
+  const color  = document.getElementById('outline-color');
+  const hexIn  = document.getElementById('outline-hex');
+  const slider = document.getElementById('outline-width');
+  const num    = document.getElementById('outline-width-num');
+  const alpha  = document.getElementById('outline-alpha');
+  const alphaV = document.getElementById('val-outline-alpha');
+  const reset  = document.getElementById('outline-reset');
+  if (!color || !slider || !alpha) return;
+  const hex = c => '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+  const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const isHex = h => /^#[0-9a-fA-F]{6}$/.test(h);
+  const sync = ({ color: c, width, alpha: a }) => {
+    color.value = hex(c);
+    if (hexIn && document.activeElement !== hexIn) hexIn.value = hex(c);
+    slider.value = String(Math.log10(width));
+    if (num && document.activeElement !== num) num.value = String(width);
+    alpha.value = String(Math.round(a * 100));
+    if (alphaV) alphaV.textContent = alpha.value;
+  };
+  sync(store.getState().outline);
+  store.subscribe(s => s.outline, sync);
+  color.addEventListener('input', () => actions.setOutline({ color: rgb(color.value) }));
+  hexIn?.addEventListener('input', () => {
+    const h = hexIn.value.startsWith('#') ? hexIn.value : '#' + hexIn.value;
+    if (isHex(h)) actions.setOutline({ color: rgb(h.toLowerCase()) });
+  });
+  hexIn?.addEventListener('blur', () => { hexIn.value = hex(store.getState().outline.color); });
+  document.querySelectorAll('.outline-preset').forEach(b =>
+    b.addEventListener('click', () => actions.setOutline({ color: rgb(b.dataset.color) })));
+  // log10 slider: 4 significant digits, kept within [0.01, 20]
+  slider.addEventListener('input', () => {
+    const w = Math.min(20, Math.max(0.01, Number((10 ** Number(slider.value)).toPrecision(4))));
+    actions.setOutline({ width: w });
+  });
+  num?.addEventListener('change', () => {
+    const w = Number(num.value);
+    if (Number.isFinite(w) && w >= 0.01 && w <= 20) actions.setOutline({ width: w });
+    else num.value = String(store.getState().outline.width);
+  });
+  alpha.addEventListener('input', () => actions.setOutline({ alpha: alpha.value / 100 }));
+  reset?.addEventListener('click', () => actions.resetOutline());
+}
+
 // ── Cell colours ──────────────────────────────────────────────────────────────
 function recolorCells() {
   if (!state.cells) return;
-  const col = store.getState().colorBy;
-  const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null);
+  const s = store.getState();
+  const col = s.colorBy;
+  const { colors, fill, legend } = cellColorBuffer(state.cells.n,
+    col ? state.meta?.get(col) ?? null : null, col ? s.categoryStyles[col] : undefined,
+    col ? s.colorScales[col] : undefined);
   state.cellColors  = colors;
+  state.cellFill    = fill;
   state.colorLegend = legend;
   renderLegend();
   actions.bumpMeta();
@@ -162,6 +211,8 @@ async function main() {
   initRenderScheduler();
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
+  store.subscribe(s => s.categoryStyles, recolorCells);
+  store.subscribe(s => s.colorScales, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], () => { invalidateTx(); renderGeneList(); },
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
@@ -210,13 +261,34 @@ async function main() {
 
   // ── Layers ────────────────────────────────────────────────────────────────
   bindLayerControl('poly',        'show-poly',        'alpha-poly',        'val-poly');
+  bindOutlineControl();
   bindLayerControl('tx',          'show-tx',          'alpha-tx',          'val-tx');
   bindLayerControl('annotations', 'show-annotations', 'alpha-annotations', 'val-annotations');
   bindLayerControl('img',         'show-img',         'alpha-img',         'val-img');
 
   const $colSel = document.getElementById('meta-col-select');
   $colSel?.addEventListener('change', e => actions.setColorBy(e.target.value || null));
-  store.subscribe(s => s.colorBy, c => { if ($colSel) $colSel.value = c ?? ''; });
+  // "treat as": numeric columns only; R re-sends the metadata with the new type
+  const $typeRow = document.getElementById('meta-type-row');
+  const $typeSel = document.getElementById('meta-type-select');
+  const syncType = () => {
+    const col = store.getState().colorBy;
+    const m = col ? state.meta?.get(col) : null;
+    if ($typeRow) $typeRow.style.display = m?.numeric ? '' : 'none';
+    if ($typeSel && m?.numeric) { $typeSel.value = m.kind; $typeSel.disabled = false; }
+  };
+  $typeSel?.addEventListener('change', () => {
+    const column = store.getState().colorBy;
+    if (!column) return;
+    // rules on the column no longer apply once its type changes
+    for (const [src, r] of Object.entries(store.getState().rules))
+      if (r?.space === column) actions.setRule(src, null);
+    $typeSel.disabled = true;   // until the new metadata arrives
+    sendToR('set_column_type', { column, type: $typeSel.value });
+    // R refused (see its console): back to the column's current type
+    setTimeout(syncType, 5000);
+  });
+  store.subscribe(s => s.colorBy, c => { if ($colSel) $colSel.value = c ?? ''; syncType(); });
 
   // ── R → viewer messages ───────────────────────────────────────────────────
   let metaUrl = null;
@@ -232,7 +304,8 @@ async function main() {
     }
     const colorBy = store.getState().colorBy;
     if (colorBy && !state.meta.has(colorBy)) actions.setColorBy(null);
-    else recolorCells();
+    else { if ($colSel) $colSel.value = colorBy ?? ''; recolorCells(); }
+    syncType();
     // Rules on metadata columns re-evaluate against the new table
     recompute({ reset: true });
     refreshBuiltins();

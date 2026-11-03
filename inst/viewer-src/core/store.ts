@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
+import type { CategoryStyle, ColorScale } from '../render/colors.ts';
 
 export type LayerName = 'poly' | 'tx' | 'annotations' | 'img';
 export interface LayerVis { show: boolean; alpha: number }
@@ -24,6 +25,11 @@ export interface CellMark {
   size?: number;
   angle?: number;
 }
+export interface OutlineStyle {
+  color: [number, number, number];   // cell outline colour
+  width: number;                     // cell outline width, screen pixels
+  alpha: number;                     // cell outline opacity, 0-1
+}
 export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush';
 export type Combine = 'or' | 'and';
 
@@ -36,11 +42,15 @@ export interface Annotation {
 
 export interface Config {
   layers: Record<LayerName, LayerVis>;
+  outline: OutlineStyle;
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
   genes: number[];              // selected gene indices into manifest genes
   colorBy: string | null;       // metadata column colouring the cells
+  // per categorical column, per category: colour, visibility, fill opacity
+  categoryStyles: Record<string, Record<string, CategoryStyle>>;
+  colorScales: Record<string, ColorScale>;   // per continuous column
   cellMark: CellMark;           // how cells are drawn zoomed in, over the launch mark
   rules: Record<string, Rule>;  // selection rule per source
   combine: Combine;             // 'and' = crossfilter
@@ -67,11 +77,14 @@ export const initialConfig = (): Config => ({
     annotations: { show: true,  alpha: 0.6 },
     img:         { show: true,  alpha: 1 },
   },
+  outline: { color: [255, 255, 255], width: 1, alpha: 0.8 },
   images: {},
   txPalette: 0,
   colorAll: false,
   genes: [],
   colorBy: null,
+  categoryStyles: {},
+  colorScales: {},
   cellMark: {},
   rules: {},
   combine: 'or',
@@ -134,6 +147,10 @@ export const actions = {
   setLayer(name: LayerName, patch: Partial<LayerVis>) {
     set(s => ({ layers: { ...s.layers, [name]: { ...s.layers[name], ...patch } } }));
   },
+  setOutline(patch: Partial<OutlineStyle>) {
+    set(s => ({ outline: { ...s.outline, ...patch } }));
+  },
+  resetOutline() { set({ outline: initialConfig().outline }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
   },
@@ -146,6 +163,29 @@ export const actions = {
   addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
   clearGenes() { set({ genes: [] }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  // patch the styles of some categories of `column`
+  setCategoryStyles(column: string, patch: Record<string, Partial<CategoryStyle>>) {
+    set(s => {
+      const cur = { ...(s.categoryStyles[column] ?? {}) };
+      for (const [label, p] of Object.entries(patch)) cur[label] = { ...(cur[label] ?? {}), ...p };
+      return { categoryStyles: { ...s.categoryStyles, [column]: cur } };
+    });
+  },
+  setColorScale(column: string, patch: Partial<ColorScale>) {
+    set(s => ({ colorScales: { ...s.colorScales, [column]: { ...(s.colorScales[column] ?? {}), ...patch } } }));
+  },
+  resetColorScale(column: string) {
+    set(s => {
+      const { [column]: _, ...rest } = s.colorScales;
+      return { colorScales: rest };
+    });
+  },
+  resetCategoryStyles(column: string) {
+    set(s => {
+      const { [column]: _, ...rest } = s.categoryStyles;
+      return { categoryStyles: rest };
+    });
+  },
   // Fields in `patch` replace the mark's; null goes back to the launch mark
   setCellMark(patch: CellMark | null) {
     set({ cellMark: patch ? { ...get().cellMark, ...patch } : {} });

@@ -184,11 +184,42 @@
 
     #meta-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
     #meta-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    #meta-legend { margin-top: 6px; max-height: 140px; overflow-y: auto; }
+    #meta-legend { margin-top: 6px; max-height: 220px; overflow-y: auto; }
     #meta-legend::-webkit-scrollbar { width: 4px; }
     #meta-legend::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
     .legend-item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .legend-show { flex-shrink: 0; margin: 0; cursor: pointer; accent-color: #4b5563; }
+    .legend-color { width: 12px; height: 12px; padding: 0; border: none; border-radius: 50%; background: none; flex-shrink: 0; cursor: pointer; }
+    .legend-color::-webkit-color-swatch-wrapper { padding: 0; }
+    .legend-color::-webkit-color-swatch { border: none; border-radius: 50%; }
+    .legend-color::-moz-color-swatch { border: none; border-radius: 50%; }
+    .legend-item .legend-label { flex: 1; min-width: 0; cursor: default; }
+    .legend-alpha { width: 64px; height: 3px; flex-shrink: 0; accent-color: #4b5563; cursor: pointer; }
+    .legend-alpha:disabled { opacity: 0.3; cursor: default; }
+    .legend-alpha-val { width: 22px; text-align: right; font-size: 10px; color: #6b7280; flex-shrink: 0; }
+    .legend-off .legend-label { color: #4b5563; }
+    .legend-off .legend-color { opacity: 0.35; }
+    .legend-actions { display: flex; gap: 4px; margin-bottom: 4px; }
+    .scale-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+    .scale-preset { background: #111827; border: 1px solid #374151; border-radius: 3px; color: #e5e7eb; font-size: 11px; padding: 1px 2px; }
+    .scale-rev { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #9ca3af; cursor: pointer; }
+    .scale-rev input { margin: 0; accent-color: #4b5563; }
+    .scale-reset, .scale-add, .scale-del {
+      background: #1f2937; border: 1px solid #374151; border-radius: 3px; color: #9ca3af;
+      font-size: 10px; padding: 1px 6px; cursor: pointer;
+    }
+    .scale-reset { margin-left: auto; }
+    .scale-reset:hover, .scale-add:hover, .scale-del:hover { background: #374151; color: #e5e7eb; }
+    .scale-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 5px; }
+    .scale-stop { display: inline-flex; align-items: center; gap: 1px; }
+    .scale-color { width: 18px; height: 16px; padding: 0; border: 1px solid #374151; border-radius: 3px; background: none; cursor: pointer; }
+    .scale-del { padding: 0 3px; line-height: 12px; }
+    .legend-actions button {
+      background: #1f2937; border: 1px solid #374151; border-radius: 3px; color: #9ca3af;
+      font-size: 10px; padding: 1px 6px; cursor: pointer;
+    }
+    .legend-actions button:hover { background: #374151; color: #e5e7eb; }
     .legend-label { font-size: 11px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .legend-overflow { font-size: 10px; color: #4b5563; padding-top: 2px; }
     .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
@@ -236,6 +267,23 @@
     .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
     .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
     .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
+    #outline-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #outline-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    #outline-color { width: 22px; height: 18px; padding: 0; border: 1px solid #374151; border-radius: 3px; background: none; flex-shrink: 0; cursor: pointer; }
+    #outline-hex, #outline-width-num {
+      background: #111827; border: 1px solid #374151; border-radius: 3px; color: #e5e7eb;
+      font: inherit; font-size: 11px; padding: 1px 4px;
+    }
+    #outline-hex { width: 64px; }
+    #outline-width-num { width: 58px; }
+    .outline-presets { display: flex; gap: 4px; }
+    .outline-preset { width: 14px; height: 14px; border: 1px solid #4b5563; border-radius: 3px; cursor: pointer; padding: 0; }
+    .outline-preset:hover { border-color: #e5e7eb; }
+    #outline-reset {
+      background: #1f2937; border: 1px solid #374151; border-radius: 3px; color: #9ca3af;
+      font-size: 11px; padding: 2px 8px; cursor: pointer; margin-left: auto;
+    }
+    #outline-reset:hover { background: #374151; color: #e5e7eb; }
 
     #main-layout {
       position: absolute; top: 0; left: 0; bottom: 0; right: 260px;
@@ -459,6 +507,13 @@
           <label>color by</label>
           <select id="meta-col-select"><option value="">none</option></select>
         </div>
+        <div class="alpha-row" id="meta-type-row" style="display:none">
+          <label>treat as</label>
+          <select id="meta-type-select" title="show this numeric column as a continuous scale or as categories">
+            <option value="continuous">continuous</option>
+            <option value="categorical">categorical</option>
+          </select>
+        </div>
         <div id="meta-legend"></div>
       </div>
     </div>
@@ -466,6 +521,35 @@
       <h3 class="section-hd" data-target="img-body">Images<i data-lucide="chevron-down" class="section-chevron"></i></h3>
       <div id="img-body" class="section-body">
         <div id="img-list"></div>
+      </div>
+    </div>
+    <div id="outline-panel">
+      <h3 class="section-hd" data-target="outline-body">Cell outlines<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="outline-body" class="section-body">
+        <div class="alpha-row">
+          <label>color</label>
+          <input type="color" id="outline-color" value="#ffffff" title="outline colour">
+          <input type="text" id="outline-hex" value="#ffffff" maxlength="7" spellcheck="false" title="hex colour">
+          <div class="outline-presets">
+            <button class="outline-preset" data-color="#ffffff" style="background:#ffffff" title="white"></button>
+            <button class="outline-preset" data-color="#000000" style="background:#000000" title="black"></button>
+            <button class="outline-preset" data-color="#9ca3af" style="background:#9ca3af" title="gray"></button>
+            <button class="outline-preset" data-color="#d62728" style="background:#d62728" title="red"></button>
+          </div>
+        </div>
+        <div class="alpha-row">
+          <label>width px</label>
+          <input type="range" id="outline-width" min="-2" max="1.30103" step="0.01" value="0" title="width, log scale: 0.01 to 20 px">
+          <input type="number" id="outline-width-num" min="0.01" max="20" step="any" value="1" title="width in pixels (0.01 to 20)">
+        </div>
+        <div class="alpha-row">
+          <label>opacity</label>
+          <input type="range" id="outline-alpha" min="0" max="100" value="80">
+          <span class="alpha-val" id="val-outline-alpha">80</span>
+        </div>
+        <div class="alpha-row">
+          <button id="outline-reset" title="white, 1 px, 80%">reset</button>
+        </div>
       </div>
     </div>
     <div id="alpha-panel">

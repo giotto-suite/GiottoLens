@@ -7,6 +7,7 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
+import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
@@ -59,6 +60,72 @@ export function initRemote() {
   onMessage('set_layer', ({ name, show, alpha }) => {
     if (!LAYERS.includes(name)) throw new Error(`layer must be one of ${LAYERS.join(', ')}`);
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
+  });
+
+  onMessage('set_category_style', ({ column, all, styles, reset }) => {
+    const name = column ?? store.getState().colorBy;
+    if (name == null) throw new Error('no column given and cells are not coloured by one');
+    const col = state.meta?.get(name);
+    if (!col) throw new Error(`no metadata column '${name}'`);
+    if (col.kind !== 'categorical') throw new Error(`'${name}' is not categorical`);
+    const levels = col.levels ?? [];
+    const check = (st, where) => {
+      if (st.color != null && !(Array.isArray(st.color) && st.color.length === 3 &&
+          st.color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+        throw new Error(`${where}: color must be three integers 0-255`);
+      if (st.alpha != null && !(typeof st.alpha === 'number' && st.alpha >= 0 && st.alpha <= 1))
+        throw new Error(`${where}: alpha must be a number in [0, 1]`);
+      if (st.show != null && typeof st.show !== 'boolean')
+        throw new Error(`${where}: show must be TRUE or FALSE`);
+      const out = {};
+      if (st.color != null) out.color = st.color;
+      if (st.alpha != null) out.alpha = st.alpha;
+      if (st.show != null) out.show = st.show;
+      return out;
+    };
+    const unknown = Object.keys(styles ?? {}).filter(l => !levels.includes(l));
+    if (unknown.length) throw new Error(`not categories of '${name}': ${unknown.join(', ')}`);
+    if (reset) actions.resetCategoryStyles(name);
+    const patch = {};
+    if (all) { const a = check(all, 'all'); for (const l of levels) patch[l] = { ...a }; }
+    for (const [l, st] of Object.entries(styles ?? {})) patch[l] = { ...(patch[l] ?? {}), ...check(st, l) };
+    if (Object.keys(patch).length) actions.setCategoryStyles(name, patch);
+    return { column: name };
+  });
+
+  onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
+    const name = column ?? store.getState().colorBy;
+    if (name == null) throw new Error('no column given and cells are not coloured by one');
+    const col = state.meta?.get(name);
+    if (!col) throw new Error(`no metadata column '${name}'`);
+    if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
+    if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))
+      throw new Error(`preset must be one of ${Object.keys(SCALE_PRESETS).join(', ')}`);
+    if (colors != null && !(Array.isArray(colors) && colors.length >= 2 && colors.length <= MAX_SCALE_COLORS &&
+        colors.every(c => Array.isArray(c) && c.length === 3 && c.every(v => Number.isInteger(v) && v >= 0 && v <= 255))))
+      throw new Error(`colors must be 2 to ${MAX_SCALE_COLORS} colours`);
+    if (reverse != null && typeof reverse !== 'boolean') throw new Error('reverse must be TRUE or FALSE');
+    if (reset) actions.resetColorScale(name);
+    const patch = {};
+    if (colors != null) { patch.preset = 'custom'; patch.colors = colors; }
+    else if (preset != null) patch.preset = preset;
+    if (reverse != null) patch.reverse = reverse;
+    if (patch.preset === 'custom' && !patch.colors && !store.getState().colorScales[name]?.colors)
+      throw new Error("preset 'custom' needs colors");
+    if (Object.keys(patch).length) actions.setColorScale(name, patch);
+    return { column: name };
+  });
+
+  onMessage('set_outline', ({ color, width, alpha }) => {
+    if (color != null && !(Array.isArray(color) && color.length === 3 &&
+        color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+      throw new Error('color must be three integers 0-255');
+    if (width != null && !(typeof width === 'number' && width >= 0.01 && width <= 20))
+      throw new Error('width must be a number in [0.01, 20]');
+    if (alpha != null && !(typeof alpha === 'number' && alpha >= 0 && alpha <= 1))
+      throw new Error('alpha must be a number in [0, 1]');
+    actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
+      ...(alpha != null && { alpha }) });
   });
 
   onMessage('set_mark', ({ mark, reset }) => {

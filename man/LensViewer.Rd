@@ -33,6 +33,7 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
+    \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
     \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
     \item \href{#method-LensViewer-select}{\code{LensViewer$select()}}
     \item \href{#method-LensViewer-state}{\code{LensViewer$state()}}
@@ -40,6 +41,9 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-color_by}{\code{LensViewer$color_by()}}
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
     \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
+    \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
+    \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
+    \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-show_genes}{\code{LensViewer$show_genes()}}
     \item \href{#method-LensViewer-screenshot}{\code{LensViewer$screenshot()}}
@@ -161,6 +165,31 @@ also sets each column's type; see \code{\link[=prep_meta]{prep_meta()}}}
       \item{\code{dims}}{Axes to pull from each reduction (default \code{1:2})}
       \item{\code{spat_unit}}{Spatial unit key (default \code{"cell"})}
       \item{\code{feat_type}}{Feature type key for dim reds (default \code{"rna"})}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_column_type"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_column_type}{}}}
+\subsection{\code{LensViewer$set_column_type()}}{
+  Show a numeric metadata column as categories (one
+per distinct value, at most 1000) or as a continuous scale.
+Integer and double columns are continuous by default. The
+viewer's "treat as" menu under "color by" sets the same. Rules
+on the column are dropped, and the metadata is sent again.
+The setting is kept for later \code{push_metadata()} calls.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_column_type(column, type = c("categorical", "continuous"))}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{column}}{Column name, as pushed}
+      \item{\code{type}}{\code{"categorical"} or \code{"continuous"}}
     }
     \if{html}{\out{</div>}}
   }
@@ -322,6 +351,113 @@ close.
       \item{\code{size}}{Width in data units (a hexagon across its flats)}
       \item{\code{angle}}{Rotation in degrees, for squares and hexagons}
       \item{\code{show}}{\code{FALSE} draws dots, \code{TRUE} the mark}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_color_scale"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_color_scale}{}}}
+\subsection{\code{LensViewer$set_color_scale()}}{
+  Set the colour scale of a continuous metadata column:
+a preset, or custom colours spaced evenly from the column's
+minimum to its maximum. The viewer's legend sets the same values.
+\code{NULL} arguments leave a setting as is.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_color_scale(
+  column = NULL,
+  preset = NULL,
+  colors = NULL,
+  reverse = NULL,
+  reset = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
+coloured by}
+      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
+\code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
+\code{"gray"}, \code{"blue-white-red"}}
+      \item{\code{colors}}{2 to 9 colours (names or hex strings), low to high;
+sets a custom scale}
+      \item{\code{reverse}}{\code{TRUE} to run the scale high to low}
+      \item{\code{reset}}{\code{TRUE} to return the column to the default scale first}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The column styled, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-style_categories"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-style_categories}{}}}
+\subsection{\code{LensViewer$style_categories()}}{
+  Set the colour, visibility and fill opacity of the
+categories of a categorical metadata column. The viewer's legend
+sets the same values. A category that is off is drawn like an
+uncoloured cell. Each argument is a vector named by category;
+for \code{show} and \code{alpha} one unnamed value applies to every
+category and named values override it, so
+\code{alpha = c(0.2, Myeloid = 1)} draws Myeloid cells opaque and the
+others at 20\%. Centroids draw at twice the fill opacity, capped
+at 1; the cells layer opacity (\code{set_layer("poly", alpha = )})
+applies on top.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$style_categories(
+  column = NULL,
+  colors = NULL,
+  show = NULL,
+  alpha = NULL,
+  reset = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{column}}{Categorical column; \code{NULL} for the column cells are
+coloured by}
+      \item{\code{colors}}{Named colours (names or hex strings)}
+      \item{\code{show}}{Named logicals: colour on or off}
+      \item{\code{alpha}}{Named fill opacities in [0, 1]}
+      \item{\code{reset}}{\code{TRUE} to return the column to its default colours
+and opacity first}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The column styled, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_outline"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_outline}{}}}
+\subsection{\code{LensViewer$set_outline()}}{
+  Set the colour, width and opacity of cell outlines;
+\code{NULL} arguments leave a setting as is. Selected cells draw in the
+selection colour, 1 px wider. Outlines show once zoomed in far
+enough to draw polygons. The viewer's "Cell outlines" section sets
+the same values.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_outline(color = NULL, width = NULL, alpha = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
+      \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
+      \item{\code{alpha}}{Opacity, in [0, 1]}
     }
     \if{html}{\out{</div>}}
   }

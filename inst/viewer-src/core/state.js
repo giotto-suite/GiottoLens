@@ -14,6 +14,7 @@ export const state = {
   cellPositions: null,      // Float32Array x0,y0,x1,y1,… for deck.gl
   meta: null,               // Map column → MetaColumn
   cellColors: null,         // Uint8Array RGBA per cell for the colour-by column
+  cellFill: null,           // Uint8Array polygon fill alpha per cell
   colorLegend: null,
   selPositions: null,       // Float32Array of selected cell centroids
 

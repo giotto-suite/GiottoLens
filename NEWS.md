@@ -19,6 +19,30 @@
   a reload. Segmented cells can show a mark too,
   before their outlines load. `viewer$describe()` says where the cells come from and how they
   are drawn.
+* Integer metadata columns are continuous by default (before, categorical), like double
+  columns; factor, character and logical columns stay categorical. Any numeric column can be
+  shown as categories, one per distinct value (at most 1000), with the "treat as" menu under
+  "color by" or `viewer$set_column_type(column, "categorical")`, and back with
+  `"continuous"`. Rules on the column are dropped when its type changes; the setting is kept
+  for later `push_metadata()` calls.
+
+* Cell outline colour, width and opacity can be set: `viewer$set_outline(color =, width =,
+  alpha =)` from R, or the new "Cell outlines" section of the sidebar (colour picker, hex
+  field, preset colours, width slider and number box, opacity slider, reset). Selected cells
+  draw in the selection colour, 1 px wider than the outline width. The width ranges from
+  0.01 to 20 px; the width slider is on a log scale. The settings are part of the saved config (`state()$config$outline`).
+* The legend of a categorical colour-by column is editable: per category, a checkbox turns
+  its colour on or off, the swatch opens a colour picker, and a slider sets its fill opacity.
+  Double-clicking a label draws that category at full opacity and the others at 20%; "all
+  on", "all off" and "reset" act on every category. `viewer$style_categories(column =,
+  colors =, show =, alpha =, reset =)` sets the same from R; `alpha = c(0.2, Myeloid = 1)`
+  sets every category to 0.2 and Myeloid to 1. Styles are kept per column and are part of
+  the saved config (`state()$config$categoryStyles`).
+* Continuous colour-by columns can use other colour scales: presets (blue-red, the default;
+  viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red), reversed, or a
+  custom scale of 2 to 9 colours edited in the legend. `viewer$set_color_scale(column =,
+  preset =, colors =, reverse =, reset =)` sets the same from R. Scales are kept per column
+  and are part of the saved config (`state()$config$colorScales`).
 
 # GiottoLens 0.1.4
 
