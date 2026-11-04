@@ -41,7 +41,15 @@
 #'   object: `NULL` (default) for all of its images, image names, or `FALSE`
 #'   for none. The first is shown at launch and the others are listed, off.
 #'   The viewer reads each image's TIFF file (`@file_path`) in place, by
-#'   tile; images without one are skipped with a message.
+#'   tile; images without one are skipped with a message. A file it cannot
+#'   read (in strips, without a pyramid, planar, or not a TIFF) is converted
+#'   once to a tiled pyramidal TIFF in `getOption("GiottoLens.image_cache")`,
+#'   by default `tools::R_user_dir("GiottoLens", "cache")`, and that copy is
+#'   shown.
+#' @param image_files Image files to show besides the object's images, such
+#'   as an H&E to register: a character vector of paths, named by image
+#'   (default: the file name). They are drawn inside the data's extent until
+#'   registered with `viewer$register_image()`.
 #' @param mark       How cells without polygons are drawn once zoomed in: a
 #'   list with any of `shape` (`"circle"`, `"square"` or `"hex"`), `size`
 #'   (across, in data units) and `angle` (degrees). Fields left out are worked
@@ -62,12 +70,14 @@ launch_lens <- function(
     open       = TRUE,
     transfer   = c("auto", "whole", "columns"),
     images     = NULL,
-    mark       = NULL
+    mark       = NULL,
+    image_files = NULL
 ) {
     transfer <- match.arg(transfer)
     mark   <- .check_mark(mark)
     layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
     imgs   <- .pick_images(x, images)
+    image_files <- .check_image_files(image_files, taken = names(imgs))
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -81,7 +91,7 @@ launch_lens <- function(
         gpoints = layers$gpoints, gpolygons = layers$gpolygons,
         port = port, host = host, url_prefix = url_prefix, transfer = transfer,
         spat_unit = if (inherits(x, "giotto")) spat_unit, images = imgs,
-        locations = layers$locations, mark = mark
+        locations = layers$locations, mark = mark, image_files = image_files
     )
     if (open) .open_viewer(viewer$url)
     message("Viewer: ", viewer$url)
@@ -228,6 +238,14 @@ LensViewer <- R6::R6Class("LensViewer",
         selection_rules = NULL,
         #' @field annotations List of drawn polygons: id, name, type, geojson
         annotations = list(),
+        #' @field registration The image being registered in the viewer, or
+        #'   `NULL`: image and reference names, the landmark pairs (`moving_x`,
+        #'   `moving_y` in image pixels, `fixed_x`, `fixed_y` in data
+        #'   coordinates, `residual`), and `transform`, the 3 x 3 matrix from
+        #'   image pixels to data coordinates (the affine fit from three
+        #'   complete pairs on, the placement before). See
+        #'   [registration_matrix()] and [write_registration()].
+        registration = NULL,
 
         #' @description Start a viewer server. Use [launch_lens()] instead.
         #' @param gpoints,gpolygons Tile-store-backed layers (either may be NULL)
@@ -239,9 +257,10 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param locations Cells from spatial locations when there are no
         #'   polygons (internal)
         #' @param mark How cells are drawn without polygons, see [launch_lens()]
+        #' @param image_files Named image file paths, see [launch_lens()]
         initialize = function(gpoints, gpolygons, port, host, url_prefix,
                               transfer = "auto", spat_unit = NULL, images = list(),
-                              locations = NULL, mark = NULL) {
+                              locations = NULL, mark = NULL, image_files = character()) {
             self$port         <- port
             private$spat_unit <- spat_unit
             private$token     <- .rand_id(24L)
@@ -250,8 +269,9 @@ LensViewer <- R6::R6Class("LensViewer",
                 paste0(port, "-", .rand_id(8L)))
             dir.create(file.path(private$session, "metadata"),
                 recursive = TRUE, showWarnings = FALSE)
-            imgs <- .image_entries(images)
+            imgs <- .image_entries(images, image_files)
             private$image_names <- vapply(imgs$entries, `[[`, "", "name")
+            private$image_files <- imgs$sources
             cl <- .export_session(gpoints, gpolygons,
                 output = file.path(private$session, "manifest.json"), transfer = transfer,
                 images = imgs$entries, locations = locations, mark = mark)
@@ -438,6 +458,69 @@ LensViewer <- R6::R6Class("LensViewer",
                 color = if (!is.null(color)) as.list(color),
                 contrast = if (!is.null(contrast)) as.list(as.numeric(contrast))))
             invisible(self)
+        },
+
+        #' @description Register an image by landmarks in the viewer: opens
+        #'   the landmark tool on `image`, shown in its own pane beside the
+        #'   main view. Click a point in one pane, then the matching point in
+        #'   the other; from three pairs on, the image is drawn with their
+        #'   least-squares affine fit. The result is kept in `$registration`.
+        #' @param image Name of the image to register; `NULL` keeps the one
+        #'   being registered.
+        #' @param reference Name of the image the matching points are placed
+        #'   on, such as the DAPI image.
+        #' @param alignment Starting placement: a 3 x 3 matrix from image
+        #'   pixels to reference pixels, or a Xenium Explorer
+        #'   `imagealignment.csv`.
+        #' @param keypoints Landmark pairs to load: a data frame with `fixedX`,
+        #'   `fixedY` (reference pixels), `alignmentX`, `alignmentY` (image
+        #'   pixels), or a Xenium Explorer `keypoints.csv`. They replace the
+        #'   current pairs.
+        #' @param tool Open the landmark tool (default `TRUE`).
+        register_image = function(image = NULL, reference = NULL, alignment = NULL,
+                                  keypoints = NULL, tool = TRUE) {
+            for (nm in c(image, reference))
+                if (!is.character(nm) || length(nm) != 1L || !nm %in% private$image_names)
+                    stop("[LensViewer] images must be among the viewer's images: ",
+                        if (length(private$image_names)) paste(private$image_names, collapse = ", ")
+                        else "none", call. = FALSE)
+            if (is.null(image) && is.null(self$registration))
+                stop("[LensViewer] no image is being registered; give `image`", call. = FALSE)
+            if (!is.null(alignment)) alignment <- as.list(.affine_vector(.read_alignment(alignment)))
+            if (!is.null(keypoints)) keypoints <- .read_keypoints(keypoints)
+            msg <- list(image = image, reference = reference, alignment = alignment,
+                landmarks = keypoints, mode = isTRUE(tool))
+            r <- private$request("set_registration", msg[!vapply(msg, is.null, NA)])
+            self$registration <- .parse_registration(r)
+            invisible(self)
+        },
+
+        #' @description Discard the viewer's image registration
+        clear_registration = function() {
+            private$request("set_registration", list(reset = TRUE))
+            self$registration <- NULL
+            invisible(self)
+        },
+
+        #' @description The registered image as a giottoAffineImage: the image
+        #'   file with `$registration`'s transform. Needs GiottoClass.
+        #' @param name Name of the image; default the registered image's name
+        registered_image = function(name = NULL) {
+            reg <- self$registration
+            .check_registration(reg)
+            file <- private$image_files[[reg$image]]
+            .registered_image(file, reg$transform, name %||% reg$image)
+        },
+
+        #' @description Add the registered image to a giotto object, replacing
+        #'   an image of the same name.
+        #' @param gobject A giotto object
+        #' @param name Name of the image; default the registered image's name
+        #' @return The giotto object with the image
+        add_registered_image = function(gobject, name = NULL) {
+            if (!inherits(gobject, "giotto"))
+                stop("[LensViewer] `gobject` must be a giotto object", call. = FALSE)
+            GiottoClass::setGiotto(gobject, self$registered_image(name), verbose = FALSE)
         },
 
         #' @description Highlight genes in the transcript layer
@@ -775,6 +858,7 @@ LensViewer <- R6::R6Class("LensViewer",
         token       = NULL,
         session     = NULL,
         image_names = character(),
+        image_files = character(),  # image name -> the image's own file
         cell_ids    = NULL,
         cells       = NULL,     # source, launch mark and whether it is drawn
         spat_unit   = NULL,

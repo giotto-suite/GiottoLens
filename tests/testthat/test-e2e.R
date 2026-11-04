@@ -716,3 +716,92 @@ test_that("flipped and rotated images are drawn where GiottoClass places them", 
     expect_lt(value(at[2L, ]), 0.2)
     expect_identical(br$errors(), character())
 })
+
+test_that("an image is registered by landmarks, saved, reloaded and added to the object", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$g, open = FALSE, images = "stain", image_files = c(hne = fx$rgb_file))
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.images?.size === 2"))
+    expect_true(browser_wait(br, "document.getElementById('reg-panel').style.display === ''"))
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "document.getElementById('r-status').className === 'connected'"))
+
+    # The image file has no place yet: drawn inside the data's extent
+    t0 <- unlist(br$js("window.__giottolens.state.images.get('hne').transform"))
+    expect_equal(t0[c(2L, 4L)], c(0, 0))
+    expect_gt(t0[[1L]], 0)
+    expect_lt(t0[[5L]], 0)
+
+    # hne pixels are stain pixels halved; stain pixels are 1/12 data units
+    hne_to_stain <- diag(c(2, 2, 1))
+    stain <- diag(c(100 / 1200, -100 / 1200, 1))
+    truth <- stain %*% hne_to_stain
+    kp <- data.frame(alignmentX = c(0, 600, 0, 300), alignmentY = c(0, 0, 600, 300))
+    kp$fixedX <- 2 * kp$alignmentX
+    kp$fixedY <- 2 * kp$alignmentY
+    v$register_image("hne", reference = "stain", keypoints = kp)
+    reg <- v$registration
+    expect_s3_class(reg, "lens_registration")
+    expect_true(reg$fitted)
+    expect_equal(registration_matrix(reg), truth, tolerance = 1e-9)
+    expect_equal(registration_matrix(reg, "reference"), hne_to_stain, tolerance = 1e-9)
+    expect_lt(reg$rmse, 1e-9)
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "landmark")
+
+    # The image has its own pane on the left; the main view takes the right half
+    expect_true(browser_wait(br, paste0("document.getElementById('spatial-pane').classList.contains('registering')",
+        " && window.__giottolens.state.regDeck?.getViewports()[0]?.width > 0")))
+    widths <- br$js("[document.getElementById('reg-canvas').clientWidth, document.getElementById('deck-canvas').clientWidth]")
+    expect_lt(abs(widths[[1]] - widths[[2]]), 3)
+    expect_false(br$js("document.getElementById('reg-flip-h').disabled"))
+    expect_false(br$js("document.getElementById('reg-link').disabled"))
+
+    # Two clicks make a pair: on the image in its pane (pane coordinates are
+    # pixels with y negated), then on the reference in the main view
+    click <- function(deck, canvas, x, y) {
+        off <- br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left, r.top]; })()", canvas))
+        p <- br$js(sprintf("window.__giottolens.state.%s.getViewports()[0].project([%f, %f])", deck, x, y))
+        for (type in c("mousePressed", "mouseReleased"))
+            br$session$Input$dispatchMouseEvent(type = type, x = off[[1]] + p[[1]],
+                y = off[[2]] + p[[2]], button = "left", clickCount = 1L)
+    }
+    click("regDeck", "reg-canvas", 120, -180)
+    expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.landmarks.length === 5"))
+    click("deckgl", "deck-canvas", 20.5, -30.5)
+    pump_until(function() isTRUE(!is.na(v$registration$landmarks$fixed_x[5L])), 5)
+    lm <- v$registration$landmarks
+    expect_identical(nrow(lm), 5L)
+    expect_equal(c(lm$fixed_x[5L], lm$fixed_y[5L]), c(20.5, -30.5), tolerance = 0.2)
+    expect_equal(c(lm$moving_x[5L], lm$moving_y[5L]), c(120, 180), tolerance = 1)
+    expect_gt(v$registration$rmse, 0)
+
+    # Turning the image's pane changes where it is drawn there, not the fit
+    fit <- v$registration$transform
+    br$js("document.getElementById('reg-rot-ccw').click()")
+    expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.orient[1] !== 0"))
+    pump_until(function() FALSE, 0.3)
+    expect_equal(v$registration$transform, fit)
+
+    # Saved as Xenium Explorer CSVs; the matrix alone places the image again
+    dir <- withr::local_tempdir()
+    files <- write_registration(v$registration, dir)
+    v$clear_registration()
+    expect_null(v$registration)
+    expect_identical(br$js("window.__giottolens.store.getState().registration"), NULL)
+    v$register_image("hne", reference = "stain", alignment = files[["alignment"]], tool = FALSE)
+    expect_false(v$registration$fitted)
+    expect_equal(v$registration$transform[1:2, 1:2], truth[1:2, 1:2], tolerance = 0.01)
+    v$register_image("hne", reference = "stain", keypoints = files[["keypoints"]], tool = FALSE)
+    expect_true(v$registration$fitted)
+    expect_identical(nrow(v$registration$landmarks), 5L)
+
+    # Into the giotto object as a giottoAffineImage over the data
+    g <- suppressMessages(suppressWarnings(v$add_registered_image(fx$g, name = "hne_registered")))
+    img <- g@images$hne_registered
+    expect_s4_class(img, "giottoAffineImage")
+    expect_equal(unname(as.vector(terra::ext(img))), c(0, 100, -100, 0), tolerance = 0.5)
+    expect_identical(br$errors(), character())
+})

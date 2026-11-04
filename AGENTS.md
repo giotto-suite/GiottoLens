@@ -37,7 +37,10 @@ R/
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
-  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries
+  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
+               .tiff_problem() (the viewer's TIFF rules), .viewable_file() (cached conversion)
+  registration.R  registration_update parsing, registration_matrix(), write_registration(),
+               Xenium Explorer CSVs, .registered_image() (giottoAffineImage)
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
 inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   main.js            bootstrap and wiring
@@ -45,11 +48,13 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               through R), comms.js (protocol), remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
-              images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
+              images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts,
+              registration.ts (affines, landmark fit, flips and turns)
   selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
-  render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks)
+  render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
+              landmarks.ts (registration pairs)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
-              dom.js, images.js
+              dom.js, images.js, registration.ts (Register section, landmark tool)
   panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
               spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
@@ -191,8 +196,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 ### Images (adr/0008)
 
-- The viewer reads `.image_source(img)` (today `@file_path`), page 1, and nothing else
-  decides the file. Non-TIFF sources (a VRT, a PNG, in memory) are skipped with a message.
+- The viewer reads `.image_source(img)` (today `@file_path`), page 1, or its cached
+  conversion (below); nothing else decides the file. Images without a file and VRTs are
+  skipped with a message.
 - Levels come from the TIFF itself (SubIFDs or COG overview IFDs), not OME-XML; Viv's
   `loadOmeTiff()` misreads Xenium's per-channel files. Levels must halve and share a tile size.
   Above 4096 px a side, a file in strips or without a pyramid is refused (`layoutProblem()`):
@@ -208,8 +214,38 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Decoding goes through `ImagePool` (`decode(fileDirectory, buffer)`); a decoder must be
   registered in `img-worker.ts`, not on the main thread. Workers are ES modules
   (`worker.format` in `vite.config.js`).
+- A file that fails `.tiff_problem()` (R's copy of `imageKind()`, `layoutProblem()` and
+  the level checks; change them together) is served as its COG in `.image_cache()`, made once
+  per path, size and mtime. VRTs are skipped. `.image_entries()` returns `sources` (the image's
+  own file, used for `registered_image()`) beside the served `files`.
+- `launch_lens(image_files =)` entries have `place: 'fit'`: drawn inside the manifest extent
+  (`fitPlacement()`), not at their extent.
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
+
+### Image registration (adr/0012)
+
+- `config.registration` (saved with the config): `image`, `reference`, `base` (pixels to data
+  before a fit), `landmarks` (`moving` in image pixels, `fixed` in data coordinates), `orient`
+  (pixels to the image's pane: flips and quarter turns, display only), `preview`, `link`. The
+  image draws with `currentTransform()`: the least-squares affine from three complete pairs,
+  else `base`.
+- In mode `landmark` the spatial pane has class `registering`: a second Deck (`state.regDeck`,
+  `#reg-canvas`) on the left half draws only the image, in `orient` coordinates; the main
+  canvas takes the right half and `viewportSize()` halves its width. The main view leaves the
+  image out unless `preview`. `render/landmarks.ts` draws each pane's own points (draggable)
+  and, with a fit, the other pane's points mapped through it. `link` moves either pane with
+  the other through the fit (`onMainView()`, `paneViewChange()`).
+- Affines are `[a, b, c, d, e, f]` (x' = a x + b y + c) in the browser and 3 x 3 matrices on
+  column vectors in R. GiottoClass applies an image's `@affine` as `xy %*% m[1:2, 1:2]`, so
+  `.registered_image()` passes the transposed linear part.
+- Every registration change is sent as `registration_update` (debounced) and kept as
+  `LensViewer$registration`; `set_registration` (R to viewer) starts, loads (`fixed_ref` and
+  `alignment` in reference pixels) or resets it.
+- A click in one pane places that side of a pair, a click in the other its partner, in either
+  order; a click that ends a pan or a drag places nothing. A pane does not pan while the
+  pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
+  pair, Escape the open one.
 
 ### Panels (adr/0009)
 
@@ -228,7 +264,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`set_layer()`, `set_mark()`, `set_image()`, `register_image()`, `clear_registration()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

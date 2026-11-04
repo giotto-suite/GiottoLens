@@ -7,6 +7,8 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
+import { startRegistration, registrationPayload } from '../ui/registration.ts';
+import { apply, compose } from '../data/registration.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
@@ -73,6 +75,36 @@ export function initRemote() {
       throw new Error(`'${name}' is an RGB image; it has no colour or contrast to set`);
     actions.setImage(name, { ...(show != null && { show }), ...(color && { color }),
       ...(contrast && { contrast }) });
+  });
+
+  // Start, change or drop the registration of an image; `mode` true enters
+  // the landmark tool. Landmarks give `fixed` in data coordinates or
+  // `fixed_ref` in reference pixels; `alignment` (image pixels → reference
+  // pixels, as [a, b, c, d, e, f]) places the image before any fit. Returns
+  // the registration as R keeps it
+  onMessage('set_registration', ({ image, reference, landmarks, alignment, reset, mode }) => {
+    if (reset) {
+      actions.setRegistration(null);
+      if (store.getState().mode === 'landmark') actions.setMode('pan');
+      return registrationPayload(null);
+    }
+    const reg = store.getState().registration;
+    const name = image ?? reg?.image;
+    if (!name) throw new Error('no image is being registered; give `image`');
+    const same = reg?.image === name;
+    const ref = reference !== undefined ? reference : same ? reg.reference : null;
+    const refT = ref ? state.images?.get(ref)?.transform : null;
+    if ((alignment || landmarks?.some(l => l.fixed_ref)) && !refT)
+      throw new Error('alignment and keypoints are in reference pixels; give `reference`');
+    const lms = landmarks?.map(l => ({ moving: l.moving ?? null,
+      fixed: l.fixed_ref ? apply(refT, l.fixed_ref) : l.fixed ?? null }));
+    startRegistration(name, ref, {
+      base: alignment ? compose(refT, alignment) : undefined,
+      landmarks: lms ?? (same ? reg.landmarks : undefined),
+    });
+    if (mode === true) actions.setMode('landmark');
+    if (mode === false && store.getState().mode === 'landmark') actions.setMode('pan');
+    return registrationPayload(store.getState().registration);
   });
 
   onMessage('set_genes', ({ genes }) => {

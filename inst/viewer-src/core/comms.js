@@ -103,6 +103,11 @@ export function initComms() {
   if (_started) return;
   _started = true;
   window.addEventListener('error', e => reportError(e.error ?? e.message, 'uncaught'));
-  window.addEventListener('unhandledrejection', e => reportError(e.reason, 'unhandled rejection'));
+  // A request aborted on purpose (a tile that left the view, an image hidden
+  // while loading) is not an error, also where a library leaves it unawaited
+  window.addEventListener('unhandledrejection', e => {
+    if (e.reason?.name === 'AbortError') { e.preventDefault(); return; }
+    reportError(e.reason, 'unhandled rejection');
+  });
   connect();
 }

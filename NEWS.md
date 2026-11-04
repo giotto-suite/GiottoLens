@@ -1,5 +1,25 @@
 # GiottoLens (development version)
 
+* Image registration by landmarks: `viewer$register_image(image, reference)` opens the
+  landmark tool (also in the Register section of the side panel). The image is shown in its
+  own pane beside the reference. Click a point in one pane, then the matching point in the
+  other; from three pairs on, the image is drawn with their least-squares affine fit, with the
+  residual of each pair and the RMSE. Points can be dragged and deleted, the image's pane
+  flipped or turned by 90 degrees, the fit previewed over the reference, and the two panes
+  linked.
+* `viewer$registration` holds the pairs and the transform. `registration_matrix()` gives it
+  in data coordinates or in reference pixels, and `write_registration()` writes Xenium
+  Explorer's `imagealignment.csv` and `keypoints.csv`. `viewer$register_image()` loads
+  either with `alignment =` or `keypoints =`.
+* `viewer$registered_image()` returns the registered image as a `giottoAffineImage`, and
+  `viewer$add_registered_image(g)` adds it to a giotto object.
+* `launch_lens(image_files =)` shows image files that are not in the object yet, drawn inside
+  the data's extent until registered.
+* Image files the viewer cannot read by tile (strips, no pyramid, levels that do not halve,
+  planar samples, or not a TIFF) are converted once to a tiled pyramidal TIFF in
+  `tools::R_user_dir("GiottoLens", "cache")` (option `GiottoLens.image_cache`) and shown,
+  instead of being skipped. VRT files are still skipped.
+
 * Panels dock beside the spatial view as tabs and splits that can be dragged around, closed,
   and added back from the `+` menu.
 * `viewer$push_panel()` takes `id`, `where` (`"tab"`, `"right"`, `"below"`) and `ref` to place

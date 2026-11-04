@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
+import type { Registration, Landmark, Affine } from '../data/registration.ts';
 
 export type LayerName = 'poly' | 'tx' | 'annotations' | 'img';
 export interface LayerVis { show: boolean; alpha: number }
@@ -24,7 +25,7 @@ export interface CellMark {
   size?: number;
   angle?: number;
 }
-export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush';
+export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush' | 'landmark';
 export type Combine = 'or' | 'and';
 
 export interface Annotation {
@@ -49,6 +50,7 @@ export interface Config {
   brushRadius: number;          // screen pixels
   showRules: boolean;           // the rules strip under the HUD
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
+  registration: Registration | null;  // an image being registered (data/registration.ts)
 }
 
 export interface Runtime {
@@ -80,6 +82,7 @@ export const initialConfig = (): Config => ({
   brushRadius: 30,
   showRules: true,
   layout: null,
+  registration: null,
 });
 
 // Saved through R and restored after a reload (core/persist.ts). Rules and
@@ -109,7 +112,10 @@ function mergeConfig(saved: unknown, current: LensState): LensState {
   const images: Record<string, ImageVis> = {};
   for (const [k, v] of Object.entries(current.images))
     images[k] = { ...v, ...s.images?.[k], ...(v.rgb != null && { rgb: v.rgb }) };
-  return { ...out, layers, images } as LensState;
+  // A registration of an image this page did not load is dropped
+  const reg = out.registration as Registration | null | undefined;
+  const registration = reg && reg.image in images ? reg : null;
+  return { ...out, layers, images, registration } as LensState;
 }
 
 export const store = createStore<LensState>()(subscribeWithSelector(persist((): LensState => ({
@@ -181,6 +187,26 @@ export const actions = {
   setShowRules(on: boolean) { set({ showRules: on }); },
   setBrushRadius(px: number) { set({ brushRadius: Math.min(300, Math.max(8, px)) }); },
   setLayout(layout: object | null) { set({ layout }); },
+
+  setRegistration(reg: Registration | null) { set({ registration: reg }); },
+  patchRegistration(patch: Partial<Registration>) {
+    const reg = get().registration;
+    if (reg) set({ registration: { ...reg, ...patch } });
+  },
+  setRegistrationBase(base: Affine) { actions.patchRegistration({ base }); },
+  addLandmark(l: Landmark) {
+    const reg = get().registration;
+    if (reg) actions.patchRegistration({ landmarks: [...reg.landmarks, l] });
+  },
+  updateLandmark(id: string, patch: Partial<Landmark>) {
+    const reg = get().registration;
+    if (reg) actions.patchRegistration({
+      landmarks: reg.landmarks.map(l => l.id === id ? { ...l, ...patch } : l) });
+  },
+  removeLandmark(id: string) {
+    const reg = get().registration;
+    if (reg) actions.patchRegistration({ landmarks: reg.landmarks.filter(l => l.id !== id) });
+  },
 };
 
 // The savable part of the state

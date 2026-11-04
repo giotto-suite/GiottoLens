@@ -41,10 +41,13 @@ export function pointInPolygon(ring, x, y) {
 // ── Viewport ──────────────────────────────────────────────────────────────────
 // Size of the spatial view in CSS pixels. The window is larger: the side
 // panel and the stats column take part of it. Measured on the pane, since the
-// canvas is still the default 300 × 150 until deck.gl sizes it.
+// canvas is still the default 300 × 150 until deck.gl sizes it. While an image
+// is registered, its own pane takes the left half.
 export function viewportSize() {
   const c = document.getElementById('spatial-pane');
-  return { width: c?.clientWidth || window.innerWidth, height: c?.clientHeight || window.innerHeight };
+  const width = c?.clientWidth || window.innerWidth;
+  return { width: c?.classList.contains('registering') ? Math.floor(width / 2) : width,
+           height: c?.clientHeight || window.innerHeight };
 }
 
 // Zoom that fits a w × h world box into a viewport of the given pixel size

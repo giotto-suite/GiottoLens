@@ -54,6 +54,9 @@ viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
+viewer$register_image("he", reference = "dapi")   # landmark tool; result in viewer$registration
+write_registration(viewer$registration, "align")  # Xenium Explorer imagealignment.csv, keypoints.csv
+g <- viewer$add_registered_image(g)                # the registered image as a giottoAffineImage
 viewer$show_genes(c("CD3E", "MS4A1"))
 viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"),
                   where = "right")                # a docked panel; returns its id
@@ -115,7 +118,12 @@ and the toolbar's rules button hides the strip.
 - **Images:** the object's images under the cells, each from its own TIFF file by tile
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
   colour and contrast each and add up like the channels of one image; RGB images (H&E) are
-  recognised from the file and drawn in their own colours beneath them.
+  recognised from the file and drawn in their own colours beneath them. Files that cannot be
+  read by tile are converted once to a tiled pyramidal TIFF in the user cache.
+- **Registration:** landmark pairs between an image (such as an H&E from
+  `launch_lens(image_files =)`) and a reference image (DAPI), with flips and quarter turns, a
+  live least-squares affine fit and per-pair residuals; saved as Xenium Explorer CSVs or added
+  to the giotto object.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
