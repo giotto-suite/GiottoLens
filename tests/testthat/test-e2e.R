@@ -805,3 +805,33 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     expect_equal(unname(as.vector(terra::ext(img))), c(0, 100, -100, 0), tolerance = 0.5)
     expect_identical(br$errors(), character())
 })
+
+test_that("set_view sets the zoom after the view was zoomed by hand", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "document.getElementById('r-status').className === 'connected'"))
+    zoom <- function() br$js("window.__giottolens.state.deckgl.getViewports()[0].zoom")
+    z0 <- zoom()
+
+    # A wheel on the canvas zooms through deck.gl's controller
+    r <- br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
+        deltaX = 0, deltaY = -500)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) > 0.1", z0)))
+
+    v$set_view(zoom = z0 - 1)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) < 1e-6", z0 - 1)))
+    # The box fits the view, its tighter side 2^0.2 times the box's
+    v$set_view(bounds = c(0, 50, -50, 0))
+    b <- v$view_bounds()
+    expect_true(b[["xmin"]] <= 0 && b[["xmax"]] >= 50 && b[["ymin"]] <= -50 && b[["ymax"]] >= 0)
+    expect_equal(min(b[["xmax"]] - b[["xmin"]], b[["ymax"]] - b[["ymin"]]), 50 * 2^0.2, tolerance = 0.01)
+    expect_identical(br$errors(), character())
+})

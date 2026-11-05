@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { store, actions, getConfig } from './store.ts';
 import { onMessage, sendToR } from './comms.js';
 import { setViewState } from '../data/schedule.js';
-import { fitZoom, viewportSize } from '../ui/dom.js';
+import { fitZoom, viewportSize, withZoom } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
@@ -45,10 +45,10 @@ export function initRemote() {
     if (bounds) {
       const [xmin, xmax, ymin, ymax] = bounds;
       vs.target = [(xmin + xmax) / 2, (ymin + ymax) / 2, 0];
-      vs.zoom = fitZoom(xmax - xmin, ymax - ymin) - 0.2;
+      vs = withZoom(vs, fitZoom(xmax - xmin, ymax - ymin) - 0.2);
     }
     if (target) vs.target = [target[0], target[1], 0];
-    if (zoom != null) vs.zoom = zoom;
+    if (zoom != null) vs = withZoom(vs, zoom);
     setViewState(vs);
     return viewInfo(vs);
   });

@@ -50,6 +50,13 @@ export function viewportSize() {
            height: c?.clientHeight || window.innerHeight };
 }
 
+// A view state with `zoom` set. deck.gl's controller adds zoomX and zoomY,
+// which take precedence over zoom; they are dropped so that zoom applies.
+export function withZoom(vs, zoom) {
+  const { zoomX: _x, zoomY: _y, ...rest } = vs;
+  return { ...rest, zoom };
+}
+
 // Zoom that fits a w × h world box into a viewport of the given pixel size
 export function fitZoom(w, h, { width, height } = viewportSize()) {
   return Math.log2(Math.min(width / Math.max(w, 1e-9), height / Math.max(h, 1e-9)));

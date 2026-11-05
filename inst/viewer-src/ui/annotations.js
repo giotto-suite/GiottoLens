@@ -2,7 +2,7 @@
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { sendToR } from '../core/comms.js';
-import { fitZoom, escapeHtml } from './dom.js';
+import { fitZoom, escapeHtml, withZoom } from './dom.js';
 import { setViewState } from '../data/schedule.js';
 import { createIcons, icons } from 'lucide';
 
@@ -17,7 +17,7 @@ function fitToAnnotation(annot) {
   const ymin = Math.min(...ys), ymax = Math.max(...ys);
   const zoom = Math.min(fitZoom(Math.max(xmax - xmin, 1), Math.max(ymax - ymin, 1)) - 0.4,
                         state.currentViewState.maxZoom);
-  setViewState({ ...state.currentViewState, target: [(xmin+xmax)/2, (ymin+ymax)/2, 0], zoom });
+  setViewState(withZoom({ ...state.currentViewState, target: [(xmin+xmax)/2, (ymin+ymax)/2, 0] }, zoom));
 }
 
 const TYPE_ABBR = { polygon: 'poly', rectangle: 'rect', freehand: 'free' };

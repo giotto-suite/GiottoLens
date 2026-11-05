@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* `viewer$set_view(zoom =)`, `viewer$set_view(bounds =)`, `viewer$zoom_to()` and an annotation's
+  zoom button set the zoom after the view was zoomed by hand; before, the new zoom was ignored.
 * Image registration by landmarks: `viewer$register_image(image, reference)` opens the
   landmark tool (also in the Register section of the side panel). The image is shown in its
   own pane beside the reference. Click a point in one pane, then the matching point in the

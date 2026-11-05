@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escapeHtml, fitZoom, pointInPolygon, clientToWorld, worldToClient } from '../ui/dom.js';
+import { escapeHtml, fitZoom, pointInPolygon, clientToWorld, worldToClient, withZoom } from '../ui/dom.js';
 
 describe('escapeHtml', () => {
   it('escapes markup and quotes', () => {
@@ -43,5 +43,14 @@ describe('client ↔ world transforms (Y up)', () => {
     const [x, y] = clientToWorld(cx, cy, canvas, vs);
     expect(x).toBeCloseTo(17.5);
     expect(y).toBeCloseTo(-3.25);
+  });
+});
+
+describe('withZoom', () => {
+  it('sets zoom and drops the zoomX and zoomY a controller added', () => {
+    const vs = { target: [1, 2, 0], zoom: -3, zoomX: -3, zoomY: -3, minZoom: -8 };
+    const out = withZoom(vs, 2);
+    expect(out).toEqual({ target: [1, 2, 0], zoom: 2, minZoom: -8 });
+    expect(vs.zoomX).toBe(-3);
   });
 });
