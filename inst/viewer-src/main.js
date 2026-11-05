@@ -10,6 +10,7 @@ import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
+import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { renderGeneList, setGeneSearch } from './ui/panel.js';
@@ -160,6 +161,7 @@ async function main() {
 
   // ── Store subscriptions ───────────────────────────────────────────────────
   initRenderScheduler();
+  onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });

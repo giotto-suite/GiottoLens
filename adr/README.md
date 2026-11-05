@@ -64,3 +64,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0010](0010-cells-are-a-table-drawn-as-marks.md) | Cells are a table drawn as marks; polygons are optional detail | Proposed | 2026-11-02 |
 | [0011](0011-binned-features-drawn-as-a-texture.md) | Binned feature data is drawn as a texture | Proposed | 2026-11-02 |
 | [0012](0012-density-panel-drawn-as-one-image.md) | The density panel is drawn as one image, its rectangle as two ranges | Accepted | 2026-11-02 |
+| [0013](0013-panel-brush-drags-are-live.md) | A panel brush drag is live; its rule is set on release | Accepted | 2026-11-05 |

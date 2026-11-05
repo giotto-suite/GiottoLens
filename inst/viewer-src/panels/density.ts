@@ -10,10 +10,12 @@
 // Positron and Chrome, over the bins and its own axes. The rectangle is the
 // intersect of two range rules, so R evaluates and describes it like any
 // other; it is drawn from that rule wherever the rule came from (this brush,
-// R, a reload), as the histogram's is.
+// R, a reload), as the histogram's is. A drag is live (adr/0013): the rule
+// is set on release, and the bins follow the rectangle meanwhile.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { maskExcept } from '../selection/selection.ts';
+import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
 import type { Rule } from '../selection/rules.ts';
 import type { MetaColumn } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
@@ -27,24 +29,47 @@ export interface Density { all: Uint32Array; sel: Uint32Array | null; maxAll: nu
 // Counts per bin over all cells, and over the cells in `fg` when given, within
 // the domains `dx`, `dy` (default: the columns' range; zoomed in, the plot's).
 // Bin (bx, by) is all[by * bins + bx], counting up from the domain's minimum.
+// `known`: the counts over all cells for the same domains, so only the
+// foreground is counted.
 export function binDensity(x: MetaColumn, y: MetaColumn, fg: Uint8Array | null, bins = BINS,
-                           dx: [number, number] = [x.min, x.max], dy: [number, number] = [y.min, y.max]): Density {
+                           dx: [number, number] = [x.min, x.max], dy: [number, number] = [y.min, y.max],
+                           known?: Pick<Density, 'all' | 'maxAll'>): Density {
+  const bin = binner(x, y, bins, dx, dy);
+  if (known) {
+    if (!fg) return { all: known.all, sel: null, maxAll: known.maxAll, maxSel: 0 };
+    const sel = new Uint32Array(bins * bins);
+    for (let i = 0, n = fg.length; i < n; i++) if (fg[i]) { const k = bin(i); if (k >= 0) sel[k]++; }
+    return withSel(known, sel);
+  }
   const all = new Uint32Array(bins * bins), sel = fg ? new Uint32Array(bins * bins) : null;
-  const [x0, x1] = dx, [y0, y1] = dy;
-  const sx = bins / ((x1 - x0) || 1), sy = bins / ((y1 - y0) || 1);
-  const xv = x.values, yv = y.values, n = xv.length, top = bins - 1;
+  const n = x.values.length;
   let maxAll = 0, maxSel = 0;
   for (let i = 0; i < n; i++) {
-    const a = xv[i], b = yv[i];
-    // NaN fails both tests
-    if (!(a >= x0 && a <= x1 && b >= y0 && b <= y1)) continue;
-    const bx = Math.min(top, ((a - x0) * sx) | 0), by = Math.min(top, ((b - y0) * sy) | 0);
-    const k = by * bins + bx;
+    const k = bin(i);
+    if (k < 0) continue;
     const c = ++all[k];
     if (c > maxAll) maxAll = c;
     if (sel && fg![i]) { const s = ++sel[k]; if (s > maxSel) maxSel = s; }
   }
   return { all, sel, maxAll, maxSel };
+}
+
+// Bin of cell i within the domains, or -1 (outside, or NaN)
+export function binner(x: MetaColumn, y: MetaColumn, bins: number, [x0, x1]: [number, number], [y0, y1]: [number, number]) {
+  const sx = bins / ((x1 - x0) || 1), sy = bins / ((y1 - y0) || 1);
+  const xv = x.values, yv = y.values, top = bins - 1;
+  return (i: number): number => {
+    const a = xv[i], b = yv[i];
+    // NaN fails both tests
+    if (!(a >= x0 && a <= x1 && b >= y0 && b <= y1)) return -1;
+    return Math.min(top, ((b - y0) * sy) | 0) * bins + Math.min(top, ((a - x0) * sx) | 0);
+  };
+}
+
+export function withSel(known: Pick<Density, 'all' | 'maxAll'>, sel: Uint32Array): Density {
+  let maxSel = 0;
+  for (let k = 0; k < sel.length; k++) if (sel[k] > maxSel) maxSel = sel[k];
+  return { all: known.all, sel, maxAll: known.maxAll, maxSel };
 }
 
 // Viridis (matplotlib's), 9 stops: perceptually even, readable in common
@@ -177,12 +202,25 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     if (tex.width !== pw || tex.height !== ph) { tex.width = pw; tex.height = ph; }
     paint();
   }
+  // Counts over all cells for the current columns and domains, kept: only
+  // the foreground changes with the selection
+  let allFor: { x: MetaColumn; y: MetaColumn; dx: number[]; dy: number[]; d: Density } | null = null;
+  const domains = () => [view.scale('x').domain(), view.scale('y').domain()] as [number, number][];
+  function allCounts(): Density {
+    const [dx, dy] = domains();
+    const a = allFor;
+    if (a && a.x === xc && a.y === yc && a.dx[0] === dx[0] && a.dx[1] === dx[1] && a.dy[0] === dy[0] && a.dy[1] === dy[1])
+      return a.d;
+    const d = binDensity(xc, yc, null, BINS, dx, dy);
+    allFor = { x: xc, y: yc, dx, dy, d };
+    return d;
+  }
   // The bins over the plot's current domains, stretched over the plot area;
-  // synchronous, so nothing flashes
-  function paint() {
+  // synchronous, so nothing flashes. `live`: counts from a drag (adr/0013).
+  function paint(live?: Uint32Array) {
     if (!xc || !yc || !view) return;
-    const dx = view.scale('x').domain() as [number, number], dy = view.scale('y').domain() as [number, number];
-    const d = binDensity(xc, yc, fg(), BINS, dx, dy);
+    const [dx, dy] = domains();
+    const d = live ? withSel(allCounts(), live) : binDensity(xc, yc, fg(), BINS, dx, dy, allCounts());
     bins.getContext('2d')!.putImageData(new ImageData(densityPixels(d) as any, BINS, BINS), 0, 0);
     const g = tex.getContext('2d')!;
     g.imageSmoothingEnabled = false;
@@ -216,6 +254,31 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     };
   }
 
+  // A drag of the rectangle is live: the rule is set on release
+  let latest: any = null, frame = 0, down = false;
+  const boxOf = (v: any): [number, number][] | null =>
+    v?.x && v?.y ? [[Math.min(...v.x), Math.max(...v.x)], [Math.min(...v.y), Math.max(...v.y)]] : null;
+  function commit() {
+    const b = boxOf(latest);
+    const rule = b ? boxRule(source, xc.name, yc.name, { x: b[0], y: b[1] }) : null;
+    if (sameBox(rule, ruleOf(), xc.name, yc.name)) return;
+    own = rule;
+    actions.setRule(source, rule);
+  }
+  function release() {
+    down = false;
+    if (liveSource() !== source) return;
+    cancelAnimationFrame(frame); frame = 0;
+    endLive();
+    commit();
+  }
+  host.addEventListener('pointerdown', () => {
+    down = true;
+    window.addEventListener('pointerup', release, { once: true });
+    window.addEventListener('pointercancel', release, { once: true });
+  }, true);
+  host.addEventListener('pointerenter', () => { if (xc && yc) prepareLive([xc, yc]); });
+
   // `keepZoom`: rebuild at the current zoom (a tool switch)
   async function draw(keepZoom = false) {
     const zoom: Domains | null = keepZoom && view
@@ -240,18 +303,17 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     view.addSignalListener('nav', () => {
       moved ||= requestAnimationFrame(() => { moved = 0; if (my === gen) place(); });
     });
-    // The latest brush once per frame, as the histogram does
-    let latest: any = null, frame = 0;
+    // The latest brush once per frame: moved live while the button is down,
+    // otherwise (drawn from a rule) set at once
+    cancelAnimationFrame(frame); frame = 0;
     view.addSignalListener('brush', (_: string, v: any) => {
       latest = v;
       frame ||= requestAnimationFrame(() => {
         frame = 0;
         if (my !== gen) return;
-        const bx = latest?.x, by = latest?.y;
-        const rule = bx && by ? boxRule(source, xc.name, yc.name, { x: bx, y: by }) : null;
-        if (sameBox(rule, ruleOf(), xc.name, yc.name)) return;
-        own = rule;
-        actions.setRule(source, rule);
+        if (!down) { commit(); return; }
+        if (liveSource() !== source) beginLive(source, [xc, yc]);
+        moveLive(boxOf(latest));
       });
     });
   }
@@ -283,6 +345,16 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     own = r;
     draw(true);
   }));
+  // Bins that follow another panel's drag
+  unsub.push(addLiveConsumer({
+    source: () => source,
+    bins: () => {
+      if (!view || !xc || !yc || !ctx.visible()) return null;
+      const [dx, dy] = domains();
+      return { bins: BINS * BINS, bin: binner(xc, yc, BINS, dx, dy) };
+    },
+    show: sel => paint(sel),
+  }));
   const counted = whenVisible(ctx, refresh);
   unsub.push(store.subscribe(s => s.selection.version, counted.update));
   unsub.push(store.subscribe(s => s.combine, counted.update));
@@ -293,6 +365,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     get view() { return view; },
     destroy() {
       gen++;
+      if (liveSource() === source) endLive();
       unsub.forEach(u => u());
       actions.setRule(source, null);
       view?.finalize(); view = null;

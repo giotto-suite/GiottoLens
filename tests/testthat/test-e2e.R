@@ -452,6 +452,12 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
         button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
     send("mouseMoved", p0); send("mousePressed", p0)
     for (d in seq(4, 24, by = 4)) send("mouseMoved", p0 + c(d, -d))
+    # While the button is down the drag is live (adr/0013): the count follows
+    # the rectangle, and the rule is set only on release
+    live <- function() br$js("(() => { const r = window.__giottolens.store.getState().rules.density;
+      return [document.getElementById('sel-count').textContent, r.params.parts[0].params.min]; })()")
+    expect_true(pump_until(function() { l <- live(); l[[1]] != "" && l[[1]] != paste(length(inside(c(2, 6, 2, 6))), "selected") }))
+    expect_equal(live()[[2]], 2)
     send("mouseReleased", p0 + c(24, -24))
     moved <- function() {
         r <- Filter(function(x) identical(x$source, "density"), v$selection_rules)
