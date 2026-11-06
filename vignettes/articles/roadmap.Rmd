@@ -89,7 +89,7 @@ Next:
 In place (design.Rmd "Images"): each image's TIFF file read by tile in the browser with Viv,
 pyramids from SubIFDs or COG overviews, JPEG-2000 decoded in workers, colour and contrast
 per image; registration of an image against a reference image by landmarks, and files the
-viewer cannot read converted once to a COG (adr/0012). Next: channels stored on separate pages
+viewer cannot read converted once to a COG (adr/0014). Next: channels stored on separate pages
 (multi-channel IF OME-TIFF); an image's page other than 1 (needs a page index in GiottoClass); retiring
 `dev/atera_images.R` once GiottoDisk's VRT fix puts the real file in `@file_path` (if images
 end up anywhere else, `.image_source()` is the one place to change); OME-Zarr; multi-sample (spaces) placement; intensity values in the tooltip.
@@ -106,7 +106,7 @@ a JS part registered together and drivable from R like the rest of the viewer.
    helper in the style of `shiny::runGadget()`.
 3. **Registration:** landmark pairs between two samples, an affine fitted in R and previewed
    live, returned as a transform or a new space. Image-to-reference registration is in place
-   (adr/0012); `data/registration.ts` has the fit.
+   (adr/0014); `data/registration.ts` has the fit.
 4. **Pinwheel unrolling:** a backbone curve, an unrolling computed in R, and label cleanup with
    the editing tools, returned as labels and unrolled coordinates.
 

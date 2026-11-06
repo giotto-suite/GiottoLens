@@ -1,4 +1,4 @@
-# 0012. Images are registered by landmarks in the browser; unreadable files are converted once
+# 0014. Images are registered by landmarks in the browser; unreadable files are converted once
 
 - **Status:** Proposed
 - **Date:** 2026-11-03

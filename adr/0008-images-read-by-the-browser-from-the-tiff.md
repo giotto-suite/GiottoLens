@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-31
 - **Supersedes:** —
-- **Superseded by:** 0012 in part (conversion of files the viewer cannot read)
+- **Superseded by:** 0014 in part (conversion of files the viewer cannot read)
 
 ## Context
 

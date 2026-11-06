@@ -4,7 +4,7 @@
 # layers), one file per image, served whole or by Range at image/<k>. R only
 # says where the file is and where it sits in data coordinates (adr/0008).
 # A file the viewer cannot read is converted once to a tiled pyramidal TIFF
-# in the image cache and that copy is served (adr/0012).
+# in the image cache and that copy is served (adr/0014).
 
 # The file the viewer reads for an image. This is the one place that decides
 # it; everything downstream takes the path it returns.

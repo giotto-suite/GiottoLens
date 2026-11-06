@@ -1,4 +1,4 @@
-// Register an image by landmarks (adr/0012): the Register section of the side
+// Register an image by landmarks (adr/0014): the Register section of the side
 // panel, the landmark tool (mode 'landmark') and the registration sent to R.
 // In landmark mode the spatial view splits: the image being registered in its
 // own pane on the left (its pixels, in the pane's orientation), the reference

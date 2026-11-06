@@ -1,6 +1,6 @@
 // Image registration by landmarks: 2D affine transforms, the least-squares
 // fit from landmark pairs, the starting placement of the image being
-// registered, and the flips and rotations of its own pane (adr/0012).
+// registered, and the flips and rotations of its own pane (adr/0014).
 //
 // An affine is [a, b, c, d, e, f]: x' = a x + b y + c, y' = d x + e y + f, the
 // same form as a manifest image's `affine`. An image's transform maps its

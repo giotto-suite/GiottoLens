@@ -223,7 +223,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
 
-### Image registration (adr/0012)
+### Image registration (adr/0014)
 
 - `config.registration` (saved with the config): `image`, `reference`, `base` (pixels to data
   before a fit), `landmarks` (`moving` in image pixels, `fixed` in data coordinates), `orient`

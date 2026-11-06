@@ -1,4 +1,4 @@
-# ── Image registration (adr/0012) ────────────────────────────────────────────
+# ── Image registration (adr/0014) ────────────────────────────────────────────
 #
 # The viewer registers one image (moving) against the data by landmark pairs
 # and sends the result as `registration_update`. Transforms are 3x3 matrices
