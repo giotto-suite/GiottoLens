@@ -26,9 +26,10 @@ import { createScatterPanel } from './scatter.js';
 import { createHistogramPanel } from './histogram.js';
 // @ts-ignore: plain JS module
 import { createSpecPanel } from './spec.js';
+import { createDensityPanel } from './density.ts';
 
-export type PanelKind = 'scatter' | 'histogram' | 'spec';
-const BUILTIN: Record<string, string> = { scatter: 'scatter', histogram: 'histogram' };
+export type PanelKind = 'scatter' | 'histogram' | 'density' | 'spec';
+const BUILTIN: Record<string, string> = { scatter: 'scatter', histogram: 'histogram', density: 'density' };
 
 // What a panel gets from its dock slot
 export interface PanelCtx {
@@ -78,7 +79,9 @@ class PanelView implements IContentRenderer {
     this.element.dataset.panel = this.id;   // a hook for tests
     views.set(this.id, this);
     api.onDidVisibilityChange(e => { if (e.isVisible) this.handle?.show?.(); });
-    this.fill();
+    // After addPanel() has finished, so a title the panel sets is not
+    // overwritten by the one it was added with
+    queueMicrotask(() => { if (views.get(this.id) === this) this.fill(); });
   }
 
   get panel(): PanelHandle | null { return this.handle; }
@@ -104,9 +107,8 @@ class PanelView implements IContentRenderer {
       } else if (!state.meta?.size) {
         this.element.append(el('div', 'panel-note', 'Push metadata from R to fill this panel: viewer$push_metadata(g)'));
       } else {
-        this.handle = this.kind === 'scatter'
-          ? createScatterPanel(this.element, this.ctx())
-          : createHistogramPanel(this.element, this.ctx());
+        const create = { scatter: createScatterPanel, histogram: createHistogramPanel, density: createDensityPanel }[this.kind];
+        this.handle = create(this.element, this.ctx());
       }
     } catch (e) {
       reportError(e, `panel '${this.id}'`);

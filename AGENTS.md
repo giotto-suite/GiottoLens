@@ -50,13 +50,14 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts,
               registration.ts (affines, landmark fit, flips and turns)
-  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
+  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools),
+              live.ts (panel brush drags: bucket index, live counts, adr/0013)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
               landmarks.ts (registration pairs)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
               dom.js, images.js, registration.ts (Register section, landmark tool)
   panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
-              spec.js (pushed Vega-Lite), controls.js
+              density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -251,7 +252,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 - Only chart panels dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
   not a panel. A panel's id names its slot, its selection source (`scatter` or
-  `scatter:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
+  `scatter:<id>`, `density` or `density:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
 - A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip
   work while `ctx.visible()` is false (`whenVisible()` in `controls.js`) and catch up in `show()`.
 - R keeps every pushed payload (`private$pushed`) until `remove_panel()` or `panel_closed`,
@@ -259,6 +260,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
   its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
   extent by field) so a rebuilt chart can draw it again.
+- A range or rectangle brush drag is live (adr/0013): `beginLive`/`moveLive` while the
+  button is down, the rule set once on release. Panels that show counts register with
+  `addLiveConsumer()` (a bin per cell) and cache their totals over all cells; never set a
+  rule per frame of a drag. The spatial view draws the drag as one GPU-filtered layer.
 
 ### R API (the agent API)
 

@@ -21,7 +21,13 @@
   planar samples, or not a TIFF) are converted once to a tiled pyramidal TIFF in
   `tools::R_user_dir("GiottoLens", "cache")` (option `GiottoLens.image_cache`) and shown,
   instead of being skipped. VRT files are still skipped.
-
+* Holding Space pans the spatial view and the scatter panel with any tool; releasing it returns
+  to that tool. Before, Space switched to the pan tool for good. A polygon being clicked out
+  keeps its points across a hold.
+* Dragging with the middle mouse button pans the spatial view and the scatter panel with any
+  tool, without interrupting it: a ruler or polygon in progress carries on after the pan.
+* Histogram ranges and the density rectangle are drawn with the left button only; before, a
+  middle or right drag drew them too.
 * Panels dock beside the spatial view as tabs and splits that can be dragged around, closed,
   and added back from the `+` menu.
 * `viewer$push_panel()` takes `id`, `where` (`"tab"`, `"right"`, `"below"`) and `ref` to place
@@ -41,6 +47,14 @@
   a reload. Segmented cells can show a mark too,
   before their outlines load. `viewer$describe()` says where the cells come from and how they
   are drawn.
+* A density panel (from the `+` menu) bins any two metadata columns, coloured by cells per
+  bin (viridis); the wheel zooms it, and the hand tool, Shift+drag or the middle button pans
+  it. It selects with a rectangle that can be dragged; the rectangle is two ranges, so
+  `viewer$select()` with
+  `lens_intersect(lens_range(), lens_range())` and source `"density"` sets it from R.
+* Dragging a density rectangle or a histogram range stays smooth at millions of cells: the
+  panels, the selected count and the spatial highlight follow the drag, and the selection
+  is set (and sent to R) when the button is released.
 
 # GiottoLens 0.1.4
 

@@ -10,6 +10,7 @@ import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
+import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { renderGeneList, setGeneSearch } from './ui/panel.js';
@@ -20,7 +21,7 @@ import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
-import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
+import { updateScalebar, fitZoom, escapeHtml, dragPan } from './ui/dom.js';
 import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
@@ -154,6 +155,8 @@ async function main() {
     views: new OrthographicView({ id: 'ortho', controller: true, flipY: false }),
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
+  dragPan(document.getElementById('deck-canvas'), () => state.currentViewState,
+    viewState => onViewStateChange({ viewState }));
   state.currentViewState = initialViewState;
   updateScalebar(initialViewState);
 
@@ -162,6 +165,7 @@ async function main() {
 
   // ── Store subscriptions ───────────────────────────────────────────────────
   initRenderScheduler();
+  onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });

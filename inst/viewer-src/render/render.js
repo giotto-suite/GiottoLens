@@ -7,12 +7,14 @@ import { txDrawTiles, visibleTiles } from '../data/tiles.js';
 import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
 import { cellMarkLayer, drawnMark } from './marks.ts';
+import { liveView } from '../selection/live.ts';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
 import { imageLayer } from './image-layer.ts';
 import { Matrix4 } from '@math.gl/core';
 import { currentTransform, matrix4 } from '../data/registration.ts';
 import { landmarkLayers } from './landmarks.ts';
 import { landmarkHover, renderRegPane, registering } from '../ui/registration.ts';
+import { DataFilterExtension } from '@deck.gl/extensions';
 
 const SEL = [255, 220, 50, 255];
 
@@ -32,6 +34,21 @@ function modelMatrixOf(name, img, reg) {
   return once(reg, () => new Matrix4(matrix4(currentTransform(reg))));
 }
 
+// The live brush layer's data and extension, kept for the drag
+let _live = null;
+function liveLayerProps(values, dims, gate) {
+  if (_live?.values !== values || _live.gate !== gate) _live = {
+    values, gate,
+    data: { length: state.cells.n, attributes: {
+      getPosition: { value: state.cellPositions, size: 2 },
+      getFilterValue: { value: values, size: dims },
+      ...(gate && { getFilterCategory: { value: gate, size: 1 } }),
+    } },
+    extensions: [new DataFilterExtension({ filterSize: dims, categorySize: gate ? 1 : 0 })],
+  };
+  return { data: _live.data, extensions: _live.extensions };
+}
+
 export function renderLayers(viewState) {
   if (!state.deckgl || !viewState) return;
   const s = store.getState();
@@ -39,9 +56,11 @@ export function renderLayers(viewState) {
   const inOverview = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
   const outlines   = viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
   const sel        = s.selection;
+  const live       = liveView();
+  const count      = live ? live.count : sel.count;
 
   const selCountEl = document.getElementById('sel-count');
-  if (selCountEl) selCountEl.textContent = sel.count > 0 ? `${sel.count.toLocaleString()} selected` : '';
+  if (selCountEl) selCountEl.textContent = count > 0 ? `${count.toLocaleString()} selected` : '';
 
   // Images, under everything else, RGB first. A hidden image is left out
   // rather than made invisible, so its tiles stop loading. While an image is
@@ -111,14 +130,31 @@ export function renderLayers(viewState) {
       }));
     }
 
-    if (state.selPositions?.length) {
+    const selStyle = {
+      getFillColor: [255, 220, 50, 180], getLineColor: SEL,
+      stroked: !outlines, getLineWidth: 1, lineWidthUnits: 'pixels',
+      getRadius: outlines ? 1.5 : 3, radiusUnits: 'pixels', radiusMinPixels: 1,
+    };
+    const positions = live ? live.base : state.selPositions;
+    if (positions?.length) {
       layers.push(new ScatterplotLayer({
         id: 'selected-cells',
-        data: once(state.selPositions, () => ({ length: state.selPositions.length / 2,
-          attributes: { getPosition: { value: state.selPositions, size: 2 } } })),
-        getFillColor: [255, 220, 50, 180], getLineColor: SEL,
-        stroked: !outlines, getLineWidth: 1, lineWidthUnits: 'pixels',
-        getRadius: outlines ? 1.5 : 3, radiusUnits: 'pixels', radiusMinPixels: 1,
+        data: once(positions, () => ({ length: positions.length / 2,
+          attributes: { getPosition: { value: positions, size: 2 } } })),
+        ...selStyle,
+      }));
+    }
+    // A panel's brush being dragged (adr/0013): every cell, filtered on the
+    // GPU to those in the box (and passing the other rules, `gate`). Its
+    // buffers are uploaded once per drag; a move changes only the range.
+    if (live?.box) {
+      const { values, dims, gate, box } = live;
+      layers.push(new ScatterplotLayer({
+        id: `selected-live-${dims}-${gate ? 1 : 0}`,
+        ...liveLayerProps(values, dims, gate),
+        ...selStyle,
+        filterRange: dims === 1 ? box[0] : box,
+        ...(gate && { filterCategories: [1] }),
       }));
     }
   }

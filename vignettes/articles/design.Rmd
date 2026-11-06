@@ -242,12 +242,24 @@ are forwarded and printed in the R console.
 
 Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
 spatial view itself is not a panel. The built-in panels are a scatter of any two metadata
-columns and a histogram or bar chart, both drawn from the typed arrays and linked by the
-selection rules; the `+` menu adds more. `push_panel()` adds any Vega-Lite spec, including
-GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and `ref`; rows with a
+columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
+image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
+selection rules; the `+` menu adds more. The density rectangle is two range rules
+intersected, so R evaluates it with no new rule kind. `push_panel()` adds any Vega-Lite
+spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and
+`ref`; rows with a
 `cell_ID` are linked, and an interval brush named `brush` becomes a selection rule. Mosaic is
 not used: linking comes from the rules, and aggregation from typed-array scans (about 1 ms per
 million cells) or from R.
+
+A drag of a range or rectangle brush does not scan every cell per frame (adr/0013). The
+brushed columns' cells are kept ordered by bucket, so a move tests only the cells near the
+edges it swept, and the panels' counts and the selected count follow exactly. The spatial view
+filters every cell on the GPU by the brushed columns. The rule is set once, on release. On
+Mosaic's 5M-star Gaia sample the panels follow a drag at a median 17 ms frame. Zoomed out,
+the spatial view is the remaining limit (about 210 ms a frame): Gaia stacks hundreds of stars
+on a pixel, and blended dots on one pixel are drawn in turn; 5M points spread evenly draw in
+24–33 ms.
 
 Each panel has a stable id that names its slot, its selection source and its data file, so
 moving a panel changes nothing else. R keeps every pushed chart until it is closed and sends

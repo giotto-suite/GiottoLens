@@ -35,7 +35,7 @@ export function maskExcept(source: string): Uint8Array | null {
   return combine(s.rules, c, s.combine, source).mask;
 }
 
-function selectedPositions(mask: Uint8Array | null): Float32Array | null {
+export function selectedPositions(mask: Uint8Array | null): Float32Array | null {
   if (!mask || !state.cells) return null;
   const { x, y, n } = state.cells;
   let k = 0;

@@ -160,9 +160,10 @@ export function markSegment(m: Uint8Array, cells: Cells, a: Pt, b: Pt, r: number
 // ── Combining ─────────────────────────────────────────────────────────────────
 
 // Combine source masks: 'or' unions them, 'and' (crossfilter) intersects.
-// `except` leaves one source out, which is what a panel filters itself by.
-export function combine(rules: Record<string, Rule>, ctx: Ctx, mode: 'or' | 'and', except?: string): { mask: Uint8Array | null; count: number } {
-  const masks = Object.entries(rules).filter(([s]) => s !== except).map(([, r]) => evaluate(r, ctx));
+// `except` leaves sources out, e.g. the one a panel filters itself by.
+export function combine(rules: Record<string, Rule>, ctx: Ctx, mode: 'or' | 'and', except?: string | string[]): { mask: Uint8Array | null; count: number } {
+  const skip = new Set(typeof except === 'string' ? [except] : except);
+  const masks = Object.entries(rules).filter(([s]) => !skip.has(s)).map(([, r]) => evaluate(r, ctx));
   if (!masks.length) return { mask: null, count: 0 };
   if (masks.length === 1) return { mask: masks[0], count: countMask(masks[0]) };
   const n = ctx.cells.n;

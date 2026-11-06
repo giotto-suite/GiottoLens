@@ -5,7 +5,7 @@ import { requestRender } from '../render/schedule.js';
 import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
 import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterMeta, strokeOp } from '../selection/selection.ts';
 import { generateAnnotId } from './annotations.js';
-import { clientToWorld, worldToClient, pointInPolygon, escapeHtml } from './dom.js';
+import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
 import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, consumeDrop,
   removeLastLandmark, cancelPendingLandmark } from './registration.ts';
@@ -13,6 +13,10 @@ import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, co
 let _canvas = null; // set in initInput, used by exported functions above initInput scope
 let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
 let _downPx = null;                // where the button went down: a click after a pan is no click
+// Space held: a drag pans whatever the tool (dragPan in ui/dom.js), and the
+// tool is back on release. The store's mode is left alone, so it is not saved
+// as 'pan' and a polygon being clicked out keeps its vertices.
+const toolMode = () => spaceHeld() ? 'pan' : store.getState().mode;
 
 const DRAG_MODES = ['lasso', 'txlasso', 'rect', 'freehand', 'brush'];
 
@@ -64,13 +68,15 @@ function resetDrawing() {
 }
 
 export function setMode(m) {
+  setSpaceHeld(false);
   resetDrawing();
   actions.setMode(m);
 }
 
-function applyMode(m) {
+function applyMode(mode) {
+  const m = spaceHeld() ? 'pan' : mode;   // what the toolbar shows
   state.deckgl.setProps({
-    controller: DRAG_MODES.includes(m) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
+    controller: DRAG_MODES.includes(mode) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
     getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
   });
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
@@ -254,7 +260,7 @@ export function initInput() {
 
   // ── Canvas events ─────────────────────────────────────────────────────────
   canvas.addEventListener('click', e => {
-    const mode = store.getState().mode;
+    const mode = toolMode();
     if (mode === 'landmark') {
       const moved = _downPx && Math.hypot(e.clientX - _downPx[0], e.clientY - _downPx[1]) > 4;
       if (!consumeDrop() && !moved) landmarkClick('fixed', world(e));
@@ -289,7 +295,7 @@ export function initInput() {
   });
 
   canvas.addEventListener('dblclick', () => {
-    if (store.getState().mode !== 'poly') return;
+    if (toolMode() !== 'poly') return;
     if (_lastClickAddedVertex) state.drawRing.pop();
     _lastClickAddedVertex = false;
     if (state.drawRing.length >= 3) addAnnotation('polygon', [...state.drawRing, state.drawRing[0]]);
@@ -299,13 +305,15 @@ export function initInput() {
 
   // Ctrl-click opens the context menu on macOS; Ctrl subtracts while drawing
   canvas.addEventListener('contextmenu', e => {
-    if (e.ctrlKey && ['lasso', 'brush'].includes(store.getState().mode)) e.preventDefault();
+    if (e.ctrlKey && ['lasso', 'brush'].includes(toolMode())) e.preventDefault();
   });
 
+  // Tools act on the left button; the middle one pans (dragPan in ui/dom.js)
   canvas.addEventListener('mousedown', e => {
     hideCellTooltip();
+    if (e.button !== 0) return;
     _downPx = [e.clientX, e.clientY];
-    const mode = store.getState().mode;
+    const mode = toolMode();
     if (mode === 'landmark') {
       if (landmarkDragStart('fixed', e, canvas)) requestRender();
     } else if (mode === 'brush') {
@@ -333,7 +341,7 @@ export function initInput() {
     const coords  = world(e);
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
-    const mode = store.getState().mode;
+    const mode = toolMode();
 
     if (mode === 'landmark' && landmarkDragMove('fixed', coords, e)) requestRender();
 
@@ -362,7 +370,8 @@ export function initInput() {
     }
   });
 
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('mouseup', e => {
+    if (e.button !== 0) return;
     const mode = store.getState().mode;
     if (landmarkDragEnd()) requestRender();
     if (mode === 'brush' && state.brushDown) {
@@ -397,17 +406,25 @@ export function initInput() {
     if (coordEl) coordEl.textContent = '';
   });
 
-  // Space and Escape also return the stats panels to pan
+  // Escape also returns the stats panels to pan
   const panelsToPan = () => document.dispatchEvent(new CustomEvent('lens:pan'));
+  const holdPan = on => {
+    if (on === spaceHeld()) return;
+    setSpaceHeld(on);
+    if (on) state.brushPos = null;   // no brush outline while panning
+    applyMode(store.getState().mode);
+    requestRender();
+  };
 
   document.addEventListener('keydown', e => {
     const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     const mode = store.getState().mode;
 
-    if (e.code === 'Space' && !e.repeat && !inInput) {
+    if (e.code === 'Space' && !inInput) {
       e.preventDefault();
-      if (mode !== 'pan') setMode('pan');
-      panelsToPan();
+      // Not in the middle of a drag: the stroke finishes with its own tool
+      const stroking = state.lassoActive || state.brushDown || state.rectStart;
+      if (!e.repeat && !stroking) holdPan(true);
       return;
     }
 
@@ -436,4 +453,7 @@ export function initInput() {
       e.preventDefault();
     }
   });
+  document.addEventListener('keyup', e => { if (e.code === 'Space') holdPan(false); });
+  // A release while the page is not focused never arrives
+  window.addEventListener('blur', () => holdPan(false));
 }
