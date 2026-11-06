@@ -17,6 +17,10 @@
   `viewer$add_registered_image(g)` adds it to a giotto object.
 * `launch_lens(image_files =)` shows image files that are not in the object yet, drawn inside
   the data's extent until registered.
+* Image files the viewer cannot read by tile (strips, no pyramid, levels that do not halve,
+  planar samples, or not a TIFF) are converted once to a tiled pyramidal TIFF in
+  `tools::R_user_dir("GiottoLens", "cache")` (option `GiottoLens.image_cache`) and shown,
+  instead of being skipped. VRT files are still skipped.
 * Holding Space pans the spatial view and the scatter panel with any tool; releasing it returns
   to that tool. Before, Space switched to the pan tool for good. A polygon being clicked out
   keeps its points across a hold.

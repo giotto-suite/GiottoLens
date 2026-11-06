@@ -118,7 +118,8 @@ and the toolbar's rules button hides the strip.
 - **Images:** the object's images under the cells, each from its own TIFF file by tile
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
   colour and contrast each and add up like the channels of one image; RGB images (H&E) are
-  recognised from the file and drawn in their own colours beneath them.
+  recognised from the file and drawn in their own colours beneath them. Files that cannot be
+  read by tile are converted once to a tiled pyramidal TIFF in the user cache.
 - **Registration:** landmark pairs between an image (such as an H&E from
   `launch_lens(image_files =)`) and a reference image (DAPI), with flips and quarter turns, a
   live least-squares affine fit and per-pair residuals; saved as Xenium Explorer CSVs or added
