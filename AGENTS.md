@@ -51,7 +51,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
               dom.js, images.js
   panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
-              spec.js (pushed Vega-Lite), controls.js
+              density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -215,7 +215,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 - Only chart panels dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
   not a panel. A panel's id names its slot, its selection source (`scatter` or
-  `scatter:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
+  `scatter:<id>`, `density` or `density:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
 - A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip
   work while `ctx.visible()` is false (`whenVisible()` in `controls.js`) and catch up in `show()`.
 - R keeps every pushed payload (`private$pushed`) until `remove_panel()` or `panel_closed`,

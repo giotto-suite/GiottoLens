@@ -242,9 +242,12 @@ are forwarded and printed in the R console.
 
 Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
 spatial view itself is not a panel. The built-in panels are a scatter of any two metadata
-columns and a histogram or bar chart, both drawn from the typed arrays and linked by the
-selection rules; the `+` menu adds more. `push_panel()` adds any Vega-Lite spec, including
-GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and `ref`; rows with a
+columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
+image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
+selection rules; the `+` menu adds more. The density rectangle is two range rules
+intersected, so R evaluates it with no new rule kind. `push_panel()` adds any Vega-Lite
+spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and
+`ref`; rows with a
 `cell_ID` are linked, and an interval brush named `brush` becomes a selection rule. Mosaic is
 not used: linking comes from the rules, and aggregation from typed-array scans (about 1 ms per
 million cells) or from R.

@@ -19,6 +19,10 @@
   a reload. Segmented cells can show a mark too,
   before their outlines load. `viewer$describe()` says where the cells come from and how they
   are drawn.
+* A density panel (from the `+` menu) bins any two metadata columns, coloured by cells per
+  bin (viridis); the wheel zooms it, and the hand tool or Shift+drag pans it. It selects
+  with a rectangle that can be dragged; the rectangle is two ranges, so `viewer$select()` with
+  `lens_intersect(lens_range(), lens_range())` and source `"density"` sets it from R.
 
 # GiottoLens 0.1.4
 
