@@ -20,7 +20,7 @@ import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
-import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
+import { updateScalebar, fitZoom, escapeHtml, dragPan } from './ui/dom.js';
 import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
@@ -153,6 +153,8 @@ async function main() {
     views: new OrthographicView({ id: 'ortho', controller: true, flipY: false }),
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
+  dragPan(document.getElementById('deck-canvas'), () => state.currentViewState,
+    viewState => onViewStateChange({ viewState }));
   state.currentViewState = initialViewState;
   updateScalebar(initialViewState);
 

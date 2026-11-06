@@ -1,5 +1,10 @@
 # GiottoLens (development version)
 
+* Holding Space pans the spatial view and the scatter panel with any tool; releasing it returns
+  to that tool. Before, Space switched to the pan tool for good. A polygon being clicked out
+  keeps its points across a hold.
+* Dragging with the middle mouse button pans the spatial view and the scatter panel with any
+  tool, without interrupting it: a ruler or polygon in progress carries on after the pan.
 * Panels dock beside the spatial view as tabs and splits that can be dragged around, closed,
   and added back from the `+` menu.
 * `viewer$push_panel()` takes `id`, `where` (`"tab"`, `"right"`, `"below"`) and `ref` to place
