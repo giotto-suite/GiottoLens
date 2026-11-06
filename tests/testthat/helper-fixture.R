@@ -80,6 +80,39 @@ lens_image_fixture <- local({
     }
 })
 
+# Bins without polygons: a giotto object whose "bin" spatial unit has only
+# spatial locations, 900 bins on a 30 x 30 grid of spacing 2 turned by 10
+# degrees, with array_row and array_col in the cell metadata as VisiumHD
+# bins have. No GiottoDisk store is involved.
+lens_bins_fixture <- local({
+    fx <- NULL
+    function() {
+        testthat::skip_if_not_installed("GiottoClass")
+        if (!is.null(fx)) return(fx)
+        sw <- function(...) suppressMessages(suppressWarnings(...))
+        grid <- expand.grid(col = 0:29, row = 0:29)
+        a  <- 10 * pi / 180
+        xy <- data.frame(
+            sdimx = 2 * (grid$col * cos(a) - grid$row * sin(a)) + 50,
+            sdimy = 2 * (grid$col * sin(a) + grid$row * cos(a)) - 80,
+            cell_ID = sprintf("bin_%02d_%02d", grid$row, grid$col)
+        )
+        m <- matrix(rep(c(1, 0, 0, 1), length.out = 2L * nrow(xy)), 2L,
+            dimnames = list(c("g1", "g2"), xy$cell_ID))
+        g <- sw(GiottoClass::giotto())
+        g <- sw(GiottoClass::setGiotto(g, GiottoClass::createExprObj(m, spat_unit = "bin",
+            feat_type = "rna", name = "raw"), verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, GiottoClass::createSpatLocsObj(
+            xy, spat_unit = "bin", name = "raw", verbose = FALSE), verbose = FALSE))
+        meta <- data.frame(cell_ID = xy$cell_ID, array_row = grid$row, array_col = grid$col,
+            half = ifelse(grid$col < 15, "left", "right"))
+        g <- sw(GiottoClass::setGiotto(g, GiottoClass::createCellMetaObj(
+            meta, spat_unit = "bin", feat_type = "rna", verbose = FALSE), verbose = FALSE))
+        fx <<- list(g = g, xy = xy, meta = meta)
+        fx
+    }
+})
+
 .Random.seed_or_null <- function() {
     if (exists(".Random.seed", globalenv())) get(".Random.seed", globalenv())
 }
@@ -126,7 +159,7 @@ ws_client <- function(url, origin = NULL) {
     ws$onOpen(function(e) {
         state$open <- TRUE
         # A real tab announces itself once its handlers are registered
-        ws$send('{"type":"ready","data":{"protocol":2}}')
+        ws$send('{"type":"ready","data":{"protocol":3}}')
     })
     ws$onClose(function(e) state$closed <- TRUE)
     ws$onMessage(function(e) state$msgs[[length(state$msgs) + 1L]] <-

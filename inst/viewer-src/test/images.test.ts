@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { initJ2K, decodeJ2K } from '../data/j2k.ts';
-import { defaultContrast, imageKind, layoutProblem } from '../data/images.ts';
+import { defaultContrast, imageKind, layoutProblem, fillPerSample } from '../data/images.ts';
 
 const require = createRequire(import.meta.url);
 initJ2K({ wasmBinary: readFileSync(require.resolve('@cornerstonejs/codec-openjpeg/decodewasm')) });
@@ -72,5 +72,15 @@ describe('layouts that cannot be read by tile', () => {
     expect(layoutProblem(46543, 28048, true, 8)).toBeNull();
     expect(layoutProblem(2000, 1500, false, 1)).toBeNull();
     expect(layoutProblem(4096, 4096, true, 1)).toBeNull();
+  });
+});
+
+describe('per-sample tags', () => {
+  it('take their one value for every sample (SampleFormat written once for RGB)', () => {
+    const fd = fillPerSample({ SamplesPerPixel: 3, PhotometricInterpretation: 2, BitsPerSample: new Uint16Array([8, 8, 8]), SampleFormat: new Uint16Array([1]) });
+    expect(fd.SampleFormat).toEqual([1, 1, 1]);
+    expect(Array.from(fd.BitsPerSample)).toEqual([8, 8, 8]);
+    expect(fillPerSample({ SamplesPerPixel: 1, BitsPerSample: [16] }).SampleFormat).toBeUndefined();
+    expect(imageKind(fd)).toBe('rgb');
   });
 });

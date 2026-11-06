@@ -22,24 +22,25 @@ implemented, and small known gaps are GitHub issues.
 ## Panels from GiottoVisuals specs
 
 GiottoVisuals writes the plot spec, GiottoLens docks it as a panel, and the panel
-crossfilters with every other view. `push_panel()` already shows any Vega-Lite spec and
-links rows that carry a `cell_ID`. Next:
+crossfilters with every other view. `push_panel()` already docks any Vega-Lite spec where R
+places it, links rows that carry a `cell_ID`, and survives a page reload. Next:
 
-1. **Docking.** More panes or tabs, placed by `push_panel()` and movable in the viewer,
-   instead of replacing one of the two stats panes.
-2. **Crossfilter into pushed panels.** Show the other sources only, as the built-in
+1. **Crossfilter into pushed panels.** Show the other sources only, as the built-in
    histogram does, rather than dimming by the whole selection.
-3. **Brushes as typed rules.** A brush on a metadata column becomes a `range` or
+2. **Brushes as typed rules.** A brush on a metadata column becomes a `range` or
    `categories` rule rather than a list of cells, so R can evaluate and describe it.
-4. **Aggregate charts at scale.** Vega-Lite re-aggregates its rows on every change, which
+3. **Aggregate charts at scale.** Vega-Lite re-aggregates its rows on every change, which
    slows near a million rows. For aggregate marks the viewer or R computes the aggregates from
    the selection masks and Vega-Lite draws only those; GiottoVisuals marks such specs.
-5. **Per-cell data beyond metadata.** A shared per-cell store, filled from R on demand, for
+4. **Per-cell data beyond metadata.** A shared per-cell store, filled from R on demand, for
    gene-heavy panels (heatmaps, dot plots).
 
 Target panels: metadata histogram or bar, expression heatmap or dot plot of the selected
 cells, UMAP coloured by any `spatValues`. Done when one spec renders the same through ggplot,
 fastplotR and GiottoLens and a brush on it crossfilters the other views.
+
+The viewer's state (layout, panels, settings, rules) is kept by R while it runs; saving it to
+a file and restoring it in a later session is issue #21.
 
 ## The large-data path
 
@@ -72,11 +73,26 @@ queries over transcripts, the work runs in R next to the files.
 - **Range serving off R's main thread** for remote viewing through R (a background process
   or a small native file server). Object stores such as S3 already serve ranges concurrently.
 
+## Cells without polygons
+
+Cells from spatial locations, drawn as marks, are in place (design.Rmd "Cells", adr/0010).
+Next:
+
+1. **Binned features as a texture** (adr/0011). VisiumHD 2 µm `giottoBinPoints` as a layer
+   next to transcripts, coloured by gene from values R reads out of the counts store. Needs
+   the per-cell data channel ("Panels from GiottoVisuals specs", item 4).
+2. **Platform mark sizes**, such as Visium's spot diameter from its scale factors, where the
+   neighbour spacing overstates the mark.
+
 ## Images
 
 In place (design.Rmd "Images"): each image's TIFF file read by tile in the browser with Viv,
 pyramids from SubIFDs or COG overviews, JPEG-2000 decoded in workers, colour and contrast
-per image. Next: an image's page other than 1 (needs a page index in GiottoClass); retiring
+per image; registration of an image against a reference image by landmarks (adr/0014).
+Next: image files the viewer cannot read by tile (strips, no pyramid, PNG), added as loose
+images from the GUI and written once as COGs into a source vault by a background job, not
+converted at launch; channels stored on separate pages
+(multi-channel IF OME-TIFF); an image's page other than 1 (needs a page index in GiottoClass); retiring
 `dev/atera_images.R` once GiottoDisk's VRT fix puts the real file in `@file_path` (if images
 end up anywhere else, `.image_source()` is the one place to change); OME-Zarr; multi-sample (spaces) placement; intensity values in the tooltip.
 
@@ -91,7 +107,8 @@ a JS part registered together and drivable from R like the rest of the viewer.
    map tools, layers, tabs, calls to R with progress and cancel), and a blocking-workflow
    helper in the style of `shiny::runGadget()`.
 3. **Registration:** landmark pairs between two samples, an affine fitted in R and previewed
-   live, returned as a transform or a new space.
+   live, returned as a transform or a new space. Image-to-reference registration is in place
+   (adr/0014); `data/registration.ts` has the fit.
 4. **Pinwheel unrolling:** a backbone curve, an unrolling computed in R, and label cleanup with
    the editing tools, returned as labels and unrolled coordinates.
 

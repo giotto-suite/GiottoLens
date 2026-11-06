@@ -49,7 +49,8 @@
         stats::setNames(list(static(viewer_dir, index = TRUE), static(session_dir),
             httpuv::excludeStaticPath(), httpuv::excludeStaticPath()),
             paste0(root, c("", "/session", "/data", "/image"))),
-        stats::setNames(files, paste0(root, "/files/", names(mounts)))
+        # No stores when the cells come from spatial locations alone
+        if (length(files)) stats::setNames(files, paste0(root, "/files/", names(mounts)))
     )
     list(
         call = function(req) .data_response(req, mounts, root, images),

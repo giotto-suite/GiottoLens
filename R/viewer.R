@@ -15,7 +15,9 @@
 #' @param feat_type  Feature type key when `x` is a giotto object (default
 #'   `"rna"`). `NULL` launches without transcripts.
 #' @param spat_unit  Spatial unit key when `x` is a giotto object (default
-#'   `"cell"`). `NULL` launches without polygons.
+#'   `"cell"`). Its polygons are the cells; a spatial unit without polygons
+#'   uses its spatial locations, such as Visium spots or VisiumHD bins. `NULL`
+#'   launches without cells.
 #' @param port       Port for the HTTP + WebSocket server. `NULL` (default)
 #'   picks a free one. Launching on the port of a running viewer closes that
 #'   viewer first.
@@ -40,6 +42,17 @@
 #'   for none. The first is shown at launch and the others are listed, off.
 #'   The viewer reads each image's TIFF file (`@file_path`) in place, by
 #'   tile; images without one are skipped with a message.
+#' @param image_files Image files to show besides the object's images, such
+#'   as an H&E to register: a character vector of paths, named by image
+#'   (default: the file name). They are drawn inside the data's extent until
+#'   registered with `viewer$register_image()`.
+#' @param mark       How cells without polygons are drawn once zoomed in: a
+#'   list with any of `shape` (`"circle"`, `"square"` or `"hex"`), `size`
+#'   (across, in data units) and `angle` (degrees). Fields left out are worked
+#'   out: bins with `array_row` and `array_col` in their cell metadata are
+#'   squares fitted to the bin grid, other cells circles as wide as the median
+#'   distance to their nearest neighbour. Polygon cells are drawn as dots
+#'   until their outlines load, or as this mark when one is given.
 #' @return A [LensViewer]; call `$close()` to stop the server.
 #' @export
 launch_lens <- function(
@@ -52,11 +65,15 @@ launch_lens <- function(
     url_prefix = NULL,
     open       = TRUE,
     transfer   = c("auto", "whole", "columns"),
-    images     = NULL
+    images     = NULL,
+    mark       = NULL,
+    image_files = NULL
 ) {
     transfer <- match.arg(transfer)
+    mark   <- .check_mark(mark)
     layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
     imgs   <- .pick_images(x, images)
+    image_files <- .check_image_files(image_files, taken = names(imgs))
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -69,7 +86,8 @@ launch_lens <- function(
     viewer <- LensViewer$new(
         gpoints = layers$gpoints, gpolygons = layers$gpolygons,
         port = port, host = host, url_prefix = url_prefix, transfer = transfer,
-        spat_unit = if (inherits(x, "giotto")) spat_unit, images = imgs
+        spat_unit = if (inherits(x, "giotto")) spat_unit, images = imgs,
+        locations = layers$locations, mark = mark, image_files = image_files
     )
     if (open) .open_viewer(viewer$url)
     message("Viewer: ", viewer$url)
@@ -113,26 +131,63 @@ serve_lens <- function(...) {
 }
 
 .resolve_layers <- function(x, gpolygons, feat_type, spat_unit) {
+    locations <- NULL
     if (inherits(x, "giotto")) {
-        gpoints   <- .pick_layer(x@feat_info, feat_type, "feat_type")
-        gpolygons <- .pick_layer(x@spatial_info, spat_unit, "spat_unit")
+        gpoints <- .pick_layer(x@feat_info, feat_type, "feat_type")
+        # Cells are the spatial unit's polygons, or else its spatial locations
+        # (adr/0010)
+        gpolygons <- NULL
+        if (!is.null(spat_unit) && !spat_unit %in% names(x@spatial_info) &&
+            spat_unit %in% names(x@spatial_locs)) {
+            locations <- .spat_locations(x, spat_unit)
+        } else {
+            gpolygons <- .pick_layer(x@spatial_info, spat_unit, "spat_unit",
+                also = names(x@spatial_locs))
+        }
     } else {
         gpoints <- x
     }
-    if (is.null(gpoints) && is.null(gpolygons))
-        stop("[launch_lens] nothing to show: provide points and/or polygons",
+    if (is.null(gpoints) && is.null(gpolygons) && is.null(locations))
+        stop("[launch_lens] nothing to show: provide points and/or cells",
             call. = FALSE)
     .check_tile_store(gpoints, "giottoPoints", "points")
     .check_tile_store(gpolygons, "giottoPolygon", "polygons")
-    list(gpoints = gpoints, gpolygons = gpolygons)
+    list(gpoints = gpoints, gpolygons = gpolygons, locations = locations)
 }
 
-.pick_layer <- function(slot_list, key, arg) {
+# A spatial unit's spatial locations as the cell table's source (`xy`: cell_ID,
+# x, y), with the bin grid (`grid`: row, col per cell) when its cell metadata
+# has array_row and array_col.
+.spat_locations <- function(x, spat_unit) {
+    sl <- GiottoClass::getSpatialLocations(x, spat_unit = spat_unit, output = "data.table")
+    xy <- data.frame(cell_ID = as.character(sl$cell_ID), x = as.numeric(sl$sdimx),
+        y = as.numeric(sl$sdimy))
+    bad <- !is.finite(xy$x) | !is.finite(xy$y)
+    if (any(bad)) {
+        message("[launch_lens] ", sum(bad), " cell(s) without a location are not shown")
+        xy <- xy[!bad, , drop = FALSE]
+    }
+    if (!nrow(xy))
+        stop(sprintf("[launch_lens] spat_unit '%s' has no spatial locations", spat_unit),
+            call. = FALSE)
+    grid <- NULL
+    if (length(GiottoClass::list_cell_metadata(x, spat_unit = spat_unit))) {
+        meta <- GiottoClass::pDataDT(x, spat_unit = spat_unit)
+        if (all(c("array_row", "array_col") %in% names(meta))) {
+            i <- match(xy$cell_ID, as.character(meta$cell_ID))
+            grid <- data.frame(row = meta$array_row[i], col = meta$array_col[i])
+        }
+    }
+    list(xy = xy, grid = grid)
+}
+
+# `also`: further keys that would have been accepted, for the error message
+.pick_layer <- function(slot_list, key, arg, also = NULL) {
     if (is.null(key)) return(NULL)
     if (!key %in% names(slot_list)) {
+        keys <- unique(c(names(slot_list), also))
         stop(sprintf("[launch_lens] %s '%s' not found; available: %s (or NULL to skip)",
-            arg, key, if (length(slot_list)) paste(names(slot_list), collapse = ", ")
-                      else "none"),
+            arg, key, if (length(keys)) paste(keys, collapse = ", ") else "none"),
             call. = FALSE)
     }
     slot_list[[key]]
@@ -179,16 +234,29 @@ LensViewer <- R6::R6Class("LensViewer",
         selection_rules = NULL,
         #' @field annotations List of drawn polygons: id, name, type, geojson
         annotations = list(),
+        #' @field registration The image being registered in the viewer, or
+        #'   `NULL`: image and reference names, the landmark pairs (`moving_x`,
+        #'   `moving_y` in image pixels, `fixed_x`, `fixed_y` in data
+        #'   coordinates, `residual`), and `transform`, the 3 x 3 matrix from
+        #'   image pixels to data coordinates (the affine fit from three
+        #'   complete pairs on, the placement before). See
+        #'   [registration_matrix()] and [write_registration()].
+        registration = NULL,
 
         #' @description Start a viewer server. Use [launch_lens()] instead.
         #' @param gpoints,gpolygons Tile-store-backed layers (either may be NULL)
         #' @param port,host Where to listen
         #' @param url_prefix Base URL the browser uses
         #' @param transfer Tile transfer mode, see [launch_lens()]
-        #' @param spat_unit Spatial unit the polygons belong to (for `subset()`)
+        #' @param spat_unit Spatial unit the cells belong to (for `subset()`)
         #' @param images Named list of giottoLargeImage objects to show
+        #' @param locations Cells from spatial locations when there are no
+        #'   polygons (internal)
+        #' @param mark How cells are drawn without polygons, see [launch_lens()]
+        #' @param image_files Named image file paths, see [launch_lens()]
         initialize = function(gpoints, gpolygons, port, host, url_prefix,
-                              transfer = "auto", spat_unit = NULL, images = list()) {
+                              transfer = "auto", spat_unit = NULL, images = list(),
+                              locations = NULL, mark = NULL, image_files = character()) {
             self$port         <- port
             private$spat_unit <- spat_unit
             private$token     <- .rand_id(24L)
@@ -197,11 +265,14 @@ LensViewer <- R6::R6Class("LensViewer",
                 paste0(port, "-", .rand_id(8L)))
             dir.create(file.path(private$session, "metadata"),
                 recursive = TRUE, showWarnings = FALSE)
-            imgs <- .image_entries(images)
+            imgs <- .image_entries(images, image_files)
             private$image_names <- vapply(imgs$entries, `[[`, "", "name")
-            private$cell_ids <- .export_session(gpoints, gpolygons,
+            private$image_files <- imgs$sources
+            cl <- .export_session(gpoints, gpolygons,
                 output = file.path(private$session, "manifest.json"), transfer = transfer,
-                images = imgs$entries)
+                images = imgs$entries, locations = locations, mark = mark)
+            private$cell_ids <- cl$cell_ids
+            if (!is.null(cl$source)) private$cells <- cl[c("source", "mark", "marks")]
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host, .layer_mounts(gpoints, gpolygons), imgs$files)
             assign(as.character(port), self, envir = .lens_registry)
@@ -334,6 +405,31 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Set how cells are drawn once zoomed in: as dots, or as
+        #'   circles, squares or hexagons of a size and angle. Fields given
+        #'   replace the viewer's and the others stay; with no arguments the
+        #'   mark goes back to the one from launch (see `launch_lens(mark =)`).
+        #'   The setting is saved with the viewer's and survives a reload. Cells
+        #'   with polygons show their outlines over any mark once zoomed in
+        #'   close.
+        #' @param shape `"circle"`, `"square"` or `"hex"`
+        #' @param size Width in data units (a hexagon across its flats)
+        #' @param angle Rotation in degrees, for squares and hexagons
+        #' @param show `FALSE` draws dots, `TRUE` the mark
+        set_mark = function(shape = NULL, size = NULL, angle = NULL, show = NULL) {
+            if (is.null(private$cells))
+                stop("[set_mark] the viewer has no cells", call. = FALSE)
+            m <- Filter(Negate(is.null), list(shape = shape, size = size, angle = angle))
+            if (length(m)) .check_mark(m, "set_mark")
+            if (!is.null(show)) {
+                if (!(is.logical(show) && length(show) == 1L && !is.na(show)))
+                    stop("[set_mark] show is TRUE or FALSE", call. = FALSE)
+                m$show <- show
+            }
+            private$request("set_mark", if (length(m)) list(mark = m) else list(reset = TRUE))
+            invisible(self)
+        },
+
         #' @description Show or hide an image, or set its colour or contrast;
         #'   `NULL` arguments leave a setting as is. Images draw under the
         #'   cells, each in its own colour, added together;
@@ -358,6 +454,69 @@ LensViewer <- R6::R6Class("LensViewer",
                 color = if (!is.null(color)) as.list(color),
                 contrast = if (!is.null(contrast)) as.list(as.numeric(contrast))))
             invisible(self)
+        },
+
+        #' @description Register an image by landmarks in the viewer: opens
+        #'   the landmark tool on `image`, shown in its own pane beside the
+        #'   main view. Click a point in one pane, then the matching point in
+        #'   the other; from three pairs on, the image is drawn with their
+        #'   least-squares affine fit. The result is kept in `$registration`.
+        #' @param image Name of the image to register; `NULL` keeps the one
+        #'   being registered.
+        #' @param reference Name of the image the matching points are placed
+        #'   on, such as the DAPI image.
+        #' @param alignment Starting placement: a 3 x 3 matrix from image
+        #'   pixels to reference pixels, or a Xenium Explorer
+        #'   `imagealignment.csv`.
+        #' @param keypoints Landmark pairs to load: a data frame with `fixedX`,
+        #'   `fixedY` (reference pixels), `alignmentX`, `alignmentY` (image
+        #'   pixels), or a Xenium Explorer `keypoints.csv`. They replace the
+        #'   current pairs.
+        #' @param tool Open the landmark tool (default `TRUE`).
+        register_image = function(image = NULL, reference = NULL, alignment = NULL,
+                                  keypoints = NULL, tool = TRUE) {
+            for (nm in c(image, reference))
+                if (!is.character(nm) || length(nm) != 1L || !nm %in% private$image_names)
+                    stop("[LensViewer] images must be among the viewer's images: ",
+                        if (length(private$image_names)) paste(private$image_names, collapse = ", ")
+                        else "none", call. = FALSE)
+            if (is.null(image) && is.null(self$registration))
+                stop("[LensViewer] no image is being registered; give `image`", call. = FALSE)
+            if (!is.null(alignment)) alignment <- as.list(.affine_vector(.read_alignment(alignment)))
+            if (!is.null(keypoints)) keypoints <- .read_keypoints(keypoints)
+            msg <- list(image = image, reference = reference, alignment = alignment,
+                landmarks = keypoints, mode = isTRUE(tool))
+            r <- private$request("set_registration", msg[!vapply(msg, is.null, NA)])
+            self$registration <- .parse_registration(r)
+            invisible(self)
+        },
+
+        #' @description Discard the viewer's image registration
+        clear_registration = function() {
+            private$request("set_registration", list(reset = TRUE))
+            self$registration <- NULL
+            invisible(self)
+        },
+
+        #' @description The registered image as a giottoAffineImage: the image
+        #'   file with `$registration`'s transform. Needs GiottoClass.
+        #' @param name Name of the image; default the registered image's name
+        registered_image = function(name = NULL) {
+            reg <- self$registration
+            .check_registration(reg)
+            file <- private$image_files[[reg$image]]
+            .registered_image(file, reg$transform, name %||% reg$image)
+        },
+
+        #' @description Add the registered image to a giotto object, replacing
+        #'   an image of the same name.
+        #' @param gobject A giotto object
+        #' @param name Name of the image; default the registered image's name
+        #' @return The giotto object with the image
+        add_registered_image = function(gobject, name = NULL) {
+            if (!inherits(gobject, "giotto"))
+                stop("[LensViewer] `gobject` must be a giotto object", call. = FALSE)
+            GiottoClass::setGiotto(gobject, self$registered_image(name), verbose = FALSE)
         },
 
         #' @description Highlight genes in the transcript layer
@@ -392,9 +551,10 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description A plain-text summary of the viewer for a person or an
-        #'   agent that cannot see the screen: the view in data coordinates,
-        #'   layers, colouring, the selection and its rules, and optionally what
-        #'   the selection holds in one metadata column.
+        #'   agent that cannot see the screen: where the cells come from and how
+        #'   they are drawn, the view in data coordinates, layers, colouring, the
+        #'   selection and its rules, and optionally what the selection holds in
+        #'   one metadata column.
         #' @param by Metadata column to break the selection down by (pushed
         #'   with `push_metadata()`); categories are counted, numbers summarised
         #' @param top Number of categories to list
@@ -405,9 +565,14 @@ LensViewer <- R6::R6Class("LensViewer",
             n   <- length(private$cell_ids)
             out <- list(
                 url = self$url, connected = self$connected(), n_cells = n,
+                cells = if (!is.null(private$cells)) list(
+                    source = private$cells$source,
+                    mark = .drawn_mark(private$cells, st$config$cellMark)),
                 view = st$view, color_by = st$config$colorBy,
                 layers = if (!is.null(st)) vapply(st$config$layers, function(l) isTRUE(l$show), NA),
                 images = if (!is.null(st)) vapply(st$config$images, function(l) isTRUE(l$show), NA),
+                panels = if (!is.null(st)) vapply(st$panels, function(p)
+                    if (isTRUE(p$visible)) p$id else paste0(p$id, " (behind)"), ""),
                 combine = private$combine,
                 rules = vapply(private$rule_set, function(r) r$kind %||% "", ""),
                 selected = length(self$selection),
@@ -527,22 +692,43 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self$set_view(bounds = c(x[1L] - px, x[2L] + px, y[1L] - py, y[2L] + py)))
         },
 
-        #' @description Show a Vega-Lite chart in one of the stats panes, for
-        #'   example from `GiottoVisuals::renderSpec(..., engine = "vegalite")`.
-        #'   Rows with a `cell_ID` are linked to the viewer: they dim when not
-        #'   selected, and an interval param named `brush` selects their cells.
+        #' @description Show a Vega-Lite chart as a docked panel, for example
+        #'   from `GiottoVisuals::renderSpec(..., engine = "vegalite")`. Rows
+        #'   with a `cell_ID` are linked to the viewer: they dim when not
+        #'   selected, and an interval param named `brush` selects their cells
+        #'   (selection source `panel:<id>`). Works before a browser connects,
+        #'   and the panel comes back after a page reload.
         #' @param spec A Vega-Lite spec (list or JSON string) with inline
         #'   `data$values`, or a spec without data plus `data`
         #' @param data Optional data.frame for the spec (large data is sent as
         #'   a parquet file rather than inline)
-        #' @param pane Stats pane to replace (1 or 2)
-        #' @param title Pane title
-        push_panel = function(spec, data = NULL, pane = 2L, title = NULL) {
+        #' @param id Panel id. A panel already docked under this id is
+        #'   replaced where it is; `NULL` makes a new one (`"panel-1"`, ...).
+        #' @param title Tab title (default: the spec's title, else the id)
+        #' @param where Where a new panel goes: `"tab"` (a tab next to `ref`),
+        #'   or `"right"` / `"below"` (a split beside `ref`, or at the edge of
+        #'   the panel area without one)
+        #' @param ref Id of the panel to place it next to (see `panels()`);
+        #'   `NULL` for the active panel
+        #' @return The panel id, invisibly.
+        push_panel = function(spec, data = NULL, id = NULL, title = NULL,
+                              where = c("tab", "right", "below"), ref = NULL) {
+            where <- match.arg(where)
+            if (is.null(id)) {
+                repeat {
+                    private$panel_seq <- private$panel_seq + 1L
+                    id <- paste0("panel-", private$panel_seq)
+                    if (is.null(private$pushed[[id]])) break
+                }
+            }
+            .check_panel_id(id)
+            if (!is.null(ref)) .check_panel_id(ref, "ref", builtin_ok = TRUE)
             if (is.character(spec)) spec <- jsonlite::fromJSON(spec, simplifyVector = FALSE)
             taken <- .spec_take_data(unclass(spec))
             spec  <- taken$spec
             rows  <- data %||% taken$rows
-            payload <- list(pane = as.integer(pane), title = title, spec = spec)
+            payload <- list(id = id, title = title, where = where, ref = ref, spec = spec)
+            private$drop_panel_file(id)
             if (!is.null(rows)) {
                 rows <- as.data.frame(rows)
                 if ("cell_ID" %in% names(rows) && !is.null(private$cell_ids)) {
@@ -553,15 +739,56 @@ LensViewer <- R6::R6Class("LensViewer",
                 if (nrow(rows) > 5000L) {
                     dir <- file.path(private$session, "panels")
                     dir.create(dir, showWarnings = FALSE)
-                    f <- sprintf("panel_%d_%.0f.parquet", pane, as.numeric(Sys.time()) * 1000)
+                    f <- sprintf("%s_%.0f.parquet", id, as.numeric(Sys.time()) * 1000)
                     arrow::write_parquet(rows, file.path(dir, f))
                     payload$data_url <- paste0("session/panels/", f)
                 } else {
                     payload$spec$data <- list(values = rows)
                 }
             }
-            self$send("push_panel", payload)
+            # Kept so a reload or a new tab gets it back (see `ready`)
+            private$pushed[[id]] <- payload
+            if (self$connected()) private$broadcast(.encode_ws_message("push_panel", payload))
+            else message("[LensViewer] panel '", id, "' is shown when the viewer connects")
+            invisible(id)
+        },
+
+        #' @description Close a docked panel: one pushed with `push_panel()`
+        #'   or a built-in one (`"scatter"`, `"histogram"`, ...). The viewer's
+        #'   `+` menu adds built-in panels back.
+        #' @param id Panel id (see `panels()`)
+        remove_panel = function(id) {
+            .check_panel_id(id, builtin_ok = TRUE)
+            private$drop_panel_file(id)
+            private$pushed[[id]] <- NULL
+            if (self$connected()) private$broadcast(.encode_ws_message("remove_panel", list(id = id)))
             invisible(self)
+        },
+
+        #' @description The docked panels: id, kind (`"scatter"`,
+        #'   `"histogram"` or `"spec"` for a pushed chart), tab title, the group
+        #'   of tabs it is in, and whether it is in view (not behind another
+        #'   tab). With no browser connected, only the pushed panels R holds.
+        #' @return A data frame.
+        panels = function() {
+            if (self$connected()) {
+                p <- self$state()$panels
+                return(data.frame(
+                    id      = vapply(p, function(x) x$id, ""),
+                    kind    = vapply(p, function(x) x$kind, ""),
+                    title   = vapply(p, function(x) x$title, ""),
+                    group   = vapply(p, function(x) as.character(x$group), ""),
+                    visible = vapply(p, function(x) isTRUE(x$visible), NA),
+                    stringsAsFactors = FALSE))
+            }
+            p <- private$pushed
+            data.frame(
+                id      = names(p) %||% character(),
+                kind    = rep("spec", length(p)),
+                title   = vapply(p, function(x) x$title %||% x$spec$title %||% x$id, ""),
+                group   = rep(NA_character_, length(p)),
+                visible = rep(NA, length(p)),
+                stringsAsFactors = FALSE, row.names = NULL)
         },
 
         #' @description Push polygon overlays from R into the viewer.
@@ -627,7 +854,9 @@ LensViewer <- R6::R6Class("LensViewer",
         token       = NULL,
         session     = NULL,
         image_names = character(),
+        image_files = character(),  # image name -> the image's own file
         cell_ids    = NULL,
+        cells       = NULL,     # source, launch mark and whether it is drawn
         spat_unit   = NULL,
         sel_seq     = 0L,
         server      = NULL,
@@ -637,6 +866,9 @@ LensViewer <- R6::R6Class("LensViewer",
         meta_table  = NULL,
         rule_set    = list(),
         combine     = "or",
+        config_json = NULL,     # the page's saved config, as it sent it (JSON text)
+        pushed      = list(),   # push_panel() payloads by id, in push order
+        panel_seq   = 0L,
         next_id     = 0L,
         req_id      = 0L,
         replies     = list(),
@@ -676,6 +908,11 @@ LensViewer <- R6::R6Class("LensViewer",
             r$data
         },
 
+        drop_panel_file = function(id) {
+            url <- private$pushed[[id]]$data_url
+            if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
+        },
+
         add_log = function(action, detail) {
             entry <- list(time = as.numeric(Sys.time()), action = action, detail = detail)
             private$log_entries <- utils::tail(c(private$log_entries, list(entry)), 200L)
@@ -706,6 +943,10 @@ LensViewer <- R6::R6Class("LensViewer",
                                 warning("[LensViewer] the viewer bundle speaks protocol ",
                                     .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
                                     "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
+                            # The saved config first, so a reload comes back as
+                            # it was; then the data and panels it refers to
+                            ws$send(.encode_ws_message("restore", list(
+                                config = priv$config_json, panels = as.list(names(priv$pushed)))))
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
                             if (length(priv$rule_set))
@@ -713,6 +954,14 @@ LensViewer <- R6::R6Class("LensViewer",
                                     ws$send(.encode_ws_message("set_rule", list(source = src,
                                         rule = priv$rule_set[[src]], replace = FALSE,
                                         combine = priv$combine)))
+                            for (p in priv$pushed)
+                                ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                        },
+                        config = if (is.character(dat$json) && length(dat$json) == 1L)
+                            priv$config_json <- dat$json,
+                        panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {
+                            priv$drop_panel_file(dat$id)
+                            priv$pushed[[dat$id]] <- NULL
                         },
                         reply = if (!is.null(parsed$id))
                             priv$replies[[as.character(parsed$id)]] <- list(
@@ -777,7 +1026,10 @@ print.lens_description <- function(x, ...) {
     cat("GiottoLens viewer\n")
     line("url", x$url)
     line("browser", if (x$connected) "connected" else "not connected")
-    line("cells", format(x$n_cells, big.mark = ","))
+    line("cells", paste0(format(x$n_cells, big.mark = ","), if (!is.null(x$cells))
+        sprintf(" from %s, drawn as %s",
+            if (x$cells$source == "polygons") "polygons" else "spatial locations",
+            .mark_text(x$cells$mark))))
     if (!is.null(x$view)) {
         b <- signif(unlist(x$view$bounds), 6)
         line("view", sprintf("x %s to %s, y %s to %s (zoom %.2f)", b[1], b[2], b[3], b[4], x$view$zoom))
@@ -785,6 +1037,7 @@ print.lens_description <- function(x, ...) {
         line("layers", paste(names(x$layers)[x$layers], collapse = ", "))
         if (length(x$images))
             line("images", paste0(names(x$images), ifelse(x$images, "", " (off)"), collapse = ", "))
+        if (length(x$panels)) line("panels", paste(x$panels, collapse = ", "))
         line("colour by", x$color_by %||% "none")
     }
     line("selected", sprintf("%s cells%s", format(x$selected, big.mark = ","),
@@ -796,6 +1049,19 @@ print.lens_description <- function(x, ...) {
         print(x$breakdown)
     }
     invisible(x)
+}
+
+# Panel ids name a dock slot, a selection source (`panel:<id>`) and a file:
+# letters, digits, `_`, `.`, `-`. The built-in panels' ids (scatter,
+# histogram, and scatter-2, ... for ones added in the viewer) are the
+# viewer's, so push_panel() cannot take them.
+.check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
+    if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
+        stop("[LensViewer] `", arg, "` must be one string of letters, digits, '_', '.' or '-'",
+            call. = FALSE)
+    if (!builtin_ok && grepl("^(scatter|histogram)(-[0-9]+)?$", id))
+        stop("[LensViewer] '", id, "' is a built-in panel; pick another id", call. = FALSE)
+    invisible(id)
 }
 
 # Pull a spec's data out so it can be linked and sent separately: inline

@@ -1,3 +1,38 @@
+# GiottoLens 0.1.5
+
+* Panels dock beside the spatial view as tabs and splits that can be dragged around, closed,
+  and added back from the `+` menu.
+* `viewer$push_panel()` takes `id`, `where` (`"tab"`, `"right"`, `"below"`) and `ref`, and
+  returns the panel's id; pushing to an existing id replaces that chart. The `pane` argument
+  is gone. `viewer$remove_panel()` and `viewer$panels()` are new.
+* Reloading the page keeps the panels, layers, images, colouring, genes and annotations, and
+  a restored or R-set brush can still be dragged.
+* Cells without polygons (Visium spots, VisiumHD bins, centroid-only cells) launch with
+  `launch_lens(g, spat_unit =)` and get metadata, selection and panels without a GiottoDisk
+  store.
+* Such cells are drawn as dots zoomed out and as marks at their true size zoomed in: squares
+  fitted to the bin grid, otherwise circles. `launch_lens(mark =)` and `viewer$set_mark()` set
+  the shape, size or angle; segmented cells can show a mark before their outlines load.
+* A density panel (from the `+` menu) bins two metadata columns and selects with a draggable
+  rectangle, which R sets with `lens_intersect(lens_range(), lens_range())` and source
+  `"density"`.
+* Dragging a density rectangle or a histogram range stays smooth at millions of cells; the
+  selection is set and sent to R on release.
+* Holding Space or dragging with the middle button pans the spatial view and the scatter
+  panel with any tool, without interrupting a ruler or polygon in progress. Histogram ranges
+  and the density rectangle take the left button only.
+* Image registration by landmarks: `viewer$register_image(image, reference)` (or Register in
+  the side panel) shows the image in its own pane beside the reference. Matching points fit a
+  least-squares affine from three pairs, with each pair's residual and the RMSE.
+* `viewer$registration` holds the result: `registration_matrix()` and `write_registration()`
+  (Xenium Explorer `imagealignment.csv` and `keypoints.csv`) export it,
+  `viewer$register_image(alignment =, keypoints =)` loads one, and
+  `viewer$add_registered_image(g)` adds the image to a giotto object as a `giottoAffineImage`.
+* `launch_lens(image_files =)` shows image files that are not in the object yet, drawn inside
+  the data's extent until registered.
+* `viewer$set_view(zoom =)`, `viewer$set_view(bounds =)`, `viewer$zoom_to()` and an
+  annotation's zoom button now apply after the view was zoomed by hand.
+
 # GiottoLens 0.1.4
 
 * Image support added:

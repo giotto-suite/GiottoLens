@@ -10,6 +10,7 @@ import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
+import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { renderGeneList, setGeneSearch } from './ui/panel.js';
@@ -19,10 +20,10 @@ import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
-import { updateScalebar, fitZoom, escapeHtml } from './ui/dom.js';
-import { createScatterPanel } from './panels/scatter.js';
-import { createHistogramPanel } from './panels/histogram.js';
-import { createSpecPanel } from './panels/spec.js';
+import { initRegistration, onMainView } from './ui/registration.ts';
+import { updateScalebar, fitZoom, escapeHtml, dragPan } from './ui/dom.js';
+import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
 import { createIcons, icons } from 'lucide';
@@ -39,6 +40,7 @@ function onViewStateChange({ viewState }) {
   updateScalebar(viewState);
   updateRulerLabel();
   updateTxConnector();
+  onMainView(viewState);
   requestRender();
   scheduleTiles(viewState);
 }
@@ -79,7 +81,7 @@ const IMAGE_COLORS = [[64, 128, 255], [0, 255, 128], [255, 64, 64], [255, 200, 0
 async function loadImages(entries) {
   if (!entries.length) return;
   const pool = new ImagePool();
-  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool)));
+  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool, state.manifest.extent)));
   state.images = new Map();
   opened.forEach((r, i) => {
     if (r.status === 'rejected') { reportError(r.reason, `image '${entries[i].name}' is not shown`); return; }
@@ -90,22 +92,6 @@ async function loadImages(entries) {
       show: k === 0, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
     });
   });
-}
-
-// ── Stats panels ──────────────────────────────────────────────────────────────
-// Pane i shows either a built-in panel or a spec pushed from R; a pushed spec
-// stays until replaced, and metadata reloads leave it alone.
-const _panels = [null, null];
-const _pushed = [false, false];
-const _paneBody = i => document.getElementById(`stats-body-${i + 1}`);
-function setPanel(i, panel) {
-  _panels[i]?.destroy();
-  _panels[i] = panel;
-}
-function initPanels() {
-  if (!state.meta?.size) return;
-  if (!_pushed[0]) setPanel(0, createScatterPanel(_paneBody(0)));
-  if (!_pushed[1]) setPanel(1, createHistogramPanel(_paneBody(1)));
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -119,6 +105,7 @@ async function main() {
   // path-prefixing proxy; fetch resolves them, but keep them absolute anyway
   for (const layer of Object.values(state.manifest.layers))
     for (const t of layer.tiles ?? []) {
+      if (!t.url) continue;   // a cell chunk without polygons has no file
       t.url = new URL(t.url, document.baseURI).href;
       if (t.file) t.file = new URL(t.file, document.baseURI).href;
     }
@@ -126,7 +113,7 @@ async function main() {
   const imagesLoaded = loadImages(state.manifest.images ?? []);
 
   const txLayer   = state.manifest.layers.transcripts;
-  const polyLayer = state.manifest.layers.polygons;
+  const cellLayer = state.manifest.layers.cells;
   state.geneIndex = new Map((txLayer?.genes ?? []).map((g, i) => [g, i]));
   if (!txLayer) {
     // Polygons-only launch: no gene list or transcript controls
@@ -136,11 +123,11 @@ async function main() {
     document.querySelector('[data-mode="txlasso"]')?.remove();
   }
   // Points-only launch: transcripts are all there is to show
-  if (txLayer && !polyLayer) actions.setLayer('tx', { show: true });
+  if (txLayer && !cellLayer) actions.setLayer('tx', { show: true });
 
-  if (polyLayer) {
+  if (cellLayer) {
     $status('loading cells…');
-    state.cells = await loadCells(polyLayer);
+    state.cells = await loadCells(cellLayer);
     const { n, x, y } = state.cells;
     state.cellPositions = new Float32Array(n * 2);
     for (let i = 0; i < n; i++) { state.cellPositions[i * 2] = x[i]; state.cellPositions[i * 2 + 1] = y[i]; }
@@ -148,7 +135,7 @@ async function main() {
   }
 
   // Split first so the canvas has its final size when the zoom is fitted
-  const mainSplit = Split(['#spatial-pane', '#stats-column'], {
+  const mainSplit = Split(['#spatial-pane', '#dock'], {
     sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
     onDragEnd: () => {
       window.dispatchEvent(new Event('resize'));
@@ -168,6 +155,8 @@ async function main() {
     views: new OrthographicView({ id: 'ortho', controller: true, flipY: false }),
     initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
   });
+  dragPan(document.getElementById('deck-canvas'), () => state.currentViewState,
+    viewState => onViewStateChange({ viewState }));
   state.currentViewState = initialViewState;
   updateScalebar(initialViewState);
 
@@ -176,6 +165,7 @@ async function main() {
 
   // ── Store subscriptions ───────────────────────────────────────────────────
   initRenderScheduler();
+  onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
@@ -186,6 +176,7 @@ async function main() {
   initInput();
   initReleaseGuard();
   initRuleStrip();
+  initDock(document.getElementById('dock'));
 
   let statsOpen      = true;
   let lastStatsSizes = [65, 35];
@@ -203,9 +194,6 @@ async function main() {
   });
   document.getElementById('btn-stats-toggle')?.classList.add('active');
 
-  document.querySelectorAll('.stats-collapse-btn').forEach(btn =>
-    btn.addEventListener('click', () => btn.closest('.stats-pane').classList.toggle('stats-collapsed'))
-  );
   document.querySelectorAll('.section-hd').forEach(hd =>
     hd.addEventListener('click', () => hd.closest('[id]').classList.toggle('section-collapsed'))
   );
@@ -253,16 +241,11 @@ async function main() {
     else recolorCells();
     // Rules on metadata columns re-evaluate against the new table
     recompute({ reset: true });
-    initPanels();
+    refreshBuiltins();
   });
 
-  onMessage('push_panel', async ({ pane, ...panel }) => {
-    const i = Math.min(2, Math.max(1, pane ?? 2)) - 1;
-    _pushed[i] = true;
-    _panels[i]?.destroy();
-    _panels[i] = null;
-    setPanel(i, await createSpecPanel(_paneBody(i), panel));
-  });
+  onMessage('push_panel', pushPanel);
+  onMessage('remove_panel', ({ id }) => { removePanel(id); });
 
   onMessage('push_polygons', ({ polygons }) =>
     actions.addAnnotations((polygons ?? []).map(p => ({
@@ -272,8 +255,13 @@ async function main() {
   // Before R can ask about images
   await imagesLoaded;
   initImagePanel();
+  initRegistration();
 
   initRemote();
+  // The saved config comes from R on connect ('restore'), over the defaults
+  // set above, images included
+  initPersist();
+  store.persist.rehydrate();
   initComms();   // after every handler is registered
 
   renderGeneList();
@@ -282,7 +270,7 @@ async function main() {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panels: _panels };
+window.__giottolens = { state, store, actions, panel: panelHandle };
 
 main().catch(err => {
   $status('error: ' + err.message);

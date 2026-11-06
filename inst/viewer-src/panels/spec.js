@@ -2,14 +2,30 @@
 // e.g. GiottoVisuals::renderSpec(engine = "vegalite")). Rows carrying `_idx`
 // (a cell index, added by R from cell_ID) are linked: they dim when not
 // selected, and an interval param named `brush` becomes a selection rule
-// over the cells whose rows fall inside it.
+// (source `panel:<panel id>`) over the cells whose rows fall inside it. The
+// rule keeps the brush's extent, so a chart rebuilt with its rule in place (a
+// reload, a re-push) draws the brush again and it can still be dragged.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { rangeBuffer, readColumns, numRows } from '../data/parquet.ts';
 import { primeMask, encodeMask } from '../selection/rules.ts';
-import { chartArea, setTitle } from './controls.js';
+import { chartArea, whenVisible } from './controls.js';
 
 const loadEmbed = () => import('vega-embed').then(m => m.default);
+
+// A saved brush ({field: [lo, hi]}) by encoding channel; undefined unless
+// every field has one
+function brushValue(spec, saved) {
+  if (!saved) return undefined;
+  const encs = [spec.encoding, ...(spec.layer ?? []).map(l => l.encoding)].filter(Boolean);
+  const value = {};
+  for (const [field, range] of Object.entries(saved)) {
+    const ch = encs.flatMap(e => Object.entries(e)).find(([, d]) => d?.field === field)?.[0];
+    if (!ch) return undefined;
+    value[ch] = range;
+  }
+  return value;
+}
 
 async function readRows(url) {
   const cols = await readColumns(await rangeBuffer(new URL(url, document.baseURI).href), null);
@@ -19,14 +35,16 @@ async function readRows(url) {
   return rows;
 }
 
-export async function createSpecPanel(body, { spec, title, data_url }) {
-  body.querySelector('.stats-controls')?.remove();
+/**
+ * @param {HTMLElement} body
+ * @param {{ spec: any, data_url?: string }} payload
+ * @param {import('./dock.ts').PanelCtx} ctx
+ */
+export async function createSpecPanel(body, { spec, data_url }, ctx) {
   const area = chartArea(body);
-  area.replaceChildren();
-  setTitle(body, title ?? spec.title ?? 'panel');
   const unsub = [];
   let view = null, destroyed = false;
-  const source = `panel:${body.id}`;
+  const source = `panel:${ctx.id}`;
 
   const rows = data_url ? await readRows(data_url) : (spec.data?.values ?? []);
   const linked = rows.length > 0 && '_idx' in rows[0];
@@ -40,6 +58,7 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
   // 'container' sizing lets the chart overflow the pane (issue #3). 'fit' with
   // explicit pixels shrinks the plot so axes, titles and legend fit inside.
   const paneSize = () => ({ width: Math.max(area.clientWidth, 120), height: Math.max(area.clientHeight, 120) });
+  const brush = brushValue(spec, store.getState().rules[source]?.params?.brush);
   const s = { ...spec, data: { name: 'cells' }, ...paneSize(),
               autosize: { type: 'fit', contains: 'padding' }, background: 'transparent' };
   delete s.$schema;
@@ -54,6 +73,17 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
   const res = await embed(area, s, { actions: false, renderer: 'canvas' });
   view = res.view;
   await view.data('cells', rows).runAsync();
+  // The brush is set in pixels once the data has made the scales: a param
+  // `value` would be placed before the data arrives, against empty scales
+  if (brush) {
+    try {
+      for (const [ch, [lo, hi]] of Object.entries(brush)) {
+        const sc = view.scale(ch);
+        view.signal(`brush_${ch}`, [sc(lo), sc(hi)]);
+      }
+      await view.runAsync();
+    } catch (_) { /* a spec whose brush is not in its top-level view */ }
+  }
   const resize = new ResizeObserver(() => {
     const { width, height } = paneSize();
     if (view && (width !== view.width() || height !== view.height())) view.width(width).height(height).runAsync();
@@ -61,11 +91,13 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
   resize.observe(area);
   unsub.push(() => resize.disconnect());
 
+  // Hidden behind another tab, it catches up when shown
+  const dim = whenVisible(ctx, () => {
+    markSel();
+    view?.data('cells', rows.slice()).runAsync();
+  });
   if (linked) {
-    unsub.push(store.subscribe(st => st.selection.version, () => {
-      markSel();
-      view?.data('cells', rows.slice()).runAsync();
-    }));
+    unsub.push(store.subscribe(st => st.selection.version, dim.update));
     let t;
     try {
       view.addSignalListener('brush', (_, v) => {
@@ -87,13 +119,14 @@ export async function createSpecPanel(body, { spec, title, data_url }) {
       }
       if (inside) m[r._idx] = 1;
     }
-    const rule = { source, kind: 'ids', params: { mask: encodeMask(m, m.length) } };
+    const rule = { source, kind: 'ids', params: { mask: encodeMask(m, m.length), brush: Object.fromEntries(fields) } };
     primeMask(rule, m);
     actions.setRule(source, rule);
   }
 
   return {
     view,
+    show: dim.show,
     destroy() {
       destroyed = true;
       unsub.forEach(u => u());

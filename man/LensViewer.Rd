@@ -23,6 +23,14 @@ it like a password while the viewer runs}
 sent by the viewer (one per source: spatial, scatter, histogram, ...)}
 
     \item{\code{annotations}}{List of drawn polygons: id, name, type, geojson}
+
+    \item{\code{registration}}{The image being registered in the viewer, or
+\code{NULL}: image and reference names, the landmark pairs (\code{moving_x},
+\code{moving_y} in image pixels, \code{fixed_x}, \code{fixed_y} in data
+coordinates, \code{residual}), and \code{transform}, the 3 x 3 matrix from
+image pixels to data coordinates (the affine fit from three
+complete pairs on, the placement before). See
+\code{\link[=registration_matrix]{registration_matrix()}} and \code{\link[=write_registration]{write_registration()}}.}
   }
   \if{html}{\out{</div>}}
 }
@@ -39,7 +47,12 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-set_view}{\code{LensViewer$set_view()}}
     \item \href{#method-LensViewer-color_by}{\code{LensViewer$color_by()}}
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
+    \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
+    \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
+    \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
+    \item \href{#method-LensViewer-registered_image}{\code{LensViewer$registered_image()}}
+    \item \href{#method-LensViewer-add_registered_image}{\code{LensViewer$add_registered_image()}}
     \item \href{#method-LensViewer-show_genes}{\code{LensViewer$show_genes()}}
     \item \href{#method-LensViewer-screenshot}{\code{LensViewer$screenshot()}}
     \item \href{#method-LensViewer-log}{\code{LensViewer$log()}}
@@ -50,6 +63,8 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-view_bounds}{\code{LensViewer$view_bounds()}}
     \item \href{#method-LensViewer-zoom_to}{\code{LensViewer$zoom_to()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
+    \item \href{#method-LensViewer-remove_panel}{\code{LensViewer$remove_panel()}}
+    \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
     \item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
     \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
     \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
@@ -72,7 +87,10 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
   url_prefix,
   transfer = "auto",
   spat_unit = NULL,
-  images = list()
+  images = list(),
+  locations = NULL,
+  mark = NULL,
+  image_files = character()
 )}
     \if{html}{\out{</div>}}
   }
@@ -83,8 +101,12 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
       \item{\code{port, host}}{Where to listen}
       \item{\code{url_prefix}}{Base URL the browser uses}
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{spat_unit}}{Spatial unit the polygons belong to (for \code{subset()})}
+      \item{\code{spat_unit}}{Spatial unit the cells belong to (for \code{subset()})}
       \item{\code{images}}{Named list of giottoLargeImage objects to show}
+      \item{\code{locations}}{Cells from spatial locations when there are no
+polygons (internal)}
+      \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{image_files}}{Named image file paths, see \code{\link[=launch_lens]{launch_lens()}}}
     }
     \if{html}{\out{</div>}}
   }
@@ -292,6 +314,34 @@ config (layers, colouring, rules, mode), view and counts.
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_mark"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_mark}{}}}
+\subsection{\code{LensViewer$set_mark()}}{
+  Set how cells are drawn once zoomed in: as dots, or as
+circles, squares or hexagons of a size and angle. Fields given
+replace the viewer's and the others stay; with no arguments the
+mark goes back to the one from launch (see \code{launch_lens(mark =)}).
+The setting is saved with the viewer's and survives a reload. Cells
+with polygons show their outlines over any mark once zoomed in
+close.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_mark(shape = NULL, size = NULL, angle = NULL, show = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{shape}}{\code{"circle"}, \code{"square"} or \code{"hex"}}
+      \item{\code{size}}{Width in data units (a hexagon across its flats)}
+      \item{\code{angle}}{Rotation in degrees, for squares and hexagons}
+      \item{\code{show}}{\code{FALSE} draws dots, \code{TRUE} the mark}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_image"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_image}{}}}
 \subsection{\code{LensViewer$set_image()}}{
@@ -316,6 +366,102 @@ take only \code{show}.
 full colour}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-register_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-register_image}{}}}
+\subsection{\code{LensViewer$register_image()}}{
+  Register an image by landmarks in the viewer: opens
+the landmark tool on \code{image}, shown in its own pane beside the
+main view. Click a point in one pane, then the matching point in
+the other; from three pairs on, the image is drawn with their
+least-squares affine fit. The result is kept in \verb{$registration}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$register_image(
+  image = NULL,
+  reference = NULL,
+  alignment = NULL,
+  keypoints = NULL,
+  tool = TRUE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{image}}{Name of the image to register; \code{NULL} keeps the one
+being registered.}
+      \item{\code{reference}}{Name of the image the matching points are placed
+on, such as the DAPI image.}
+      \item{\code{alignment}}{Starting placement: a 3 x 3 matrix from image
+pixels to reference pixels, or a Xenium Explorer
+\code{imagealignment.csv}.}
+      \item{\code{keypoints}}{Landmark pairs to load: a data frame with \code{fixedX},
+\code{fixedY} (reference pixels), \code{alignmentX}, \code{alignmentY} (image
+pixels), or a Xenium Explorer \code{keypoints.csv}. They replace the
+current pairs.}
+      \item{\code{tool}}{Open the landmark tool (default \code{TRUE}).}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-clear_registration"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-clear_registration}{}}}
+\subsection{\code{LensViewer$clear_registration()}}{
+  Discard the viewer's image registration
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$clear_registration()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-registered_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-registered_image}{}}}
+\subsection{\code{LensViewer$registered_image()}}{
+  The registered image as a giottoAffineImage: the image
+file with \verb{$registration}'s transform. Needs GiottoClass.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$registered_image(name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Name of the image; default the registered image's name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-add_registered_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-add_registered_image}{}}}
+\subsection{\code{LensViewer$add_registered_image()}}{
+  Add the registered image to a giotto object, replacing
+an image of the same name.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$add_registered_image(gobject, name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{gobject}}{A giotto object}
+      \item{\code{name}}{Name of the image; default the registered image's name}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The giotto object with the image
   }
 }
 
@@ -384,9 +530,10 @@ full colour}
 \if{latex}{\out{\hypertarget{method-LensViewer-describe}{}}}
 \subsection{\code{LensViewer$describe()}}{
   A plain-text summary of the viewer for a person or an
-agent that cannot see the screen: the view in data coordinates,
-layers, colouring, the selection and its rules, and optionally what
-the selection holds in one metadata column.
+agent that cannot see the screen: where the cells come from and how
+they are drawn, the view in data coordinates, layers, colouring, the
+selection and its rules, and optionally what the selection holds in
+one metadata column.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$describe(by = NULL, top = 10L)}
@@ -517,13 +664,22 @@ viewer shows)}
 \if{html}{\out{<a id="method-LensViewer-push_panel"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-push_panel}{}}}
 \subsection{\code{LensViewer$push_panel()}}{
-  Show a Vega-Lite chart in one of the stats panes, for
-example from \code{GiottoVisuals::renderSpec(..., engine = "vegalite")}.
-Rows with a \code{cell_ID} are linked to the viewer: they dim when not
-selected, and an interval param named \code{brush} selects their cells.
+  Show a Vega-Lite chart as a docked panel, for example
+from \code{GiottoVisuals::renderSpec(..., engine = "vegalite")}. Rows
+with a \code{cell_ID} are linked to the viewer: they dim when not
+selected, and an interval param named \code{brush} selects their cells
+(selection source \verb{panel:<id>}). Works before a browser connects,
+and the panel comes back after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$push_panel(spec, data = NULL, pane = 2L, title = NULL)}
+    \preformatted{LensViewer$push_panel(
+  spec,
+  data = NULL,
+  id = NULL,
+  title = NULL,
+  where = c("tab", "right", "below"),
+  ref = NULL
+)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
@@ -533,10 +689,58 @@ selected, and an interval param named \code{brush} selects their cells.
 \code{data$values}, or a spec without data plus \code{data}}
       \item{\code{data}}{Optional data.frame for the spec (large data is sent as
 a parquet file rather than inline)}
-      \item{\code{pane}}{Stats pane to replace (1 or 2)}
-      \item{\code{title}}{Pane title}
+      \item{\code{id}}{Panel id. A panel already docked under this id is
+replaced where it is; \code{NULL} makes a new one (\code{"panel-1"}, ...).}
+      \item{\code{title}}{Tab title (default: the spec's title, else the id)}
+      \item{\code{where}}{Where a new panel goes: \code{"tab"} (a tab next to \code{ref}),
+or \code{"right"} / \code{"below"} (a split beside \code{ref}, or at the edge of
+the panel area without one)}
+      \item{\code{ref}}{Id of the panel to place it next to (see \code{panels()});
+\code{NULL} for the active panel}
     }
     \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The panel id, invisibly.
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-remove_panel"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-remove_panel}{}}}
+\subsection{\code{LensViewer$remove_panel()}}{
+  Close a docked panel: one pushed with \code{push_panel()}
+or a built-in one (\code{"scatter"}, \code{"histogram"}, ...). The viewer's
+\code{+} menu adds built-in panels back.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$remove_panel(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Panel id (see \code{panels()})}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-panels"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-panels}{}}}
+\subsection{\code{LensViewer$panels()}}{
+  The docked panels: id, kind (\code{"scatter"},
+\code{"histogram"} or \code{"spec"} for a pushed chart), tab title, the group
+of tabs it is in, and whether it is in view (not behind another
+tab). With no browser connected, only the pushed panels R holds.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$panels()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data frame.
   }
 }
 

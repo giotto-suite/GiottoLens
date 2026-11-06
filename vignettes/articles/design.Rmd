@@ -67,10 +67,12 @@ behind RStudio Server's proxy (adr/0006). `SECURITY.md` describes the model for 
 
 ## Cells
 
-The viewer numbers cells by concatenating the polygon tiles in manifest order: tile `t` holds
-cells `offset[t] .. offset[t] + n[t] - 1`. R builds this table once at launch
-(`cells.parquet`: centroid x, y and the ID) and keeps the IDs; the browser loads the centroids
-into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
+The viewer numbers cells by concatenating the cell layer's tiles in manifest order: tile `t`
+holds cells `offset[t] .. offset[t] + n[t] - 1`. The tiles are the polygon store's or, for a
+spatial unit with only spatial locations (spots, bins), grid chunks of about 16k cells that R
+sorts the locations into. R builds this table once at launch (`cells.parquet`: centroid x, y
+and the ID) and keeps the IDs; the browser loads the centroids into two `Float32Array`s and
+never needs a string ID (adr/0002, adr/0010). Consequences:
 
 - A polygon tile row maps to its cell by addition, so colouring and selection highlighting
   of outlines need no lookup.
@@ -79,6 +81,25 @@ into two `Float32Array`s and never needs a string ID (adr/0002). Consequences:
 - Metadata pushed with `push_metadata()` is written in the same order, one typed array per
   column (categories as integer codes with their levels), so the browser joins nothing.
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
+
+Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in
+data units and an angle (adr/0010). R works it out at launch: bins whose cell metadata has
+`array_row` and `array_col` are squares from a fit of x and y against the grid indices, which
+gives the spacing and rotation exactly and refuses grids that are not square (Visium's
+hexagonal spots); other cells are circles as wide as the median distance to their nearest
+neighbour. `launch_lens(mark =)` overrides any field. Circles are sized in data units with a
+2 px minimum, so they are dots zoomed out and grow to their true size; squares and hexagons
+are drawn by `ColumnLayer`, which has no pixel minimum, so dots stand in until a mark is as
+wide as a dot. Selection stays centroid membership whatever the mark.
+
+The launch mark is a default, not a fixed property: `viewer$set_mark()` changes its shape,
+size or angle, or switches it to dots, as a setting kept with the rest of the configuration
+(`cellMark`) and so restored after a reload. It is set from R only; the viewer has no control
+for it, since the inferred mark is usually right. Segmented
+cells carry an inferred mark too, off by default; turning it on shows them at their size
+before their outlines load. For 660k VisiumHD-sized
+bins, the grid fit takes 0.3 s and the chunking 0.1 s; the neighbour spacing, used without a
+grid, 0.9 s.
 
 ## Selection rules
 
@@ -111,10 +132,16 @@ R-side evaluation (see the roadmap).
 
 ## Browser state and rendering
 
-Configuration (layers, colouring, rules, combine mode, annotations, tool settings) lives in
-a zustand store and changes only through its actions; it can be saved as JSON. Runtime data
-(deck instance, caches, loaded tables, in-progress drawing) is kept apart. Every store change
-requests a render, batched to one per animation frame.
+Configuration (layers, colouring, rules, combine mode, annotations, tool settings, panel
+layout) lives in a zustand store and changes only through its actions; it can be saved as
+JSON. Runtime data (deck instance, caches, loaded tables, in-progress drawing) is kept apart.
+Every store change requests a render, batched to one per animation frame.
+
+The configuration outlives a page reload through R (adr/0009). zustand's `persist`
+middleware sends it as JSON text when it changes, merged over 300 ms; R keeps the latest copy
+as it came and sends it back before anything else when a page connects. R rather than browser
+storage holds it because R outlives the page and already restores the rules and pushed
+panels, and a save to file can start from its copy (issue #21).
 
 deck.gl compares `data` by reference, so binary data objects are built once per underlying
 array. Rebuilding them each render had deck re-triangulate every polygon tile and re-upload
@@ -207,17 +234,38 @@ session can work with the viewer as well as the user can: read it (`describe()`,
 
 The protocol is request/reply: a message from R with an `id` is answered by the browser with
 the handler's result or error. A tab announces `ready` once its handlers are registered, and
-R then sends it the current metadata and rules, so reloads and new tabs match. Browser errors
+R then sends it the saved configuration, the current metadata, rules and pushed panels, so
+reloads and new tabs match. Browser errors
 are forwarded and printed in the R console.
 
 ## Panels
 
-The stats column holds a scatter of any two metadata columns and a histogram or bar chart,
-both drawn from the typed arrays and linked by the selection rules. `push_panel()` adds any
-Vega-Lite spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`; rows with a
+Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
+spatial view itself is not a panel. The built-in panels are a scatter of any two metadata
+columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
+image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
+selection rules; the `+` menu adds more. The density rectangle is two range rules
+intersected, so R evaluates it with no new rule kind. `push_panel()` adds any Vega-Lite
+spec, including GiottoVisuals' `renderSpec(engine = "vegalite")`, placed by `where` and
+`ref`; rows with a
 `cell_ID` are linked, and an interval brush named `brush` becomes a selection rule. Mosaic is
 not used: linking comes from the rules, and aggregation from typed-array scans (about 1 ms per
 million cells) or from R.
+
+A drag of a range or rectangle brush does not scan every cell per frame (adr/0013). The
+brushed columns' cells are kept ordered by bucket, so a move tests only the cells near the
+edges it swept, and the panels' counts and the selected count follow exactly. The spatial view
+filters every cell on the GPU by the brushed columns. The rule is set once, on release. On
+Mosaic's 5M-star Gaia sample the panels follow a drag at a median 17 ms frame. Zoomed out,
+the spatial view is the remaining limit (about 210 ms a frame): Gaia stacks hundreds of stars
+on a pixel, and blended dots on one pixel are drawn in turn; 5M points spread evenly draw in
+24–33 ms.
+
+Each panel has a stable id that names its slot, its selection source and its data file, so
+moving a panel changes nothing else. R keeps every pushed chart until it is closed and sends
+it again to a new page. A panel behind another tab skips selection updates and catches up
+when it comes into view. A panel draws its brush from its own rule, wherever the rule came
+from (a brush, R, a reload), so a restored range can still be dragged.
 
 ## The large-data path
 

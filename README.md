@@ -20,6 +20,8 @@ library(GiottoLens)
 viewer <- launch_lens(g)                 # a giotto object backed by GiottoDisk tile stores
 # or
 viewer <- launch_lens(gpoints, gpolygons)
+# or cells from spatial locations alone (spots, bins), drawn as fitted squares or circles
+viewer <- launch_lens(g, spat_unit = "bin008", feat_type = NULL)
 
 viewer$push_metadata(g, dimreds = "umap")   # colour-by, tooltip, scatter and histogram
 viewer$selection                            # cells selected in the browser
@@ -50,9 +52,16 @@ viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
 viewer$set_layer("tx", show = TRUE)
+viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
+viewer$register_image("he", reference = "dapi")   # landmark tool; result in viewer$registration
+write_registration(viewer$registration, "align")  # Xenium Explorer imagealignment.csv, keypoints.csv
+g <- viewer$add_registered_image(g)                # the registered image as a giottoAffineImage
 viewer$show_genes(c("CD3E", "MS4A1"))
-viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"))
+viewer$push_panel(GiottoVisuals::renderSpec(g, spec, engine = "vegalite"),
+                  where = "right")                # a docked panel; returns its id
+viewer$panels()                                   # what is docked, and where
+viewer$remove_panel("panel-1")
 viewer$push_polygons(regions)                     # SpatVector, sf or WKT
 viewer$screenshot("view.png")
 ```
@@ -97,7 +106,8 @@ and the toolbar's rules button hides the strip.
 ## Viewer
 
 - **Cells:** centroids of every cell at all zooms (from one table loaded at start), outlines
-  when zoomed in, coloured by any pushed metadata column.
+  when zoomed in, coloured by any pushed metadata column. Cells without polygons (spots,
+  bins) grow from dots into circles or squares at their true size as you zoom in.
 - **Transcripts:** tiles loaded around the view, decoded in background workers; 1/16 and 1/4
   sampling when zoomed out; gene search and highlighting.
 - **Selection:** lasso, brush (`[` `]` resize), invert, select by metadata, scatter lasso,
@@ -109,6 +119,10 @@ and the toolbar's rules button hides the strip.
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
   colour and contrast each and add up like the channels of one image; RGB images (H&E) are
   recognised from the file and drawn in their own colours beneath them.
+- **Registration:** landmark pairs between an image (such as an H&E from
+  `launch_lens(image_files =)`) and a reference image (DAPI), with flips and quarter turns, a
+  live least-squares affine fit and per-pair residuals; saved as Xenium Explorer CSVs or added
+  to the giotto object.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.

@@ -35,7 +35,7 @@ export function maskExcept(source: string): Uint8Array | null {
   return combine(s.rules, c, s.combine, source).mask;
 }
 
-function selectedPositions(mask: Uint8Array | null): Float32Array | null {
+export function selectedPositions(mask: Uint8Array | null): Float32Array | null {
   if (!mask || !state.cells) return null;
   const { x, y, n } = state.cells;
   let k = 0;
@@ -103,9 +103,9 @@ export function lassoSpatial(ring: Ring, op: StrokeOp = 'replace'): void {
   actions.setRule('spatial', strokeRule(store.getState().rules.spatial, asPart(part, op), op, 'spatial'));
 }
 
-export function lassoScatter(ring: Ring, x: string, y: string, op: StrokeOp = 'replace'): void {
-  const part: Rule = { source: 'scatter', kind: 'polygon', space: { x, y }, params: { rings: [ring] } };
-  actions.setRule('scatter', strokeRule(store.getState().rules.scatter, asPart(part, op), op, 'scatter'));
+export function lassoScatter(ring: Ring, x: string, y: string, op: StrokeOp = 'replace', source = 'scatter'): void {
+  const part: Rule = { source, kind: 'polygon', space: { x, y }, params: { rings: [ring] } };
+  actions.setRule(source, strokeRule(store.getState().rules[source], asPart(part, op), op, source));
 }
 
 // Brush: the stroke's mask is built incrementally while dragging and handed

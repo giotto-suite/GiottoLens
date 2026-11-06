@@ -34,22 +34,30 @@ R/
   server.R     httpuv app: static paths, Range data handler, WebSocket token/Origin
   protocol.R   message types, parsing, selection bitmasks
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
-  export.R     export_manifest(): manifest.json + cells.parquet from tile stores
+  export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
+  marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
-  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries
+  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
+               .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
+  registration.R  registration_update parsing, registration_matrix(), write_registration(),
+               Xenium Explorer CSVs, .registered_image() (giottoAffineImage)
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
 inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   main.js            bootstrap and wiring
-  core/       state.js (runtime), store.ts (config + selection), comms.js (protocol),
-              remote.js (R commands), constants.js
+  core/       state.js (runtime), store.ts (config + selection), persist.ts (config saved
+              through R), comms.js (protocol), remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
-              images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
-  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
-  render/     render.js, schedule.js (requestRender), colors.ts
+              images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts,
+              registration.ts (affines, landmark fit, flips and turns)
+  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools),
+              live.ts (panel brush drags: bucket index, live counts, adr/0013)
+  render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
+              landmarks.ts (registration pairs)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
-              dom.js, images.js
-  panels/     scatter.js, histogram.js, spec.js (pushed Vega-Lite), controls.js
+              dom.js, images.js, registration.ts (Register section, landmark tool)
+  panels/     dock.ts (dockview: slots, placement, layout), scatter.js, histogram.js,
+              density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -108,11 +116,24 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
 
-### Cells and selection (adr/0001, adr/0002)
+### Cells and selection (adr/0001, adr/0002, adr/0010)
 
-- Cell index `i` = polygon tiles concatenated in manifest order; tile rows are cells
-  `offset .. offset + n - 1`. The browser holds centroids and metadata as typed arrays by
-  index and no string IDs; R holds the IDs (`private$cell_ids`) and translates.
+- Cell index `i` = the cell layer's tiles concatenated in manifest order; tile rows are cells
+  `offset .. offset + n - 1`. The tiles are the polygon store's, or, for a spatial unit
+  without polygons, grid chunks of its spatial locations (`.build_cells_xy()`), which have no
+  file. The browser holds centroids and metadata as typed arrays by index and no string IDs;
+  R holds the IDs (`private$cell_ids`) and translates.
+- Manifest `layers.cells`: `cells` (the table), `tiles`, `geometry` (whether tiles hold
+  polygons; outlines are fetched only then), `mark` (`shape`, `size` in data units, `angle`
+  in degrees: the launch mark, inferred or from `launch_lens(mark =)`) and `marks` (whether
+  it is drawn by default: spatial locations yes, polygons only with a launch mark). The
+  polygon store stays mounted as `data/polygons/`.
+- The drawn mark is the launch mark with the config's `cellMark` on top (`drawnMark()` in
+  `render/marks.ts`, `.drawn_mark()` in R; keep them the same). `cellMark` is set by
+  `set_mark()` (R only: there is no browser control) and saved with the config.
+- Cells are drawn by `cellMarkLayer()` (`render/marks.ts`): dots, circles sized in data units
+  with a pixel minimum, or squares and hexagons (`ColumnLayer`, no pixel minimum, so dots
+  until a mark is as wide as a dot). Selection is centroid membership whatever the mark.
 - A selection is one rule per source (`spatial`, `scatter`, `hist:<col>`, `meta`, `panel:*`,
   `r`), combined with OR, or AND in cross-filter mode. Rules evaluate to `Uint8Array` masks
   over all cells, never only loaded tiles; masks are a cache keyed by rule object (rules are
@@ -136,14 +157,19 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
+- The config except rules and combine mode is saved through R (`core/persist.ts`, adr/0009):
+  sent on change as JSON text, kept verbatim in `private$config_json`, returned in `restore`.
+  Nothing is sent before the restore, so defaults never overwrite it. Bump `CONFIG_VERSION`
+  in `store.ts` and extend `migrate` when a saved field changes meaning.
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 2)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 3)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
-- A tab sends `ready` once its handlers are registered; R then sends metadata and rules.
+- A tab sends `ready` once its handlers are registered; R then sends the saved config
+  (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 
@@ -188,14 +214,61 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Decoding goes through `ImagePool` (`decode(fileDirectory, buffer)`); a decoder must be
   registered in `img-worker.ts`, not on the main thread. Workers are ES modules
   (`worker.format` in `vite.config.js`).
+- `.image_entries()` returns `sources` (the image's own file, used for `registered_image()`)
+  beside the served `files`.
+- `launch_lens(image_files =)` entries have `place: 'fit'`: drawn inside the manifest extent
+  (`fitPlacement()`), not at their extent.
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
+
+### Image registration (adr/0014)
+
+- `config.registration` (saved with the config): `image`, `reference`, `base` (pixels to data
+  before a fit), `landmarks` (`moving` in image pixels, `fixed` in data coordinates), `orient`
+  (pixels to the image's pane: flips and quarter turns, display only), `preview`, `link`. The
+  image draws with `currentTransform()`: the least-squares affine from three complete pairs,
+  else `base`.
+- In mode `landmark` the spatial pane has class `registering`: a second Deck (`state.regDeck`,
+  `#reg-canvas`) on the left half draws only the image, in `orient` coordinates; the main
+  canvas takes the right half and `viewportSize()` halves its width. The main view leaves the
+  image out unless `preview`. `render/landmarks.ts` draws each pane's own points (draggable)
+  and, with a fit, the other pane's points mapped through it. `link` moves either pane with
+  the other through the fit (`onMainView()`, `paneViewChange()`).
+- Affines are `[a, b, c, d, e, f]` (x' = a x + b y + c) in the browser and 3 x 3 matrices on
+  column vectors in R. GiottoClass applies an image's `@affine` as `xy %*% m[1:2, 1:2]`, so
+  `.registered_image()` passes the transposed linear part.
+- Every registration change is sent as `registration_update` (debounced) and kept as
+  `LensViewer$registration`; `set_registration` (R to viewer) starts, loads (`fixed_ref` and
+  `alignment` in reference pixels) or resets it.
+- A click in one pane places that side of a pair, a click in the other its partner, in either
+  order; a click that ends a pan or a drag places nothing. A pane does not pan while the
+  pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
+  pair, Escape the open one.
+
+### Panels (adr/0009)
+
+- Only chart panels dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
+  not a panel. A panel's id names its slot, its selection source (`scatter` or
+  `scatter:<id>`, `density` or `density:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
+- A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip
+  work while `ctx.visible()` is false (`whenVisible()` in `controls.js`) and catch up in `show()`.
+- R keeps every pushed payload (`private$pushed`) until `remove_panel()` or `panel_closed`,
+  and re-sends it on `ready`. Built-in panels rebuild from metadata (`refreshBuiltins()`).
+- A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
+  its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
+  extent by field) so a rebuilt chart can draw it again.
+- A range or rectangle brush drag is live (adr/0013): `beginLive`/`moveLive` while the
+  button is down, the rule set once on release. Panels that show counts register with
+  `addLiveConsumer()` (a bin per cell) and cache their totals over all cells; never set a
+  rule per frame of a drag. The spatial view draws the drag as one GPU-filtered layer.
 
 ### R API (the agent API)
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `push_polygons()`,
+`set_layer()`, `set_mark()`, `set_image()`, `register_image()`, `clear_registration()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
 `lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as

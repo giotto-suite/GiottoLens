@@ -54,3 +54,36 @@ test_that("a transformed image carries its affine; a plain one none", {
         as.vector(GiottoClass:::.affine_matrix(matrix(xy, 1L), turned@affine[])))
     expect_identical(.image_entries(list(t = turned))$entries[[1L]]$affine, a)
 })
+
+test_that("a TIFF's size and pyramid are read from its header", {
+    strip <- withr::local_tempfile(fileext = ".tif")
+    r <- terra::rast(nrows = 300, ncols = 5000, vals = seq_len(1.5e6) %% 60000)
+    terra::writeRaster(r, strip, datatype = "INT2U")
+    info <- .tiff_info(strip)
+    expect_identical(c(info$width, info$height, info$samples, info$bits), c(5000, 300, 1, 16))
+    expect_false(info$tiled)
+    expect_identical(info$levels, 1L)
+
+    fx <- lens_image_fixture()
+    cog <- .tiff_info(fx$image_file)
+    expect_identical(c(cog$width, cog$height), c(1200, 1200))
+    expect_true(cog$tiled)
+    expect_gt(cog$levels, 1L)
+})
+
+test_that("image files are added by name and placed inside the data", {
+    fx <- lens_image_fixture()
+    files <- .check_image_files(fx$image_file, taken = "stain")
+    expect_identical(unname(files), fx$image_file)
+    expect_error(.check_image_files(c(a = fx$image_file, a = fx$image_file)), "must be unique: a")
+    expect_error(.check_image_files(c(stain = fx$image_file), taken = "stain"), "must be unique: stain")
+    expect_error(.check_image_files("nope.tif"), "not found: nope.tif")
+
+    out <- .image_entries(list(), c(he2 = fx$image_file))
+    e <- out$entries[[1L]]
+    expect_identical(e$name, "he2")
+    expect_identical(e$place, "fit")
+    expect_identical(e$extent$xmin, 0)
+    expect_identical(e$extent$ymax, 0)
+    expect_identical(out$sources[["he2"]], normalizePath(fx$image_file))
+})

@@ -6,21 +6,17 @@ import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from '../core/const
 import { txDrawTiles, visibleTiles } from '../data/tiles.js';
 import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
+import { cellMarkLayer, drawnMark } from './marks.ts';
+import { liveView } from '../selection/live.ts';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
-import { MultiscaleImageLayer } from '@vivjs/layers';
+import { imageLayer } from './image-layer.ts';
+import { Matrix4 } from '@math.gl/core';
+import { currentTransform, matrix4 } from '../data/registration.ts';
+import { landmarkLayers } from './landmarks.ts';
+import { landmarkHover, renderRegPane, registering } from '../ui/registration.ts';
+import { DataFilterExtension } from '@deck.gl/extensions';
 
 const SEL = [255, 220, 50, 255];
-
-// Single-channel images add up: each draws its colour scaled by intensity on
-// top of the others, as the channels of one fluorescence image would. RGB
-// images (brightfield) blend normally and draw first: added, their white
-// background would wash out everything over it
-const ADDITIVE = {
-  blend: true,
-  blendColorOperation: 'add', blendColorSrcFactor: 'src-alpha', blendColorDstFactor: 'one',
-  blendAlphaOperation: 'add', blendAlphaSrcFactor: 'one', blendAlphaDstFactor: 'one',
-};
-const SELECTION = [{ t: 0, c: 0, z: 0 }];
 
 // deck.gl compares `data` by reference: a new object each render means
 // re-triangulating every polygon and re-uploading every buffer. Build each
@@ -32,6 +28,27 @@ function once(key, make) {
   return v;
 }
 
+// The image being registered draws with the registration's transform
+function modelMatrixOf(name, img, reg) {
+  if (!reg || reg.image !== name) return img.modelMatrix;
+  return once(reg, () => new Matrix4(matrix4(currentTransform(reg))));
+}
+
+// The live brush layer's data and extension, kept for the drag
+let _live = null;
+function liveLayerProps(values, dims, gate) {
+  if (_live?.values !== values || _live.gate !== gate) _live = {
+    values, gate,
+    data: { length: state.cells.n, attributes: {
+      getPosition: { value: state.cellPositions, size: 2 },
+      getFilterValue: { value: values, size: dims },
+      ...(gate && { getFilterCategory: { value: gate, size: 1 } }),
+    } },
+    extensions: [new DataFilterExtension({ filterSize: dims, categorySize: gate ? 1 : 0 })],
+  };
+  return { data: _live.data, extensions: _live.extensions };
+}
+
 export function renderLayers(viewState) {
   if (!state.deckgl || !viewState) return;
   const s = store.getState();
@@ -39,40 +56,23 @@ export function renderLayers(viewState) {
   const inOverview = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
   const outlines   = viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
   const sel        = s.selection;
+  const live       = liveView();
+  const count      = live ? live.count : sel.count;
 
   const selCountEl = document.getElementById('sel-count');
-  if (selCountEl) selCountEl.textContent = sel.count > 0 ? `${sel.count.toLocaleString()} selected` : '';
+  if (selCountEl) selCountEl.textContent = count > 0 ? `${count.toLocaleString()} selected` : '';
 
   // Images, under everything else, RGB first. A hidden image is left out
-  // rather than made invisible, so its tiles stop loading
+  // rather than made invisible, so its tiles stop loading. While an image is
+  // registered it has its own pane, and shows here only as a preview
+  const reg = s.registration;
+  const regOn = registering();
   if (s.layers.img.show && s.layers.img.alpha > 0 && state.images) {
-    const shown = [...state.images].filter(([name]) => s.images[name]?.show);
-    for (const [, img] of shown.filter(([, img]) => img.rgb)) {
-      layers.push(new MultiscaleImageLayer({
-        id: `img-${img.entry.url}`,
-        loader: img.levels,
-        selections: SELECTION,
-        modelMatrix: img.modelMatrix,
-        opacity: s.layers.img.alpha,
-        pickable: false,
-      }));
-    }
-    for (const [name, img] of shown.filter(([, img]) => !img.rgb)) {
-      const v = s.images[name];
-      layers.push(new MultiscaleImageLayer({
-        id: `img-${img.entry.url}`,
-        loader: img.levels,
-        selections: SELECTION,
-        colors: [v.color], contrastLimits: [v.contrast], channelsVisible: [true],
-        modelMatrix: img.modelMatrix,
-        opacity: s.layers.img.alpha,
-        // No low-resolution backdrop and no parent tiles under loaded ones:
-        // with additive blending, overlaps would draw twice as bright
-        excludeBackground: true, refinementStrategy: 'no-overlap',
-        parameters: ADDITIVE,
-        pickable: false,
-      }));
-    }
+    const shown = [...state.images].filter(([name]) => s.images[name]?.show &&
+      !(regOn && name === reg.image && !reg.preview));
+    for (const [name, img] of [...shown.filter(([, i]) => i.rgb), ...shown.filter(([, i]) => !i.rgb)])
+      layers.push(imageLayer('img-' + img.entry.url, img, s.images[name],
+        modelMatrixOf(name, img, reg), s.layers.img.alpha));
   }
 
   const onHoverCell = idxOf => info => {
@@ -81,8 +81,9 @@ export function renderLayers(viewState) {
   };
 
   if (s.layers.poly.show && s.layers.poly.alpha > 0 && state.cells) {
-    const polyLayer = state.manifest.layers.polygons;
-    const tiles     = outlines ? visibleTiles(viewState, polyLayer.tiles, viewportSize()) : [];
+    const cellLayer = state.manifest.layers.cells;
+    const geometry  = !!cellLayer.geometry;
+    const tiles     = outlines && geometry ? visibleTiles(viewState, cellLayer.tiles, viewportSize()) : [];
     const loaded    = tiles.map(t => [t, state.cache.get(`polygons:${t.index}`)]).filter(([, d]) => d);
     const colors    = state.cellColors;
     const mask      = sel.mask;
@@ -115,29 +116,45 @@ export function renderLayers(viewState) {
       }));
     }
 
-    // Centroids for every cell, from the cell table: the whole sample shows at
-    // once. Hidden where outlines are drawn and all their tiles are in.
-    if (!outlines || loaded.length < tiles.length) {
-      layers.push(new ScatterplotLayer({
-        id: 'cell-centroids',
+    // Every cell from the cell table, as a dot or its mark: the whole sample
+    // shows at once. Hidden where outlines are drawn and all their tiles are in.
+    if (!geometry || !outlines || loaded.length < tiles.length) {
+      layers.push(cellMarkLayer({
+        mark: drawnMark(cellLayer, s.cellMark), zoom: viewState.zoom,
         data: once(colors, () => ({ length: state.cells.n, attributes: {
           getPosition:  { value: state.cellPositions, size: 2 },
           getFillColor: { value: colors, size: 4, normalized: true },
         } })),
-        getRadius: 2, radiusUnits: 'pixels', radiusMinPixels: 1,
-        opacity: s.layers.poly.alpha, pickable: true,
+        opacity: s.layers.poly.alpha,
         onHover: onHoverCell(i => i),
       }));
     }
 
-    if (state.selPositions?.length) {
+    const selStyle = {
+      getFillColor: [255, 220, 50, 180], getLineColor: SEL,
+      stroked: !outlines, getLineWidth: 1, lineWidthUnits: 'pixels',
+      getRadius: outlines ? 1.5 : 3, radiusUnits: 'pixels', radiusMinPixels: 1,
+    };
+    const positions = live ? live.base : state.selPositions;
+    if (positions?.length) {
       layers.push(new ScatterplotLayer({
         id: 'selected-cells',
-        data: once(state.selPositions, () => ({ length: state.selPositions.length / 2,
-          attributes: { getPosition: { value: state.selPositions, size: 2 } } })),
-        getFillColor: [255, 220, 50, 180], getLineColor: SEL,
-        stroked: !outlines, getLineWidth: 1, lineWidthUnits: 'pixels',
-        getRadius: outlines ? 1.5 : 3, radiusUnits: 'pixels', radiusMinPixels: 1,
+        data: once(positions, () => ({ length: positions.length / 2,
+          attributes: { getPosition: { value: positions, size: 2 } } })),
+        ...selStyle,
+      }));
+    }
+    // A panel's brush being dragged (adr/0013): every cell, filtered on the
+    // GPU to those in the box (and passing the other rules, `gate`). Its
+    // buffers are uploaded once per drag; a move changes only the range.
+    if (live?.box) {
+      const { values, dims, gate, box } = live;
+      layers.push(new ScatterplotLayer({
+        id: `selected-live-${dims}-${gate ? 1 : 0}`,
+        ...liveLayerProps(values, dims, gate),
+        ...selStyle,
+        filterRange: dims === 1 ? box[0] : box,
+        ...(gate && { filterCategories: [1] }),
       }));
     }
   }
@@ -184,6 +201,9 @@ export function renderLayers(viewState) {
     }));
   }
 
+  // Landmarks of the image being registered, on the reference
+  if (regOn) layers.push(...landmarkLayers(reg, 'fixed', state.landmarkDrag, landmarkHover('fixed')));
+
   // In-progress drawing
   const path = (id, d, color, width = 2) => new PathLayer({
     id, data: [d], getPath: p => p, getColor: color, getWidth: width,
@@ -229,4 +249,5 @@ export function renderLayers(viewState) {
   }
 
   state.deckgl.setProps({ layers });
+  renderRegPane();
 }

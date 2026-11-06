@@ -32,12 +32,106 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     v$push_metadata(fx$meta)
     expect_true(browser_wait(br,
         "document.getElementById('meta-col-select').options.length === 3"))
-    expect_true(browser_wait(br, "!!document.querySelector('#stats-body-2 canvas')"))
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
 
     # Everything comes from this server: works offline, one DuckDB
     external <- br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => !u.startsWith(location.origin))")
     expect_length(external, 0L)
 
+    expect_identical(br$errors(), character())
+})
+
+test_that("holding Space pans with any tool, and the tool comes back on release", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    key <- function(type) br$session$Input$dispatchKeyEvent(type = type, code = "Space", key = " ",
+        windowsVirtualKeyCode = 32L)
+    pan_lit <- function() br$js("document.querySelector('.tool-btn[data-mode=\"pan\"]').classList.contains('active')")
+    mode <- function() br$js("window.__giottolens.store.getState().mode")
+    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    cx <- size[[1]] / 2; cy <- size[[2]] / 2
+    target <- function() unlist(br$js("window.__giottolens.state.currentViewState.target"))[1:2]
+
+    br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
+    expect_false(pan_lit())
+    key("keyDown")
+    expect_true(browser_wait(br, "document.querySelector('.tool-btn[data-mode=\"pan\"]').classList.contains('active')"))
+    expect_identical(mode(), "lasso")   # the tool is kept, not replaced by pan
+    # A drag while held pans and selects nothing
+    t0 <- target()
+    browser_drag(br, list(c(cx, cy), c(cx + 40, cy), c(cx + 80, cy + 20)))
+    expect_true(pump_until(function() sum(abs(target() - t0)) > 0))
+    expect_length(v$selection, 0L)
+    key("keyUp")
+    expect_false(pan_lit())
+    expect_identical(mode(), "lasso")
+    # With the pan tool, a held drag pans once: deck.gl does not pan as well
+    br$js("window.__giottolens.actions.setMode('pan')")
+    scale <- br$js("2 ** window.__giottolens.state.currentViewState.zoom")
+    key("keyDown")
+    t0 <- target()
+    browser_drag(br, list(c(cx, cy), c(cx + 40, cy), c(cx + 80, cy + 20)))
+    key("keyUp")
+    expect_equal((target() - t0) * scale, c(-80, 20), tolerance = 0.01)
+
+    # A polygon being clicked out keeps its vertices across a hold
+    br$js("window.__giottolens.actions.setMode('poly')")
+    click <- function(p) for (t in c("mousePressed", "mouseReleased")) br$session$Input$dispatchMouseEvent(
+        type = t, x = p[1], y = p[2], button = "left", buttons = if (t == "mousePressed") 1L else 0L, clickCount = 1L)
+    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left, r.top]; })()"))
+    click(off + c(cx, cy)); click(off + c(cx + 30, cy))
+    expect_true(browser_wait(br, "window.__giottolens.state.drawRing.length === 2"))
+    key("keyDown"); key("keyUp")
+    expect_identical(br$js("window.__giottolens.state.drawRing.length"), 2L)
+    expect_identical(mode(), "poly")
+    expect_identical(br$errors(), character())
+})
+
+test_that("the middle button pans with any tool without interrupting it", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"))
+    vs <- function() br$js("(() => { const v = window.__giottolens.state.currentViewState; return [v.target[0], v.target[1], 2 ** v.zoom]; })()")
+    mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
+    middle_drag <- function(from, by) {
+        mouse("mouseMoved", from); mouse("mousePressed", from, "middle")
+        for (f in c(0.5, 1)) mouse("mouseMoved", from + by * f, "middle")
+        mouse("mouseReleased", from + by, "middle")
+    }
+    # The content follows the pointer exactly, with the pan tool too (deck.gl
+    # does not pan as well)
+    for (tool in c("pan", "lasso")) {
+        br$js(sprintf("window.__giottolens.actions.setMode('%s')", tool))
+        a <- unlist(vs())
+        middle_drag(off, c(40, 20))
+        b <- unlist(vs())
+        expect_equal(c(b[1] - a[1], b[2] - a[2]) * a[3], c(-40, 20), tolerance = 0.01, info = tool)
+    }
+    expect_length(v$selection, 0L)
+
+    # A ruler with its first point placed carries on across a pan
+    br$js("window.__giottolens.actions.setMode('ruler')")
+    click <- function(p) { mouse("mousePressed", p); mouse("mouseReleased", p) }
+    click(off)
+    expect_true(browser_wait(br, "!!window.__giottolens.state.rulerStart"))
+    start <- unlist(br$js("window.__giottolens.state.rulerStart"))
+    middle_drag(off + c(10, 10), c(-60, 0))
+    expect_identical(unlist(br$js("window.__giottolens.state.rulerStart")), start)
+    expect_false(br$js("window.__giottolens.state.rulerLocked"))
+    click(off + c(30, 0))
+    expect_true(browser_wait(br, "window.__giottolens.state.rulerLocked === true"))
+    end <- unlist(br$js("window.__giottolens.state.rulerEnd"))
+    expect_equal((end[1] - start[1]) * unlist(vs())[3], 90, tolerance = 0.01)   # 30 px + the 60 px pan
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "ruler")
     expect_identical(br$errors(), character())
 })
 
@@ -77,6 +171,99 @@ pip <- function(ring, x, y) {
     }
     inside
 }
+
+test_that("bins without polygons draw as dots, then squares, and select like cells", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    v$push_metadata(fx$meta[, c("cell_ID", "half")])
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    ids <- "window.__giottolens.state.deckgl.props.layers.map(l => l.id)"
+    has <- function(id) browser_wait(br, sprintf("%s.includes('%s')", ids, id))
+
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    # Bins are 2 units across: 2 px at zoom 0, under a dot; 32 px at zoom 4
+    v$set_view(x = 60, y = -60, zoom = 0)
+    expect_true(has("cell-centroids"))
+    v$set_view(x = 60, y = -60, zoom = 4)
+    expect_true(has("cell-squares"))
+    # Nothing is read from a store
+    tiles <- br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => /\\/(data|files)\\//.test(u))")
+    expect_length(tiles, 0L)
+
+    # A rule from R reaches the page, and a lasso from the page reaches R
+    v$select(lens_categories("half", "left"))
+    expect_true(browser_wait(br, "document.getElementById('sel-count').textContent.startsWith('450 ')"))
+    cells <- arrow::read_parquet(file.path(get("private", v$.__enclos_env__)$session, "cells.parquet"))
+    ring  <- rbind(c(40, -85), c(75, -85), c(75, -50), c(40, -50))
+    br$js(sprintf("window.__giottolens.actions.setRule('spatial', {source:'spatial',kind:'polygon',space:'spatial',params:{rings:[%s]}})",
+        jsonlite::toJSON(ring)))
+    br$js("window.__giottolens.actions.setCombine('and')")
+    expected <- cells$cell_ID[pip(ring, cells$x, cells$y)]
+    expected <- intersect(expected, fx$meta$cell_ID[fx$meta$half == "left"])
+    expect_true(pump_until(function() setequal(v$selection, expected)))
+    expect_gt(length(expected), 0L)
+    expect_identical(br$errors(), character())
+})
+
+test_that("the cell mark is set from R, survives a reload, and resets", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    layer <- function() br$js("(() => { const l = window.__giottolens.state.deckgl.props.layers.find(l => l.id.startsWith('cell-')); return l && [l.id, l.props.getRadius ?? l.props.radius]; })()")
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 60, y = -60, zoom = 4)
+    expect_true(pump_until(function() identical(layer(), list("cell-squares", 1L))))
+
+    # From R: fields merge onto the launch mark
+    v$set_mark(shape = "circle", size = 3)
+    expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
+    expect_identical(v$describe()$cells$mark, list(shape = "circle", size = 3, angle = 10))
+
+    # Saved with the viewer's settings: back after a reload
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"cellMark":{"shape":"circle","size":3}',
+        priv$config_json %||% "", fixed = TRUE)))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    # The page has the restored setting once it has its config
+    expect_true(browser_wait(br, "window.__giottolens?.store.getState().cellMark?.size === 3"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 60, y = -60, zoom = 4)
+    expect_true(pump_until(function() identical(layer(), list("cell-circles", 1.5))))
+
+    # Dots, then back to the launch mark
+    v$set_mark(show = FALSE)
+    expect_true(pump_until(function() identical(layer()[[1]], "cell-centroids")))
+    expect_identical(v$describe()$cells$mark, NULL)
+    v$set_mark()
+    expect_true(pump_until(function() identical(layer(), list("cell-squares", 1L))))
+    expect_true(browser_wait(br, "Object.keys(window.__giottolens.store.getState().cellMark).length === 0"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("segmented cells take a mark when it is turned on", {
+    fx <- lens_fixture()
+    v  <- launch_lens(NULL, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    ids <- "window.__giottolens.state.deckgl.props.layers.map(l => l.id)"
+    expect_true(pump_until(function() v$connected(), 20))
+    # Below outline zoom: dots by default
+    v$set_view(x = 50, y = -50, zoom = -3)
+    expect_true(browser_wait(br, sprintf("%s.includes('cell-centroids')", ids)))
+    expect_identical(v$describe()$cells$mark, NULL)
+    v$set_mark(show = TRUE)
+    expect_true(browser_wait(br, sprintf("%s.includes('cell-circles')", ids)))
+    expect_identical(v$describe()$cells$mark$shape, "circle")
+    expect_identical(br$errors(), character())
+})
 
 test_that("selections do not depend on what is loaded, and match R", {
     fx <- lens_fixture()
@@ -171,14 +358,14 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_identical(br$errors(), character())
 })
 
-test_that("push_panel shows a Vega-Lite spec linked to the selection", {
+test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
     v$push_metadata(fx$meta)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "window.__giottolens?.panels[1] != null"))
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram') != null"))
 
     spec <- list(
         mark = "point",
@@ -186,16 +373,23 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
         encoding = list(x = list(field = "score", type = "quantitative"),
                         y = list(field = "rank", type = "quantitative"))
     )
-    v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))), title = "score")
-    expect_true(browser_wait(br, "window.__giottolens.panels[1]?.view != null"))
-    expect_true(browser_wait(br,
-        "document.querySelector('#stats-pane-2 .stats-pane-title').textContent === 'score'"))
-    # Issue #3: the chart, axes and titles fit inside the pane
-    fits <- br$js("(() => { const a = document.querySelector('#stats-body-2 .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panels[1].view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
+    id <- v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))),
+        title = "score", where = "right")
+    expect_identical(id, "panel-1")
+    expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
+    p <- v$panels()
+    expect_setequal(p$id, c("scatter", "histogram", "panel-1"))
+    expect_identical(p$title[p$id == "panel-1"], "score")
+    expect_identical(p$kind[p$id == "panel-1"], "spec")
+    # "right" with no ref: its own group, beside the others; all in view
+    expect_false(p$group[p$id == "panel-1"] %in% p$group[p$id != "panel-1"])
+    expect_true(all(p$visible))
+    # Issue #3: the chart, axes and titles fit inside the panel
+    fits <- br$js("(() => { const a = document.querySelector('[data-panel=\"panel-1\"] .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panel('panel-1').view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
     expect_true(fits)
 
     # Dragging a brush on the chart selects exactly the cells inside it
-    box <- br$js("(() => { const r = document.querySelector('#stats-body-2 canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    box <- br$js("(() => { const r = document.querySelector('[data-panel=\"panel-1\"] canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
     pt <- function(fx_, fy_) c(box[[1]] + fx_ * box[[3]], box[[2]] + fy_ * box[[4]])
     send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
         button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
@@ -204,6 +398,7 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
     for (f in seq(0.4, 0.7, by = 0.05)) send("mouseMoved", pt(f, f))
     send("mouseReleased", pt(0.7, 0.7))
     expect_true(pump_until(function() length(v$selection) > 0))
+    expect_identical(names(get("private", v$.__enclos_env__)$rule_set), "panel:panel-1")
     m <- transform(fx$meta, rank = seq_len(nrow(fx$meta)))
     s_ <- m[m$cell_ID %in% v$selection, ]
     inside <- m$score >= min(s_$score) & m$score <= max(s_$score) &
@@ -214,7 +409,218 @@ test_that("push_panel shows a Vega-Lite spec linked to the selection", {
     # A metadata reload keeps the pushed panel
     v$push_metadata(fx$meta)
     Sys.sleep(0.5); later::run_now(0.2)
-    expect_true(br$js("document.querySelector('#stats-pane-2 .stats-pane-title').textContent === 'score'"))
+    expect_true(br$js("window.__giottolens.panel('panel-1')?.view != null"))
+
+    # Pushing to the same id replaces the chart in place; a tab joins its group
+    v$push_panel(spec, data = transform(fx$meta, rank = rev(seq_len(nrow(fx$meta)))),
+        id = "panel-1", title = "score 2")
+    v$push_panel(list(mark = "bar", encoding = list(x = list(field = "a", type = "nominal"))),
+        data = data.frame(a = c("x", "y")), id = "bars", ref = "histogram")
+    expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
+    p <- v$panels()
+    expect_identical(p$title[p$id == "panel-1"], "score 2")
+    expect_identical(p$group[p$id == "bars"], p$group[p$id == "histogram"])
+    expect_false(p$visible[p$id == "histogram"])   # behind the new tab
+
+    v$remove_panel("bars")
+    v$remove_panel("scatter")
+    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1"))))
+    expect_identical(br$errors(), character())
+})
+
+test_that("a reload brings back the layout, panels, settings and brushes", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    v$push_metadata(fx$meta)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
+
+    spec <- list(mark = "point",
+        params = list(list(name = "brush", select = list(type = "interval"))),
+        encoding = list(x = list(field = "score", type = "quantitative"),
+                        y = list(field = "rank", type = "quantitative")))
+    v$push_panel(spec, data = transform(fx$meta, rank = seq_len(nrow(fx$meta))), id = "sc", where = "below")
+    expect_true(browser_wait(br, "window.__giottolens.panel('sc')?.view != null"))
+    v$remove_panel("scatter")
+    v$set_layer("poly", alpha = 0.25)
+    v$color_by("leiden_clus")
+
+    # A range from R shows as the histogram's brush
+    # A brush's extent, rounded: Vega keeps it through pixel space
+    brush_of <- function(id) {
+        b <- br$js(sprintf("JSON.stringify(window.__giottolens.panel('%s')?.view?.signal('brush') ?? null)", id))
+        if (is.null(b)) return(NULL)
+        lapply(jsonlite::fromJSON(b), function(r) round(r, 6))
+    }
+    v$select(lens_range("score", 3, 6), source = "hist:score")
+    expect_true(pump_until(function() identical(brush_of("histogram"), list(bin0 = c(3, 6)))))
+    # and a brush dragged on the pushed chart is added to it
+    box <- br$js("(() => { const r = document.querySelector('[data-panel=\"sc\"] canvas').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+    pt <- function(fx_, fy_) c(box[[1]] + fx_ * box[[3]], box[[2]] + fy_ * box[[4]])
+    send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    send("mouseMoved", pt(0.3, 0.2)); send("mousePressed", pt(0.3, 0.2))
+    for (f in seq(0.35, 0.6, by = 0.05)) send("mouseMoved", pt(f, f))
+    send("mouseReleased", pt(0.6, 0.6))
+    expect_true(pump_until(function() setequal(v$rules()$source, c("hist:score", "panel:sc"))))
+    sc_brush <- brush_of("sc")
+    expect_setequal(names(sc_brush), c("score", "rank"))
+    n_sel <- length(v$selection)
+    before <- v$panels()
+    # The page's config has reached R
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"alpha":0.25', priv$config_json %||% "", fixed = TRUE) &&
+        !grepl('"scatter"', priv$config_json, fixed = TRUE)))
+
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('sc')?.view != null"))
+    expect_true(browser_wait(br, "window.__giottolens.panel('histogram')?.view != null"))
+    after <- v$panels()
+    expect_identical(after$id, before$id)
+    expect_identical(after$group == after$group[1], before$group == before$group[1])
+    st <- v$state()
+    expect_identical(st$config$layers$poly$alpha, 0.25)
+    expect_identical(st$config$colorBy, "leiden_clus")
+    expect_identical(st$selected, n_sel)
+    # Both brushes are drawn again, so they can be dragged on
+    expect_true(pump_until(function() identical(brush_of("histogram"), list(bin0 = c(3, 6)))))
+    expect_true(pump_until(function() identical(brush_of("sc"), sc_brush)))
+    # ...and can be dragged: the range follows the brush
+    xy <- br$js("(() => { const v = window.__giottolens.panel('histogram').view, r = v.container().querySelector('canvas').getBoundingClientRect(), o = v.origin().map((z, i) => z + (i ? v.padding().top : v.padding().left)); return [r.left + o[0] + v.scale('x')(4.5), r.top + o[1] + v.height() / 2]; })()")
+    p0 <- c(xy[[1]], xy[[2]])
+    # A middle drag leaves the brush alone (Vega-Lite's default takes any button)
+    middle <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "middle", buttons = if (type == "mouseReleased") 0L else 4L, clickCount = 1L)
+    middle("mouseMoved", p0); middle("mousePressed", p0)
+    for (dx in seq(5, 30, by = 5)) middle("mouseMoved", p0 + c(dx, 0))
+    middle("mouseReleased", p0 + c(30, 0))
+    Sys.sleep(0.2); later::run_now(0.1)
+    expect_identical(brush_of("histogram"), list(bin0 = c(3, 6)))
+    send("mouseMoved", p0); send("mousePressed", p0)
+    for (dx in seq(5, 30, by = 5)) send("mouseMoved", p0 + c(dx, 0))
+    send("mouseReleased", p0 + c(30, 0))
+    hist_rule <- function() Filter(function(r) identical(r$source, "hist:score"), v$selection_rules)[[1]]
+    expect_true(pump_until(function() hist_rule()$params$min > 3.2))
+    expect_equal(hist_rule()$params$max - hist_rule()$params$min, 3, tolerance = 1e-6)
+    # Dropping the rule elsewhere clears the histogram's brush
+    v$select(NULL, source = "hist:score", replace = FALSE)
+    expect_true(browser_wait(br, "Object.keys(window.__giottolens.panel('histogram')?.view?.signal('brush') ?? {}).length === 0"))
+    expect_identical(br$errors(), character())
+})
+
+
+test_that("the density panel bins two columns, and its rectangle is two ranges", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    m <- transform(fx$meta, umap_1 = score, umap_2 = seq_len(nrow(fx$meta)) / 10)
+    suppressMessages(v$push_metadata(m))
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
+
+    # Added from the + menu, titled by its columns
+    br$js("document.querySelector('.dock-add').click()")
+    br$js("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === 'density').click()")
+    expect_true(browser_wait(br, "window.__giottolens.panel('density')?.view != null"))
+    p <- v$panels()
+    expect_identical(p$title[p$id == "density"], "umap_1 \u00d7 umap_2")
+
+    # A rectangle from R is drawn as the brush, and selects the cells in both ranges
+    box <- function() {
+        b <- br$js("JSON.stringify(window.__giottolens.panel('density')?.view?.signal('brush') ?? null)")
+        if (is.null(b)) NULL else lapply(jsonlite::fromJSON(b), function(r) round(r, 6))
+    }
+    rule <- lens_intersect(lens_range("umap_1", 2, 6), lens_range("umap_2", 2, 6))
+    v$select(rule, source = "density")
+    inside <- function(r) m$cell_ID[m$umap_1 >= r[[1]] & m$umap_1 <= r[[2]] & m$umap_2 >= r[[3]] & m$umap_2 <= r[[4]]]
+    expect_setequal(v$selection, inside(c(2, 6, 2, 6)))
+    expect_true(pump_until(function() identical(box(), list(x = c(2, 6), y = c(2, 6)))))
+    expect_true(any(grepl("lens_intersect(lens_range(", v$rules(code = TRUE), fixed = TRUE)))
+    # The bins sit where Vega draws the plot: its origin plus its padding
+    expect_true(br$js("(() => { const v = window.__giottolens.panel('density').view, c = v.container().querySelector('svg'),
+      t = document.querySelector('[data-panel=density] canvas'),
+      cr = c.getBoundingClientRect(), tr = t.getBoundingClientRect(), p = v.padding(), o = v.origin();
+      return Math.abs(tr.left - (cr.left + o[0] + p.left)) < 0.5 && Math.abs(tr.top - (cr.top + o[1] + p.top)) < 0.5 &&
+        Math.abs(tr.width - v.width()) < 0.5 && Math.abs(tr.height - v.height()) < 0.5; })()"))
+
+    # Dragging the rectangle moves both ranges; the selection follows
+    xy <- br$js("(() => { const v = window.__giottolens.panel('density').view, r = v.container().querySelector('svg').getBoundingClientRect(), o = v.origin().map((z, i) => z + (i ? v.padding().top : v.padding().left)); return [r.left + o[0] + v.scale('x')(4), r.top + o[1] + v.scale('y')(4)]; })()")
+    p0 <- c(xy[[1]], xy[[2]])
+    send <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    send("mouseMoved", p0); send("mousePressed", p0)
+    for (d in seq(4, 24, by = 4)) send("mouseMoved", p0 + c(d, -d))
+    # While the button is down the drag is live (adr/0013): the count follows
+    # the rectangle, and the rule is set only on release
+    live <- function() br$js("(() => { const r = window.__giottolens.store.getState().rules.density;
+      return [document.getElementById('sel-count').textContent, r.params.parts[0].params.min]; })()")
+    expect_true(pump_until(function() { l <- live(); l[[1]] != "" && l[[1]] != paste(length(inside(c(2, 6, 2, 6))), "selected") }))
+    expect_equal(live()[[2]], 2)
+    send("mouseReleased", p0 + c(24, -24))
+    moved <- function() {
+        r <- Filter(function(x) identical(x$source, "density"), v$selection_rules)
+        if (!length(r)) return(NULL)
+        unlist(lapply(r[[1]]$params$parts, function(q) c(q$params$min, q$params$max)))
+    }
+    expect_true(pump_until(function() { r <- moved(); !is.null(r) && r[[1]] > 2.1 && r[[3]] > 2.1 }))
+    r <- moved()
+    expect_equal(c(r[[2]] - r[[1]], r[[4]] - r[[3]]), c(4, 4), tolerance = 1e-6)
+    expect_true(pump_until(function() setequal(v$selection, inside(r))))
+
+    # The wheel zooms the plot, not the rectangle; Shift+drag pans; the button resets
+    dom <- function() unlist(br$js("window.__giottolens.panel('density').view.scale('x').domain()"))
+    full <- dom()
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = p0[1], y = p0[2], deltaX = 0, deltaY = -300)
+    expect_true(pump_until(function() diff(dom()) < diff(full) * 0.9))
+    zoomed <- dom()
+    expect_identical(moved(), r)
+    shift <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2], modifiers = 8L,
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    q0 <- p0 + c(0, 40)
+    shift("mouseMoved", q0); shift("mousePressed", q0)
+    for (d in seq(10, 60, by = 10)) shift("mouseMoved", q0 + c(d, 0))
+    shift("mouseReleased", q0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < zoomed[1] - 1e-9))
+    expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
+    expect_identical(moved(), r)
+    # The middle button pans too, starting on the rectangle, and leaves it alone
+    middle <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "middle", buttons = if (type == "mouseReleased") 0L else 4L, clickCount = 1L)
+    before <- dom()
+    middle("mouseMoved", p0); middle("mousePressed", p0)
+    for (d in seq(10, 60, by = 10)) middle("mouseMoved", p0 + c(d, 0))
+    middle("mouseReleased", p0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < before[1] - 1e-9))
+    expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
+    expect_identical(moved(), r)
+    # The hand tool: a plain drag pans, and leaves the rectangle alone
+    tool <- function(t) br$js(sprintf("document.querySelector('[data-panel=density] .stats-controls button[title^=\"%s\"]').click()", t))
+    width <- diff(dom())
+    tool("pan")
+    # Rebuilt for the new tool, at the same zoom
+    expect_true(pump_until(function() isTRUE(tryCatch(abs(diff(dom()) - width) < 1e-6 &&
+        br$js("window.__giottolens.panel('density')?.view != null"), error = function(e) FALSE))))
+    Sys.sleep(0.2); later::run_now(0.1)
+    before <- dom()
+    send("mouseMoved", q0); send("mousePressed", q0)
+    for (d in seq(10, 60, by = 10)) send("mouseMoved", q0 + c(d, 0))
+    send("mouseReleased", q0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < before[1] - 1e-9))
+    expect_identical(moved(), r)
+    tool("select")
+    br$js("document.querySelector('[data-panel=density] .stats-controls button[title^=\"zoom to fit\"]').click()")
+    expect_true(pump_until(function() isTRUE(all.equal(dom(), full))))
+    expect_true(pump_until(function() { b <- box(); !is.null(b$x) && isTRUE(all.equal(b$x, r[1:2], tolerance = 1e-6)) }))
+
+    # A reload brings the panel and its rectangle back
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, "window.__giottolens?.panel('density')?.view != null"))
+    expect_true(pump_until(function() { b <- box(); !is.null(b$x) && isTRUE(all.equal(b$x, r[1:2], tolerance = 1e-6)) }))
     expect_identical(br$errors(), character())
 })
 
@@ -417,8 +823,12 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     for (l in lines) eval(parse(text = l))
     expect_setequal(v$selection, sel)
 
-    # × drops one rule; the toggle hides the strip
-    br$js("document.querySelector('#rule-strip .rule-chip[data-source=\"hist:score\"] .rule-chip-x').click()")
+    # × drops one rule; the toggle hides the strip. The rules R just re-sent
+    # reach the page on the socket, which can lag this test's own commands
+    x_js <- "document.querySelector('#rule-strip .rule-chip[data-source=\"hist:score\"] .rule-chip-x')"
+    expect_true(browser_wait(br, sprintf("!!%s && window.__giottolens.store.getState().selection.count === %d",
+        x_js, length(sel))))
+    br$js(paste0(x_js, ".click()"))
     expect_true(pump_until(function() length(v$selection) > n_both))
     expect_identical(v$rules()$source, "spatial")
     br$js("document.getElementById('btn-rules').click()")
@@ -519,5 +929,151 @@ test_that("flipped and rotated images are drawn where GiottoClass places them", 
     }
     expect_gt(value(at[1L, ]), 0.8)
     expect_lt(value(at[2L, ]), 0.2)
+    expect_identical(br$errors(), character())
+})
+
+test_that("an image is registered by landmarks, saved, reloaded and added to the object", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$g, open = FALSE, images = "stain", image_files = c(hne = fx$rgb_file))
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.images?.size === 2"))
+    expect_true(browser_wait(br, "document.getElementById('reg-panel').style.display === ''"))
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "document.getElementById('r-status').className === 'connected'"))
+
+    # The image file has no place yet: drawn inside the data's extent
+    t0 <- unlist(br$js("window.__giottolens.state.images.get('hne').transform"))
+    expect_equal(t0[c(2L, 4L)], c(0, 0))
+    expect_gt(t0[[1L]], 0)
+    expect_lt(t0[[5L]], 0)
+
+    # hne pixels are stain pixels halved; stain pixels are 1/12 data units
+    hne_to_stain <- diag(c(2, 2, 1))
+    stain <- diag(c(100 / 1200, -100 / 1200, 1))
+    truth <- stain %*% hne_to_stain
+    kp <- data.frame(alignmentX = c(0, 600, 0, 300), alignmentY = c(0, 0, 600, 300))
+    kp$fixedX <- 2 * kp$alignmentX
+    kp$fixedY <- 2 * kp$alignmentY
+    v$register_image("hne", reference = "stain", keypoints = kp)
+    reg <- v$registration
+    expect_s3_class(reg, "lens_registration")
+    expect_true(reg$fitted)
+    expect_equal(registration_matrix(reg), truth, tolerance = 1e-9)
+    expect_equal(registration_matrix(reg, "reference"), hne_to_stain, tolerance = 1e-9)
+    expect_lt(reg$rmse, 1e-9)
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "landmark")
+
+    # The image has its own pane on the left; the main view takes the right half
+    expect_true(browser_wait(br, paste0("document.getElementById('spatial-pane').classList.contains('registering')",
+        " && window.__giottolens.state.regDeck?.getViewports()[0]?.width > 0")))
+    widths <- br$js("[document.getElementById('reg-canvas').clientWidth, document.getElementById('deck-canvas').clientWidth]")
+    expect_lt(abs(widths[[1]] - widths[[2]]), 3)
+    expect_false(br$js("document.getElementById('reg-flip-h').disabled"))
+    expect_false(br$js("document.getElementById('reg-link').disabled"))
+
+    # Two clicks make a pair: on the image in its pane (pane coordinates are
+    # pixels with y negated), then on the reference in the main view
+    click <- function(deck, canvas, x, y) {
+        off <- br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left, r.top]; })()", canvas))
+        p <- br$js(sprintf("window.__giottolens.state.%s.getViewports()[0].project([%f, %f])", deck, x, y))
+        for (type in c("mousePressed", "mouseReleased"))
+            br$session$Input$dispatchMouseEvent(type = type, x = off[[1]] + p[[1]],
+                y = off[[2]] + p[[2]], button = "left", clickCount = 1L)
+    }
+    click("regDeck", "reg-canvas", 120, -180)
+    expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.landmarks.length === 5"))
+    click("deckgl", "deck-canvas", 20.5, -30.5)
+    pump_until(function() isTRUE(!is.na(v$registration$landmarks$fixed_x[5L])), 5)
+    lm <- v$registration$landmarks
+    expect_identical(nrow(lm), 5L)
+    expect_equal(c(lm$fixed_x[5L], lm$fixed_y[5L]), c(20.5, -30.5), tolerance = 0.2)
+    expect_equal(c(lm$moving_x[5L], lm$moving_y[5L]), c(120, 180), tolerance = 1)
+    expect_gt(v$registration$rmse, 0)
+
+    # As in the main view, the middle button and a drag with Space held pan the
+    # image's pane, and place no point there or in the main view
+    n_lm <- function() br$js("window.__giottolens.store.getState().registration.landmarks.length")
+    pane_t <- function() unlist(br$js("window.__giottolens.state.regDeck.props.viewState.target"))[1:2]
+    mid <- function(canvas) unlist(br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()", canvas)))
+    mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
+    drag <- function(from, by, button) {
+        mouse("mouseMoved", from); mouse("mousePressed", from, button)
+        for (f in c(0.5, 1)) mouse("mouseMoved", from + by * f, button)
+        mouse("mouseReleased", from + by, button)
+    }
+    key <- function(type) br$session$Input$dispatchKeyEvent(type = type, code = "Space", key = " ",
+        windowsVirtualKeyCode = 32L)
+    t0 <- pane_t()
+    drag(mid("reg-canvas"), c(40, 20), "middle")
+    expect_true(pump_until(function() sum(abs(pane_t() - t0)) > 0))
+    t0 <- pane_t()
+    key("keyDown")
+    drag(mid("reg-canvas"), c(-30, 10), "left")
+    expect_true(pump_until(function() sum(abs(pane_t() - t0)) > 0))
+    for (canvas in c("reg-canvas", "deck-canvas")) { mouse("mousePressed", mid(canvas)); mouse("mouseReleased", mid(canvas)) }
+    key("keyUp")
+    pump_until(function() FALSE, 0.3)
+    expect_identical(n_lm(), 5L)
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "landmark")
+
+    # Turning the image's pane changes where it is drawn there, not the fit
+    fit <- v$registration$transform
+    br$js("document.getElementById('reg-rot-ccw').click()")
+    expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.orient[1] !== 0"))
+    pump_until(function() FALSE, 0.3)
+    expect_equal(v$registration$transform, fit)
+
+    # Saved as Xenium Explorer CSVs; the matrix alone places the image again
+    dir <- withr::local_tempdir()
+    files <- write_registration(v$registration, dir)
+    v$clear_registration()
+    expect_null(v$registration)
+    expect_identical(br$js("window.__giottolens.store.getState().registration"), NULL)
+    v$register_image("hne", reference = "stain", alignment = files[["alignment"]], tool = FALSE)
+    expect_false(v$registration$fitted)
+    expect_equal(v$registration$transform[1:2, 1:2], truth[1:2, 1:2], tolerance = 0.01)
+    v$register_image("hne", reference = "stain", keypoints = files[["keypoints"]], tool = FALSE)
+    expect_true(v$registration$fitted)
+    expect_identical(nrow(v$registration$landmarks), 5L)
+
+    # Into the giotto object as a giottoAffineImage over the data
+    g <- suppressMessages(suppressWarnings(v$add_registered_image(fx$g, name = "hne_registered")))
+    img <- g@images$hne_registered
+    expect_s4_class(img, "giottoAffineImage")
+    expect_equal(unname(as.vector(terra::ext(img))), c(0, 100, -100, 0), tolerance = 0.5)
+    expect_identical(br$errors(), character())
+})
+
+test_that("set_view sets the zoom after the view was zoomed by hand", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "document.getElementById('r-status').className === 'connected'"))
+    zoom <- function() br$js("window.__giottolens.state.deckgl.getViewports()[0].zoom")
+    z0 <- zoom()
+
+    # A wheel on the canvas zooms through deck.gl's controller
+    r <- br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
+        deltaX = 0, deltaY = -500)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) > 0.1", z0)))
+
+    v$set_view(zoom = z0 - 1)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) < 1e-6", z0 - 1)))
+    # The box fits the view, its tighter side 2^0.2 times the box's
+    v$set_view(bounds = c(0, 50, -50, 0))
+    b <- v$view_bounds()
+    expect_true(b[["xmin"]] <= 0 && b[["xmax"]] >= 50 && b[["ymin"]] <= -50 && b[["ymax"]] >= 0)
+    expect_equal(min(b[["xmax"]] - b[["xmin"]], b[["ymax"]] - b[["ymin"]]), 50 * 2^0.2, tolerance = 0.01)
     expect_identical(br$errors(), character())
 })

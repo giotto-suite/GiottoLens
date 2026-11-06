@@ -67,11 +67,14 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_true(pump_until(function() evil$state$closed))
     expect_false(v$connected())
 
-    # Metadata pushed before any tab connects is written and sent on connect
+    # Metadata pushed before any tab connects is written and sent on connect,
+    # after the (empty) saved config
     v$push_metadata(fx$meta)
     a <- ws_client(ws_url(v), origin = sub("/lens/.*$", "", v$url))
-    expect_true(pump_until(function() length(a$state$msgs) > 0))
-    expect_identical(a$state$msgs[[1]]$type, "load_metadata")
+    expect_true(pump_until(function() length(a$state$msgs) > 1))
+    expect_identical(a$state$msgs[[1]]$type, "restore")
+    expect_null(a$state$msgs[[1]]$data$config)
+    expect_identical(a$state$msgs[[2]]$type, "load_metadata")
     expect_true(v$connected())
 
     ids <- get("private", v$.__enclos_env__)$cell_ids
@@ -102,6 +105,56 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
 
     a$ws$close(); b$ws$close()
     expect_true(pump_until(function() !v$connected()))
+})
+
+test_that("R keeps the page's config and pushed panels for the next page", {
+    fx <- lens_fixture()
+    skip_if_not_installed("websocket")
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+
+    # Pushed with no tab open: kept, and listed
+    expect_message(id <- v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)),
+        "when the viewer connects")
+    expect_identical(id, "panel-1")
+    big <- data.frame(a = seq_len(6000L))
+    expect_message(v$push_panel(list(mark = "point"), data = big, id = "big", where = "below"))
+    expect_identical(v$panels()$id, c("panel-1", "big"))
+    expect_error(v$push_panel(list(mark = "bar"), id = "scatter"), "built-in")
+    expect_error(v$push_panel(list(mark = "bar"), id = "a b"), "letters")
+    expect_error(v$push_panel(list(mark = "bar"), where = "left"), "should be one of")
+    priv <- get("private", v$.__enclos_env__)
+    session <- priv$session
+    expect_length(list.files(file.path(session, "panels")), 1L)
+
+    a <- ws_client(ws_url(v))
+    expect_true(pump_until(function() length(Filter(function(m) m$type == "push_panel", a$state$msgs)) == 2L))
+    pushed <- Filter(function(m) m$type == "push_panel", a$state$msgs)
+    expect_identical(vapply(pushed, function(m) m$data$id, ""), c("panel-1", "big"))
+    expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
+    expect_identical(pushed[[2]]$data$where, "below")
+    expect_match(pushed[[2]]$data$data_url, "^session/panels/big_")
+    expect_identical(a$state$msgs[[1]]$data$panels, list("panel-1", "big"))
+
+    # The page's config comes back verbatim to the next page
+    cfg <- '{"state":{"layers":{"poly":{"show":false,"alpha":0.3}},"images":{},"genes":[]},"version":1}'
+    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    # Closed in the page: R drops it and its file
+    a$ws$send('{"type":"panel_closed","data":{"id":"big"}}')
+    expect_true(pump_until(function() identical(names(priv$pushed), "panel-1")))
+    expect_length(list.files(file.path(session, "panels")), 0L)
+    a$ws$close()
+    expect_true(pump_until(function() !v$connected()))
+
+    b <- ws_client(ws_url(v))
+    expect_true(pump_until(function() length(b$state$msgs) > 0))
+    expect_identical(b$state$msgs[[1]]$data$config, cfg)
+    expect_identical(b$state$msgs[[1]]$data$panels, list("panel-1"))
+    v$remove_panel("panel-1")
+    expect_true(pump_until(function() any(vapply(b$state$msgs, function(m) m$type == "remove_panel", NA))))
+    b$ws$close()
+    expect_true(pump_until(function() !v$connected()))
+    expect_identical(nrow(v$panels()), 0L)
 })
 
 test_that("relaunching on a port closes the old viewer and close() cleans up", {
@@ -155,4 +208,62 @@ test_that("without the Origin check the token alone admits a socket", {
     expect_false(.ws_allowed(req, "abc"))
     expect_true(.ws_allowed(req, "abc", check_origin = FALSE))
     expect_false(.ws_allowed(modifyList(req, list(PATH_INFO = "/lens/x/ws")), "abc", check_origin = FALSE))
+})
+
+test_that("a spatial unit without polygons launches from its spatial locations", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    expect_setequal(priv$cell_ids, fx$xy$cell_ID)
+
+    m <- jsonlite::fromJSON(file.path(priv$session, "manifest.json"), simplifyVector = FALSE)
+    expect_false(m$layers$cells$geometry)
+    expect_identical(m$layers$cells$mark$shape, "square")
+    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
+    expect_equal(m$layers$cells$mark$angle, 10, tolerance = 1e-6)
+    expect_null(m$layers$transcripts)
+
+    # Metadata and R-side selection work as for polygon cells
+    v$push_metadata(fx$meta[, c("cell_ID", "half")])
+    v$select(lens_categories("half", "left"))
+    expect_setequal(v$selection, fx$meta$cell_ID[fx$meta$half == "left"])
+})
+
+test_that("a given mark overrides the inferred one", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        mark = list(shape = "circle"))
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(file.path(get("private", v$.__enclos_env__)$session,
+        "manifest.json"), simplifyVector = FALSE)
+    expect_identical(m$layers$cells$mark$shape, "circle")
+    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
+    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
+        "circle")
+})
+
+test_that("an unknown spat_unit lists units with polygons or locations", {
+    fx <- lens_bins_fixture()
+    expect_error(launch_lens(fx$g, spat_unit = "cell", feat_type = NULL, open = FALSE),
+        "available: bin")
+})
+
+test_that("set_mark checks its arguments, and describe() reports the cells", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_mark(shape = "star"), "\\[set_mark\\] mark shape")
+    expect_error(v$set_mark(size = 0), "\\[set_mark\\] mark size")
+    expect_error(v$set_mark(show = NA), "\\[set_mark\\] show")
+    d <- v$describe()
+    expect_identical(d$cells$source, "locations")
+    expect_identical(d$cells$mark$shape, "square")
+    expect_output(print(d), "900 from spatial locations, drawn as squares 2 across at 10 degrees")
+
+    fx2 <- lens_fixture()
+    p <- launch_lens(fx2$gpoints, open = FALSE)
+    on.exit(p$close(), add = TRUE)
+    expect_error(p$set_mark(size = 1), "no cells")
+    expect_null(p$describe()$cells)
 })

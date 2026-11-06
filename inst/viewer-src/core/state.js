@@ -37,4 +37,6 @@ export const state = {
   txLassoRing:  null,
   brushDown:    false,
   brushPos:     null,
+  landmarkDrag: null,       // render/landmarks.ts LandmarkDrag
+  regDeck:      null,       // the registered image's pane (ui/registration.ts)
 };

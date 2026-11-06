@@ -8,6 +8,7 @@ import { fromUrl, GeoTIFFImage } from 'geotiff';
 import { TiffPixelSource } from '@vivjs/loaders';
 import { Matrix4 } from '@math.gl/core';
 import type { ImagePool } from './img-pool.ts';
+import { pixelToData, fitPlacement, matrix4, type Affine, type Extent } from './registration.ts';
 
 export interface ImageEntry {
   name: string;
@@ -17,6 +18,9 @@ export interface ImageEntry {
   // An affine on top of the extent (giottoAffineImage): x' = a x + b y + c,
   // y' = d x + e y + f, as [a, b, c, d, e, f]
   affine?: number[];
+  // 'fit': an image without a place in data coordinates yet (one to
+  // register), drawn inside the data's extent instead of at `extent`
+  place?: 'fit';
 }
 
 export interface LensImage {
@@ -25,7 +29,8 @@ export interface LensImage {
   levels: TiffPixelSource<string[]>[];
   width: number;
   height: number;
-  modelMatrix: Matrix4;          // image pixels → data coordinates
+  transform: Affine;             // image pixels (level 0) → data coordinates
+  modelMatrix: Matrix4;          // the same, for deck.gl
   contrast: [number, number];    // default display range
   domain: [number, number];      // range the contrast controls span
 }
@@ -67,11 +72,25 @@ export function imageKind(fd: Record<string, any>): 'rgb' | 'channel' | { error:
   return { error: `${spp} samples per pixel that are not RGB (multi-channel files are not supported yet)` };
 }
 
-export async function openImage(entry: ImageEntry, pool: ImagePool): Promise<LensImage> {
+// `box`: the data's extent, where an image with `place: 'fit'` is drawn
+// Per-sample tags (BitsPerSample, SampleFormat) with fewer values than
+// SamplesPerPixel: the first value holds for every sample, as libtiff reads
+// them. geotiff indexes them by sample.
+export function fillPerSample(fd: Record<string, any>) {
+  const n = fd.SamplesPerPixel ?? 1;
+  for (const k of ['BitsPerSample', 'SampleFormat']) {
+    const v = fd[k];
+    if (v?.length && v.length < n) fd[k] = Array.from({ length: n }, (_, i) => v[i] ?? v[0]);
+  }
+  return fd;
+}
+
+export async function openImage(entry: ImageEntry, pool: ImagePool, box?: Extent): Promise<LensImage> {
   const url = new URL(entry.url, document.baseURI).href;
   const tiff = await fromUrl(url);
   const base = await tiff.getImage(0);
   const levels = [base, ...(await reducedLevels(tiff, base))];
+  for (const img of levels) fillPerSample(img.fileDirectory);
   const fd = base.fileDirectory;
   const problem = layoutProblem(base.getWidth(), base.getHeight(), !!fd.TileWidth, levels.length);
   if (problem) throw new Error(problem);
@@ -91,22 +110,16 @@ export async function openImage(entry: ImageEntry, pool: ImagePool): Promise<Len
   ));
 
   const width = base.getWidth(), height = base.getHeight();
-  const { xmin, xmax, ymin, ymax } = entry.extent;
   // Row 0 is the top of the image (ymax); y grows upward in the view. A
   // flip, rotation or registration then applies on top
-  const modelMatrix = new Matrix4()
-    .translate([xmin, ymax, 0])
-    .scale([(xmax - xmin) / width, -(ymax - ymin) / height, 1]);
-  if (entry.affine) {
-    const [a, b, c, d, e, f] = entry.affine;
-    // Column-major
-    modelMatrix.multiplyLeft(new Matrix4([a, d, 0, 0, b, e, 0, 0, 0, 0, 1, 0, c, f, 0, 1]));
-  }
+  const transform = entry.place === 'fit' && box ? fitPlacement(width, height, box)
+    : pixelToData(entry.extent, width, height, entry.affine);
+  const modelMatrix = new Matrix4(matrix4(transform));
 
-  if (rgb) return { entry, rgb, levels: sources, width, height, modelMatrix, contrast: [0, 255], domain: [0, 255] };
+  if (rgb) return { entry, rgb, levels: sources, width, height, transform, modelMatrix, contrast: [0, 255], domain: [0, 255] };
   const { data } = await sources[sources.length - 1].getRaster({ selection: { t: 0, c: 0, z: 0 } });
   const { contrast, domain } = defaultContrast(data as ArrayLike<number>, dtype);
-  return { entry, rgb, levels: sources, width, height, modelMatrix, contrast, domain };
+  return { entry, rgb, levels: sources, width, height, transform, modelMatrix, contrast, domain };
 }
 
 // Viv expects each level to halve the one above and share its tile size;
