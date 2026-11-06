@@ -209,6 +209,39 @@
     .img-contrast { display: flex; align-items: center; gap: 6px; padding-left: 22px; font-size: 10px; color: #9ca3af; }
     .img-contrast span { min-width: 64px; text-align: right; font-family: monospace; }
     .item-off .img-contrast { opacity: 0.35; }
+    #reg-pane { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; z-index: 3;
+      background: #000; border-right: 2px solid #374151; }
+    #reg-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+    .reg-pane-label { position: absolute; top: 12px; z-index: 4; pointer-events: none;
+      color: #d1d5db; font-size: 12px; background: rgba(17,24,39,0.75);
+      border: 1px solid rgba(255,255,255,0.06); border-radius: 5px; padding: 3px 10px; }
+    #reg-pane-label { left: 12px; }
+    #reg-ref-label { right: 12px; display: none; }
+    #spatial-pane.registering #reg-ref-label { display: block; }
+    #spatial-pane.registering #deck-canvas { position: absolute; top: 0; left: 50% !important; width: 50% !important; }
+    #spatial-pane.registering #hud, #spatial-pane.registering #rule-strip,
+    #spatial-pane.registering #scalebar { left: calc(50% + 12px); }
+    #spatial-pane.registering #toolbar { left: 75%; }
+    #reg-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
+    #reg-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    #reg-panel select { flex: 1; min-width: 0; }
+    .reg-actions { display: flex; gap: 4px; margin: 4px 0; }
+    .reg-actions button {
+      padding: 3px 6px; background: #1f2937; border: 1px solid #374151; border-radius: 4px;
+      color: #9ca3af; font-size: 11px; font-family: monospace; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .reg-actions button svg { width: 13px; height: 13px; pointer-events: none; }
+    .reg-actions button:hover:not(:disabled) { background: #374151; color: #e5e7eb; }
+    .reg-actions button:disabled { opacity: 0.35; cursor: default; }
+    .reg-actions button.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+    #reg-start { flex: 1; }
+    #reg-status { font-size: 11px; color: #9ca3af; margin: 4px 0; }
+    #reg-list { max-height: 180px; overflow-y: auto; }
+    .reg-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d1d5db; padding: 1px 0; }
+    .reg-n { width: 18px; text-align: right; color: #9ca3af; font-family: monospace; }
+    .reg-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid; flex-shrink: 0; }
+    .reg-res { flex: 1; font-family: monospace; color: #9ca3af; }
     /* Two thumbs on one track: two range inputs stacked, only their thumbs
        take the pointer, so each drags its own end */
     .range2 { position: relative; flex: 1; height: 14px; }
@@ -345,13 +378,15 @@
     }
     #btn-screenshot:hover { opacity: 1; }
   </style>
-  <script type="module" crossorigin src="./assets/index-CfxZs5FY.js"></script>
+  <script type="module" crossorigin src="./assets/index-6uQBPH-b.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-BHncyuL9.css">
 </head>
 <body>
   <div id="main-layout">
     <div id="spatial-pane">
       <canvas id="deck-canvas"></canvas>
+      <div id="reg-pane" style="display:none"><canvas id="reg-canvas"></canvas><div id="reg-pane-label" class="reg-pane-label"></div></div>
+      <div id="reg-ref-label" class="reg-pane-label"></div>
       <svg id="tx-connector" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:9;">
         <line id="tx-connector-line" x1="0" y1="0" x2="0" y2="0" stroke="#ffff64" stroke-width="1.5" display="none"/>
       </svg>
@@ -468,6 +503,25 @@
       <h3 class="section-hd" data-target="img-body">Images<i data-lucide="chevron-down" class="section-chevron"></i></h3>
       <div id="img-body" class="section-body">
         <div id="img-list"></div>
+      </div>
+    </div>
+    <div id="reg-panel" style="display:none">
+      <h3 class="section-hd" data-target="reg-body">Register<i data-lucide="chevron-down" class="section-chevron"></i></h3>
+      <div id="reg-body" class="section-body">
+        <div class="alpha-row"><label>image</label><select id="reg-image"></select></div>
+        <div class="alpha-row"><label>reference</label><select id="reg-reference"></select></div>
+        <div class="reg-actions">
+          <button id="reg-start">start</button>
+          <button id="reg-flip-h" title="flip the image's pane left-right"><i data-lucide="flip-horizontal-2"></i></button>
+          <button id="reg-flip-v" title="flip the image's pane top-bottom"><i data-lucide="flip-vertical-2"></i></button>
+          <button id="reg-rot-ccw" title="turn the image's pane 90° counterclockwise"><i data-lucide="rotate-ccw"></i></button>
+          <button id="reg-rot-cw" title="turn the image's pane 90° clockwise"><i data-lucide="rotate-cw"></i></button>
+          <button id="reg-reset" title="discard the registration">reset</button>
+        </div>
+        <div class="alpha-row"><input type="checkbox" id="reg-preview"><label for="reg-preview">preview on reference</label></div>
+        <div class="alpha-row"><input type="checkbox" id="reg-link"><label for="reg-link">link views</label></div>
+        <div id="reg-status"></div>
+        <div id="reg-list"></div>
       </div>
     </div>
     <div id="alpha-panel">
