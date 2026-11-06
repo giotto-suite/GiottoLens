@@ -38,6 +38,7 @@ R/
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
+               .tiff_info() (a TIFF's size, layout and pyramid from its header, base R),
                .tiff_problem() (the viewer's TIFF rules), .viewable_file() (cached conversion)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
                Xenium Explorer CSVs, .registered_image() (giottoAffineImage)

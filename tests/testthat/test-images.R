@@ -55,6 +55,22 @@ test_that("a transformed image carries its affine; a plain one none", {
     expect_identical(.image_entries(list(t = turned))$entries[[1L]]$affine, a)
 })
 
+test_that("a TIFF's size and pyramid are read from its header", {
+    strip <- withr::local_tempfile(fileext = ".tif")
+    r <- terra::rast(nrows = 300, ncols = 5000, vals = seq_len(1.5e6) %% 60000)
+    terra::writeRaster(r, strip, datatype = "INT2U")
+    info <- .tiff_info(strip)
+    expect_identical(c(info$width, info$height, info$samples, info$bits), c(5000, 300, 1, 16))
+    expect_false(info$tiled)
+    expect_identical(info$levels, 1L)
+
+    fx <- lens_image_fixture()
+    cog <- .tiff_info(fx$image_file)
+    expect_identical(c(cog$width, cog$height), c(1200, 1200))
+    expect_true(cog$tiled)
+    expect_gt(cog$levels, 1L)
+})
+
 test_that("TIFF layouts the viewer cannot read are found and converted once", {
     withr::local_options(GiottoLens.image_cache = withr::local_tempdir())
     strip <- withr::local_tempfile(fileext = ".tif")
