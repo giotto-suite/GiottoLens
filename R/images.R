@@ -43,8 +43,8 @@
             return(invisible())
         }
         if (is.null(extent)) {
-            r <- terra::rast(path)
-            extent <- c(0, terra::ncol(r), -terra::nrow(r), 0)
+            info <- .tiff_info(path)
+            extent <- c(0, info$width, -info$height, 0)
         }
         k <- as.character(length(files))
         files[[k]] <<- normalizePath(path)
@@ -112,4 +112,79 @@
     any(vapply(list(c(0x49, 0x49, 0x2a, 0x00), c(0x4d, 0x4d, 0x00, 0x2a),
                     c(0x49, 0x49, 0x2b, 0x00), c(0x4d, 0x4d, 0x00, 0x2b)),
         function(m) identical(magic, as.raw(m)), logical(1L)))
+}
+
+# ── TIFF header ──────────────────────────────────────────────────────────────
+
+# Tags of the IFD at `offset`
+.tiff_ifd <- function(con, offset, big, endian) {
+    seek(con, offset)
+    int <- function(size) {
+        v <- readBin(con, "raw", size)
+        if (endian == "big") v <- rev(v)
+        sum(as.numeric(v) * 256^(seq_along(v) - 1L))
+    }
+    n <- int(if (big) 8L else 2L)
+    sizes <- c(`1` = 1, `2` = 1, `3` = 2, `4` = 4, `5` = 8, `6` = 1, `7` = 1, `8` = 2,
+               `9` = 4, `10` = 8, `11` = 4, `12` = 8, `13` = 4, `16` = 8, `17` = 8, `18` = 8)
+    slot <- if (big) 8L else 4L
+    raw_entries <- lapply(seq_len(n), function(i) list(tag = int(2L), type = int(2L),
+        count = int(if (big) 8L else 4L), at = seek(con), skip = readBin(con, "raw", slot)))
+    nxt <- int(slot)
+    want <- c(254, 256, 257, 258, 262, 277, 284, 322, 323, 330, 339)
+    tags <- list()
+    for (e in raw_entries) {
+        if (!e$tag %in% want) next
+        size <- sizes[[as.character(e$type)]] %||% 1
+        if (!size %in% c(1, 2, 4, 8) || e$type %in% c(5, 10, 11, 12)) next
+        seek(con, if (e$count * size <= slot) e$at else { seek(con, e$at); int(slot) })
+        tags[[as.character(e$tag)]] <- vapply(seq_len(min(e$count, 4096)), function(j) int(size), 0)
+    }
+    list(tags = tags, next_ifd = nxt)
+}
+
+# Size, sample layout and pyramid of a TIFF's first page; NULL for a file
+# that is not a TIFF
+.tiff_info <- function(path) {
+    con <- file(path, "rb")
+    on.exit(close(con), add = TRUE)
+    head <- readBin(con, "raw", 4L)
+    endian <- if (identical(head[1:2], as.raw(c(0x49, 0x49)))) "little"
+              else if (identical(head[1:2], as.raw(c(0x4d, 0x4d)))) "big"
+    if (is.null(endian)) return(NULL)
+    ver <- if (endian == "little") as.integer(head[3]) else as.integer(head[4])
+    if (!ver %in% c(42L, 43L)) return(NULL)
+    big <- ver == 43L
+    seek(con, if (big) 8 else 4)
+    v <- readBin(con, "raw", if (big) 8L else 4L)
+    if (endian == "big") v <- rev(v)
+    first <- sum(as.numeric(v) * 256^(seq_along(v) - 1L))
+    ifd <- function(off) .tiff_ifd(con, off, big, endian)
+    tag <- function(t, k, default = NA_real_) t[[as.character(k)]][1L] %||% default
+    base <- ifd(first)
+    t <- base$tags
+    page <- function(t) list(width = tag(t, 256), height = tag(t, 257), tile = tag(t, 322))
+    candidates <- if (length(t[["330"]])) lapply(t[["330"]], function(o) page(ifd(o)$tags)) else {
+        out <- list()
+        nxt <- base$next_ifd
+        while (nxt > 0 && length(out) < 64L) {
+            i <- ifd(nxt)
+            if (tag(i$tags, 254, 0) != 1) break
+            out[[length(out) + 1L]] <- page(i$tags)
+            nxt <- i$next_ifd
+        }
+        out
+    }
+    p <- page(t)
+    levels <- 1L
+    prev <- p
+    for (c in candidates) {
+        halves <- abs(c$width - prev$width / 2) <= 1 && abs(c$height - prev$height / 2) <= 1
+        if (!halves || !identical(c$tile, p$tile)) break
+        levels <- levels + 1L
+        prev <- c
+    }
+    list(width = p$width, height = p$height, tiled = !is.na(p$tile), levels = levels,
+         samples = tag(t, 277, 1), bits = tag(t, 258), format = tag(t, 339, 1),
+         photometric = tag(t, 262), planar = tag(t, 284, 1))
 }

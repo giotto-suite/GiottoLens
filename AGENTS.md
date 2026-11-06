@@ -37,7 +37,8 @@ R/
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
-  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries
+  images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
+               .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
                Xenium Explorer CSVs, .registered_image() (giottoAffineImage)
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
