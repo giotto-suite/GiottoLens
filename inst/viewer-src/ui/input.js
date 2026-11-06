@@ -8,7 +8,7 @@ import { generateAnnotId } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
 import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, consumeDrop,
-  removeLastLandmark, cancelPendingLandmark } from './registration.ts';
+  removeLastLandmark, cancelPendingLandmark, refreshPaneCursor } from './registration.ts';
 
 let _canvas = null; // set in initInput, used by exported functions above initInput scope
 let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
@@ -79,6 +79,7 @@ function applyMode(mode) {
     controller: DRAG_MODES.includes(mode) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
     getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
   });
+  refreshPaneCursor();
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m)
   );
@@ -423,7 +424,7 @@ export function initInput() {
     if (e.code === 'Space' && !inInput) {
       e.preventDefault();
       // Not in the middle of a drag: the stroke finishes with its own tool
-      const stroking = state.lassoActive || state.brushDown || state.rectStart;
+      const stroking = state.lassoActive || state.brushDown || state.rectStart || state.landmarkDrag;
       if (!e.repeat && !stroking) holdPan(true);
       return;
     }

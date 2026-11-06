@@ -14,7 +14,7 @@ import { setViewState } from '../data/schedule.js';
 import { requestRender } from '../render/schedule.js';
 import { imageLayer } from '../render/image-layer.ts';
 import { landmarkLayers, MOVING_COLOR, FIXED_COLOR, type Side, type LandmarkDrag } from '../render/landmarks.ts';
-import { clientToWorld, fitZoom } from './dom.js';
+import { clientToWorld, fitZoom, dragPan, spaceHeld } from './dom.js';
 import {
   apply, compose, invert, flip, rotate90, currentTransform, registrationFit, completePairs, matrix4,
   mapView, MIN_PAIRS, UPRIGHT, type Registration, type Landmark, type XY, type Affine,
@@ -278,7 +278,7 @@ function syncPane() {
       views: new OrthographicView({ id: 'reg', controller: true, flipY: false }),
       viewState: { target: [0, 0, 0], zoom: 0 }, controller: { doubleClickZoom: false },
       onViewStateChange: ({ viewState }: any) => paneViewChange(viewState),
-      getCursor: ({ isDragging }: any) => isDragging ? 'grabbing' : 'crosshair',
+      getCursor: paneCursor,
       layers: [],
     } as any);
     state.regDeck = _deck;
@@ -293,12 +293,22 @@ function syncPane() {
   requestRender();
 }
 
+// Space held shows the pan cursor; the main view's setMode and Space handling
+// call this as they do their own
+const paneCursor = ({ isDragging }: any) =>
+  isDragging ? 'grabbing' : spaceHeld() ? 'grab' : 'crosshair';
+export const refreshPaneCursor = () => _deck?.setProps({ getCursor: (s: any) => paneCursor(s) });
+
+// As in the main view, the middle button and a drag with Space held pan the
+// pane whatever is under the pointer; points are placed with the left button
 function initPaneInput() {
   const canvas = $('reg-canvas') as HTMLCanvasElement | null;
   if (!canvas) return;
   let down: [number, number] | null = null;
   const world = (e: MouseEvent) => clientToWorld(e.clientX, e.clientY, canvas, _vs) as XY;
+  dragPan(canvas, () => _vs, (vs: any) => paneViewChange(vs));
   canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0 || spaceHeld()) return;
     down = [e.clientX, e.clientY];
     if (landmarkDragStart('moving', e, canvas)) requestRender();
   });
@@ -307,7 +317,7 @@ function initPaneInput() {
   });
   canvas.addEventListener('click', e => {
     const moved = down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4;
-    if (!consumeDrop() && !moved && _vs && registering()) landmarkClick('moving', world(e));
+    if (!consumeDrop() && !moved && !spaceHeld() && _vs && registering()) landmarkClick('moving', world(e));
     requestRender();
   });
 }

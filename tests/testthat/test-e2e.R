@@ -993,6 +993,33 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     expect_equal(c(lm$moving_x[5L], lm$moving_y[5L]), c(120, 180), tolerance = 1)
     expect_gt(v$registration$rmse, 0)
 
+    # As in the main view, the middle button and a drag with Space held pan the
+    # image's pane, and place no point there or in the main view
+    n_lm <- function() br$js("window.__giottolens.store.getState().registration.landmarks.length")
+    pane_t <- function() unlist(br$js("window.__giottolens.state.regDeck.props.viewState.target"))[1:2]
+    mid <- function(canvas) unlist(br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()", canvas)))
+    mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
+    drag <- function(from, by, button) {
+        mouse("mouseMoved", from); mouse("mousePressed", from, button)
+        for (f in c(0.5, 1)) mouse("mouseMoved", from + by * f, button)
+        mouse("mouseReleased", from + by, button)
+    }
+    key <- function(type) br$session$Input$dispatchKeyEvent(type = type, code = "Space", key = " ",
+        windowsVirtualKeyCode = 32L)
+    t0 <- pane_t()
+    drag(mid("reg-canvas"), c(40, 20), "middle")
+    expect_true(pump_until(function() sum(abs(pane_t() - t0)) > 0))
+    t0 <- pane_t()
+    key("keyDown")
+    drag(mid("reg-canvas"), c(-30, 10), "left")
+    expect_true(pump_until(function() sum(abs(pane_t() - t0)) > 0))
+    for (canvas in c("reg-canvas", "deck-canvas")) { mouse("mousePressed", mid(canvas)); mouse("mouseReleased", mid(canvas)) }
+    key("keyUp")
+    pump_until(function() FALSE, 0.3)
+    expect_identical(n_lm(), 5L)
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "landmark")
+
     # Turning the image's pane changes where it is drawn there, not the fit
     fit <- v$registration$transform
     br$js("document.getElementById('reg-rot-ccw').click()")

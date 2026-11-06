@@ -112,10 +112,12 @@ function mergeConfig(saved: unknown, current: LensState): LensState {
   const images: Record<string, ImageVis> = {};
   for (const [k, v] of Object.entries(current.images))
     images[k] = { ...v, ...s.images?.[k], ...(v.rgb != null && { rgb: v.rgb }) };
-  // A registration of an image this page did not load is dropped
+  // A registration of an image this page did not load is dropped, and with it
+  // the landmark tool
   const reg = out.registration as Registration | null | undefined;
   const registration = reg && reg.image in images ? reg : null;
-  return { ...out, layers, images, registration } as LensState;
+  const mode = out.mode === 'landmark' && !registration ? 'pan' : out.mode;
+  return { ...out, layers, images, registration, mode } as LensState;
 }
 
 export const store = createStore<LensState>()(subscribeWithSelector(persist((): LensState => ({
