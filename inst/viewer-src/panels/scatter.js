@@ -5,7 +5,7 @@ import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
 import { cellColorBuffer } from '../render/colors.ts';
-import { clientToWorld, worldToClient, fitZoom } from '../ui/dom.js';
+import { clientToWorld, worldToClient, fitZoom, dragPan, spaceHeld } from '../ui/dom.js';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
 import { Deck, OrthographicView, ScatterplotLayer } from 'deck.gl';
 
@@ -119,8 +119,9 @@ export function createScatterPanel(body, ctx) {
 
     let ring = [], lastPx = null, active = false, dragged = false, op = 'replace';
     const opts = { signal: listeners.signal };
+    dragPan(canvas, () => viewState, vs => { viewState = vs; deck.setProps({ viewState: vs }); }, opts);
     canvas.addEventListener('mousedown', e => {
-      if (mode !== 'lasso') return;
+      if (mode !== 'lasso' || e.button !== 0 || spaceHeld()) return;
       active = true; dragged = false; lastPx = [e.clientX, e.clientY]; op = strokeOp(e);
       ring = [clientToWorld(e.clientX, e.clientY, canvas, viewState)];
     }, opts);
@@ -131,8 +132,8 @@ export function createScatterPanel(body, ctx) {
       ring.push(clientToWorld(e.clientX, e.clientY, canvas, viewState));
       drawLasso(ring);
     }, opts);
-    window.addEventListener('mouseup', () => {
-      if (!active) return;
+    window.addEventListener('mouseup', e => {
+      if (!active || e.button !== 0) return;
       active = false;
       if (dragged && ring.length >= 3) lassoScatter(ring, ctrls.x.value, ctrls.y.value, op, source);
       ring = [];

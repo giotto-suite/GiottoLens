@@ -41,6 +41,100 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     expect_identical(br$errors(), character())
 })
 
+test_that("holding Space pans with any tool, and the tool comes back on release", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    key <- function(type) br$session$Input$dispatchKeyEvent(type = type, code = "Space", key = " ",
+        windowsVirtualKeyCode = 32L)
+    pan_lit <- function() br$js("document.querySelector('.tool-btn[data-mode=\"pan\"]').classList.contains('active')")
+    mode <- function() br$js("window.__giottolens.store.getState().mode")
+    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    cx <- size[[1]] / 2; cy <- size[[2]] / 2
+    target <- function() unlist(br$js("window.__giottolens.state.currentViewState.target"))[1:2]
+
+    br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
+    expect_false(pan_lit())
+    key("keyDown")
+    expect_true(browser_wait(br, "document.querySelector('.tool-btn[data-mode=\"pan\"]').classList.contains('active')"))
+    expect_identical(mode(), "lasso")   # the tool is kept, not replaced by pan
+    # A drag while held pans and selects nothing
+    t0 <- target()
+    browser_drag(br, list(c(cx, cy), c(cx + 40, cy), c(cx + 80, cy + 20)))
+    expect_true(pump_until(function() sum(abs(target() - t0)) > 0))
+    expect_length(v$selection, 0L)
+    key("keyUp")
+    expect_false(pan_lit())
+    expect_identical(mode(), "lasso")
+    # With the pan tool, a held drag pans once: deck.gl does not pan as well
+    br$js("window.__giottolens.actions.setMode('pan')")
+    scale <- br$js("2 ** window.__giottolens.state.currentViewState.zoom")
+    key("keyDown")
+    t0 <- target()
+    browser_drag(br, list(c(cx, cy), c(cx + 40, cy), c(cx + 80, cy + 20)))
+    key("keyUp")
+    expect_equal((target() - t0) * scale, c(-80, 20), tolerance = 0.01)
+
+    # A polygon being clicked out keeps its vertices across a hold
+    br$js("window.__giottolens.actions.setMode('poly')")
+    click <- function(p) for (t in c("mousePressed", "mouseReleased")) br$session$Input$dispatchMouseEvent(
+        type = t, x = p[1], y = p[2], button = "left", buttons = if (t == "mousePressed") 1L else 0L, clickCount = 1L)
+    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left, r.top]; })()"))
+    click(off + c(cx, cy)); click(off + c(cx + 30, cy))
+    expect_true(browser_wait(br, "window.__giottolens.state.drawRing.length === 2"))
+    key("keyDown"); key("keyUp")
+    expect_identical(br$js("window.__giottolens.state.drawRing.length"), 2L)
+    expect_identical(mode(), "poly")
+    expect_identical(br$errors(), character())
+})
+
+test_that("the middle button pans with any tool without interrupting it", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"))
+    vs <- function() br$js("(() => { const v = window.__giottolens.state.currentViewState; return [v.target[0], v.target[1], 2 ** v.zoom]; })()")
+    mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
+    middle_drag <- function(from, by) {
+        mouse("mouseMoved", from); mouse("mousePressed", from, "middle")
+        for (f in c(0.5, 1)) mouse("mouseMoved", from + by * f, "middle")
+        mouse("mouseReleased", from + by, "middle")
+    }
+    # The content follows the pointer exactly, with the pan tool too (deck.gl
+    # does not pan as well)
+    for (tool in c("pan", "lasso")) {
+        br$js(sprintf("window.__giottolens.actions.setMode('%s')", tool))
+        a <- unlist(vs())
+        middle_drag(off, c(40, 20))
+        b <- unlist(vs())
+        expect_equal(c(b[1] - a[1], b[2] - a[2]) * a[3], c(-40, 20), tolerance = 0.01, info = tool)
+    }
+    expect_length(v$selection, 0L)
+
+    # A ruler with its first point placed carries on across a pan
+    br$js("window.__giottolens.actions.setMode('ruler')")
+    click <- function(p) { mouse("mousePressed", p); mouse("mouseReleased", p) }
+    click(off)
+    expect_true(browser_wait(br, "!!window.__giottolens.state.rulerStart"))
+    start <- unlist(br$js("window.__giottolens.state.rulerStart"))
+    middle_drag(off + c(10, 10), c(-60, 0))
+    expect_identical(unlist(br$js("window.__giottolens.state.rulerStart")), start)
+    expect_false(br$js("window.__giottolens.state.rulerLocked"))
+    click(off + c(30, 0))
+    expect_true(browser_wait(br, "window.__giottolens.state.rulerLocked === true"))
+    end <- unlist(br$js("window.__giottolens.state.rulerEnd"))
+    expect_equal((end[1] - start[1]) * unlist(vs())[3], 90, tolerance = 0.01)   # 30 px + the 60 px pan
+    expect_identical(br$js("window.__giottolens.store.getState().mode"), "ruler")
+    expect_identical(br$errors(), character())
+})
+
 test_that("a polygons-only viewer boots without errors", {
     fx <- lens_fixture()
     v  <- launch_lens(NULL, fx$gpolygons, open = FALSE)
