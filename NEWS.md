@@ -23,6 +23,9 @@
   bin (viridis); the wheel zooms it, and the hand tool or Shift+drag pans it. It selects
   with a rectangle that can be dragged; the rectangle is two ranges, so `viewer$select()` with
   `lens_intersect(lens_range(), lens_range())` and source `"density"` sets it from R.
+* Dragging a density rectangle or a histogram range stays smooth at millions of cells: the
+  panels, the selected count and the spatial highlight follow the drag, and the selection
+  is set (and sent to R) when the button is released.
 
 # GiottoLens 0.1.4
 

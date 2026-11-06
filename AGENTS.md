@@ -46,7 +46,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts
-  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools)
+  selection/  rules.ts (evaluate/combine/masks), geometry.ts, selection.ts (tools),
+              live.ts (panel brush drags: bucket index, live counts, adr/0013)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks)
   ui/         input.js, annotations.js, panel.js, legend.js, tooltip.js, rules.js, release.js,
               dom.js, images.js
@@ -223,6 +224,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
   its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
   extent by field) so a rebuilt chart can draw it again.
+- A range or rectangle brush drag is live (adr/0013): `beginLive`/`moveLive` while the
+  button is down, the rule set once on release. Panels that show counts register with
+  `addLiveConsumer()` (a bin per cell) and cache their totals over all cells; never set a
+  rule per frame of a drag. The spatial view draws the drag as one GPU-filtered layer.
 
 ### R API (the agent API)
 
