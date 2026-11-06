@@ -41,11 +41,7 @@
 #'   object: `NULL` (default) for all of its images, image names, or `FALSE`
 #'   for none. The first is shown at launch and the others are listed, off.
 #'   The viewer reads each image's TIFF file (`@file_path`) in place, by
-#'   tile; images without one are skipped with a message. A file it cannot
-#'   read (in strips, without a pyramid, planar, or not a TIFF) is converted
-#'   once to a tiled pyramidal TIFF in `getOption("GiottoLens.image_cache")`,
-#'   by default `tools::R_user_dir("GiottoLens", "cache")`, and that copy is
-#'   shown.
+#'   tile; images without one are skipped with a message.
 #' @param image_files Image files to show besides the object's images, such
 #'   as an H&E to register: a character vector of paths, named by image
 #'   (default: the file name). They are drawn inside the data's extent until

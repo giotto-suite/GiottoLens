@@ -65,4 +65,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0011](0011-binned-features-drawn-as-a-texture.md) | Binned feature data is drawn as a texture | Proposed | 2026-11-02 |
 | [0012](0012-density-panel-drawn-as-one-image.md) | The density panel is drawn as one image, its rectangle as two ranges | Accepted | 2026-11-02 |
 | [0013](0013-panel-brush-drags-are-live.md) | A panel brush drag is live; its rule is set on release | Accepted | 2026-11-05 |
-| [0014](0014-images-registered-by-landmarks-in-the-browser.md) | Images are registered by landmarks in the browser; unreadable files are converted once | Proposed | 2026-11-03 |
+| [0014](0014-images-registered-by-landmarks-in-the-browser.md) | Images are registered by landmarks in the browser | Proposed | 2026-11-03 |

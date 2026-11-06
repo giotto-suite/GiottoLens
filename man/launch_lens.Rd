@@ -65,11 +65,7 @@ columns if tiles arrive slowly.}
 object: \code{NULL} (default) for all of its images, image names, or \code{FALSE}
 for none. The first is shown at launch and the others are listed, off.
 The viewer reads each image's TIFF file (\verb{@file_path}) in place, by
-tile; images without one are skipped with a message. A file it cannot
-read (in strips, without a pyramid, planar, or not a TIFF) is converted
-once to a tiled pyramidal TIFF in \code{getOption("GiottoLens.image_cache")},
-by default \code{tools::R_user_dir("GiottoLens", "cache")}, and that copy is
-shown.}
+tile; images without one are skipped with a message.}
 
 \item{mark}{How cells without polygons are drawn once zoomed in: a
 list with any of \code{shape} (\code{"circle"}, \code{"square"} or \code{"hex"}), \code{size}

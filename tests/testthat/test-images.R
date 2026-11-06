@@ -21,7 +21,7 @@ test_that("images are picked by name and need a TIFF file", {
     # A VRT in @file_path (GiottoDisk's vault stubs) is skipped, not served
     stub <- imgs$stain
     stub@file_path <- vrt
-    expect_message(out <- .image_entries(list(stub = stub)), "'stub' is not shown: .* is a VRT")
+    expect_message(out <- .image_entries(list(stub = stub)), "'stub' is not shown: .* is not a TIFF")
     expect_length(out$entries, 0L)
 })
 
@@ -55,33 +55,7 @@ test_that("a transformed image carries its affine; a plain one none", {
     expect_identical(.image_entries(list(t = turned))$entries[[1L]]$affine, a)
 })
 
-test_that("TIFF layouts the viewer cannot read are found and converted once", {
-    withr::local_options(GiottoLens.image_cache = withr::local_tempdir())
-    strip <- withr::local_tempfile(fileext = ".tif")
-    r <- terra::rast(nrows = 300, ncols = 5000, vals = seq_len(1.5e6) %% 60000)
-    terra::writeRaster(r, strip, datatype = "INT2U")
-    info <- .tiff_info(strip)
-    expect_identical(c(info$width, info$height, info$samples, info$bits), c(5000, 300, 1, 16))
-    expect_identical(.tiff_problem(strip), "strips, not tiles")
-
-    expect_message(out <- .viewable_file(strip, "strip"), "strips, not tiles; converting")
-    expect_true(startsWith(normalizePath(out), normalizePath(getOption("GiottoLens.image_cache"))))
-    expect_null(.tiff_problem(out))
-    expect_gt(.tiff_info(out)$levels, 1L)
-    expect_silent(again <- .viewable_file(strip, "strip"))
-    expect_identical(again, out)
-
-    png <- withr::local_tempfile(fileext = ".png")
-    terra::writeRaster(terra::rast(nrows = 20, ncols = 30, nlyrs = 3,
-        vals = rep_len(0:255, 1800L)), png,
-        datatype = "INT1U")
-    expect_identical(.tiff_problem(png), "not a TIFF file")
-    rgb <- .tiff_info(suppressMessages(.viewable_file(png, "png")))
-    expect_identical(c(rgb$samples, rgb$bits, rgb$photometric), c(3, 8, 2))
-})
-
 test_that("image files are added by name and placed inside the data", {
-    withr::local_options(GiottoLens.image_cache = withr::local_tempdir())
     fx <- lens_image_fixture()
     files <- .check_image_files(fx$image_file, taken = "stain")
     expect_identical(unname(files), fx$image_file)

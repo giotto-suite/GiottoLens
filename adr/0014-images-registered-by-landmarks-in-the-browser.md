@@ -1,8 +1,8 @@
-# 0014. Images are registered by landmarks in the browser; unreadable files are converted once
+# 0014. Images are registered by landmarks in the browser
 
 - **Status:** Proposed
 - **Date:** 2026-11-03
-- **Supersedes:** 0008 in part (the rejected "convert to COG on launch")
+- **Supersedes:** —
 - **Superseded by:** —
 
 ## Context
@@ -13,9 +13,6 @@ landmark pairs between the image and the DAPI image and exports a 3 x 3 matrix
 `fixedX,fixedY,alignmentX,alignmentY`). Giotto reads that matrix with `read10xAffineImage()`.
 The viewer already draws a `giottoAffineImage` from its `@affine` on top of the raster
 extent (adr/0008). Matching points by eye needs the image to move as pairs are placed.
-
-H&E files come in layouts the viewer refuses (adr/0008): strips, no pyramid, levels that do
-not halve (SVS), planar samples, PNG or JPEG. Refusing them leaves the user to convert by hand.
 
 ## Decision
 
@@ -29,12 +26,6 @@ Every change goes to R as `registration_update`. R turns the transform into Xeni
 CSVs through the reference image's own pixel transform, and into a `giottoAffineImage`
 (`.registered_image()`).
 
-R checks each image file with the viewer's rules (`.tiff_problem()`, mirroring `imageKind()`,
-`layoutProblem()` and `reducedLevels()`). A file that fails is written once as a COG with
-GDAL (terra) to `getOption("GiottoLens.image_cache")`, default
-`tools::R_user_dir("GiottoLens", "cache")`, keyed by path, size and modification time, and
-the copy is served. VRT files are still skipped.
-
 ## Consequences
 
 - The fit equals Giotto's `calculateAffineMatrixFromLandmarks()` (9e-13 on 12 noisy pairs);
@@ -43,9 +34,8 @@ the copy is served. VRT files are still skipped.
 - Flips and rotations orient the image's pane only; the fit does not depend on them.
 - Two Decks draw while registering; the image's tiles load in its pane, and in the main view
   only with the preview on.
-- `.tiff_problem()` and `data/images.ts` must change together.
-- A converted whole-section H&E costs minutes once and its size again on disk, outside the
-  data; the cache is not pruned.
+- An image file the viewer cannot read by tile (adr/0008) cannot be registered here; it
+  needs converting first.
 - The roadmap's registration plugin (sample to sample, fitted in R) is not this; it can reuse
   `data/registration.ts`.
 
@@ -57,8 +47,6 @@ the copy is served. VRT files are still skipped.
   the two images on top of each other, matching points was hard to follow.
 - **Two views in one Deck (`layerFilter`):** every view state, tile query and screen-to-data
   conversion in the viewer assumes one view.
-- **Convert next to the data:** writes into data folders, against the serving invariant.
-- **Convert in a session temp directory:** a whole-section H&E converted on every launch.
 
 ## References
 
