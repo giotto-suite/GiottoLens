@@ -153,7 +153,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     { key: 'x', label: 'x', options: names, value: xDef },
     { key: 'y', label: 'y', options: names, value: yDef },
   ], [
-    { icon: 'square-dashed', title: 'select: drag a rectangle (Shift+drag pans)', toggle: 'mode', active: true,
+    { icon: 'square-dashed', title: 'select: drag a rectangle (Shift+drag or the middle button pans)', toggle: 'mode', active: true,
       onClick: () => setMode('select') },
     { icon: 'hand', title: 'pan', toggle: 'mode', onClick: () => setMode('pan') },
     // Re-embedding resets the zoom; the rectangle comes back from its rule
@@ -169,7 +169,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
   area.replaceChildren(host, tex);
   const source = ctx.id === 'density' ? 'density' : `density:${ctx.id}`;
   let view: any = null, gen = 0, own: Rule | null = null;
-  // What a plain drag does; Shift+drag pans in either. Vega's event filters
+  // What a plain drag does; Shift+drag or the middle button pans in either. Vega's event filters
   // cannot read signals, so a switch rebuilds the chart at the same zoom.
   let mode: 'select' | 'pan' = 'select';
   function setMode(m: 'select' | 'pan') {
@@ -231,12 +231,14 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
   function spec(box: Domains | null, zoom: Domains | null) {
     const x = { field: 'x', type: 'quantitative', title: xc.name, scale: { domain: [xc.min, xc.max], nice: false, zero: false } };
     const y = { field: 'y', type: 'quantitative', title: yc.name, scale: { domain: [yc.min, yc.max], nice: false, zero: false } };
-    // The wheel zooms the plot rather than resizing the rectangle. A drag
-    // draws or moves the rectangle in select mode, and pans in pan mode or
-    // with Shift held.
+    // The wheel zooms the plot rather than resizing the rectangle. A left
+    // drag draws or moves the rectangle in select mode, and pans in pan mode
+    // or with Shift held; a middle drag always pans, as in the spatial view.
+    // Vega-Lite's default events take any button, so the filters name them.
     const drag = (when: string) => `[pointerdown[${when}], window:pointerup] > window:pointermove!`;
     const pan = mode === 'pan';
-    const selecting = drag(pan ? 'false' : '!event.shiftKey'), panning = drag(pan ? 'true' : 'event.shiftKey');
+    const selecting = drag(pan ? 'false' : 'event.button === 0 && !event.shiftKey');
+    const panning = drag(pan ? 'event.button === 0 || event.button === 1' : 'event.button === 1 || event.shiftKey');
     const brush = { name: 'brush', select: { type: 'interval', encodings: ['x', 'y'], zoom: false,
         on: selecting, translate: selecting },
       ...(box && { value: { x: box.x, y: box.y } }) };
@@ -272,7 +274,10 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     endLive();
     commit();
   }
-  host.addEventListener('pointerdown', () => {
+  // No autoscroll on a middle press, which pans
+  host.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+  host.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
     down = true;
     window.addEventListener('pointerup', release, { once: true });
     window.addEventListener('pointercancel', release, { once: true });

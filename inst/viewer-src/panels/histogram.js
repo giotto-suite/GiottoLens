@@ -15,6 +15,9 @@ import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive 
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
 
 const BINS = 40;
+// A brush drag with the left button only: Vega-Lite's default takes any button,
+// and the middle one pans elsewhere in the viewer
+const LEFT_DRAG = '[pointerdown[event.button === 0], window:pointerup] > window:pointermove!';
 let _embed = null;   // vega-embed, loaded on first use (keeps it out of first paint)
 const loadEmbed = () => (_embed ??= import('vega-embed').then(m => m.default));
 
@@ -88,7 +91,8 @@ export function createHistogramPanel(body, ctx) {
       layer: [
         { params: [cat
             ? { name: 'pick', select: { type: 'point', fields: ['label'], toggle: 'true' }, ...(value && { value }) }
-            : { name: 'brush', select: { type: 'interval', encodings: ['x'] }, ...(value && { value }) }],
+            : { name: 'brush', select: { type: 'interval', encodings: ['x'], on: LEFT_DRAG, translate: LEFT_DRAG },
+                ...(value && { value }) }],
           mark: { type: 'bar', color: '#4b5563' },
           encoding: { x, ...x2, y: { field: 'all', type: 'quantitative', title: null } } },
         { mark: { type: 'bar', color: '#3b82f6', opacity: 0.85 },
@@ -120,7 +124,8 @@ export function createHistogramPanel(body, ctx) {
     endLive();
     commit();
   }
-  area.addEventListener('pointerdown', () => {
+  area.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
     down = true;
     window.addEventListener('pointerup', release, { once: true });
     window.addEventListener('pointercancel', release, { once: true });

@@ -491,6 +491,14 @@ test_that("a reload brings back the layout, panels, settings and brushes", {
     # ...and can be dragged: the range follows the brush
     xy <- br$js("(() => { const v = window.__giottolens.panel('histogram').view, r = v.container().querySelector('canvas').getBoundingClientRect(), o = v.origin().map((z, i) => z + (i ? v.padding().top : v.padding().left)); return [r.left + o[0] + v.scale('x')(4.5), r.top + o[1] + v.height() / 2]; })()")
     p0 <- c(xy[[1]], xy[[2]])
+    # A middle drag leaves the brush alone (Vega-Lite's default takes any button)
+    middle <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "middle", buttons = if (type == "mouseReleased") 0L else 4L, clickCount = 1L)
+    middle("mouseMoved", p0); middle("mousePressed", p0)
+    for (dx in seq(5, 30, by = 5)) middle("mouseMoved", p0 + c(dx, 0))
+    middle("mouseReleased", p0 + c(30, 0))
+    Sys.sleep(0.2); later::run_now(0.1)
+    expect_identical(brush_of("histogram"), list(bin0 = c(3, 6)))
     send("mouseMoved", p0); send("mousePressed", p0)
     for (dx in seq(5, 30, by = 5)) send("mouseMoved", p0 + c(dx, 0))
     send("mouseReleased", p0 + c(30, 0))
@@ -577,6 +585,16 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
     for (d in seq(10, 60, by = 10)) shift("mouseMoved", q0 + c(d, 0))
     shift("mouseReleased", q0 + c(60, 0))
     expect_true(pump_until(function() dom()[1] < zoomed[1] - 1e-9))
+    expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
+    expect_identical(moved(), r)
+    # The middle button pans too, starting on the rectangle, and leaves it alone
+    middle <- function(type, p) br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
+        button = "middle", buttons = if (type == "mouseReleased") 0L else 4L, clickCount = 1L)
+    before <- dom()
+    middle("mouseMoved", p0); middle("mousePressed", p0)
+    for (d in seq(10, 60, by = 10)) middle("mouseMoved", p0 + c(d, 0))
+    middle("mouseReleased", p0 + c(60, 0))
+    expect_true(pump_until(function() dom()[1] < before[1] - 1e-9))
     expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
     expect_identical(moved(), r)
     # The hand tool: a plain drag pans, and leaves the rectangle alone
