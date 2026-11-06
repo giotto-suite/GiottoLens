@@ -38,7 +38,8 @@ R/
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
-               .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
+               .tiff_info() (a TIFF's size, layout and pyramid from its header, base R),
+               .tiff_problem() (the viewer's TIFF rules), .viewable_file() (cached conversion)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
                Xenium Explorer CSVs, .registered_image() (giottoAffineImage)
 tests/testthat/   unit, server integration (websocket client), e2e (chromote)
@@ -197,8 +198,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 ### Images (adr/0008)
 
-- The viewer reads `.image_source(img)` (today `@file_path`), page 1, and nothing else
-  decides the file. Non-TIFF sources (a VRT, a PNG, in memory) are skipped with a message.
+- The viewer reads `.image_source(img)` (today `@file_path`), page 1, or its cached
+  conversion (below); nothing else decides the file. Images without a file and VRTs are
+  skipped with a message.
 - Levels come from the TIFF itself (SubIFDs or COG overview IFDs), not OME-XML; Viv's
   `loadOmeTiff()` misreads Xenium's per-channel files. Levels must halve and share a tile size.
   Above 4096 px a side, a file in strips or without a pyramid is refused (`layoutProblem()`):
@@ -214,8 +216,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Decoding goes through `ImagePool` (`decode(fileDirectory, buffer)`); a decoder must be
   registered in `img-worker.ts`, not on the main thread. Workers are ES modules
   (`worker.format` in `vite.config.js`).
-- `.image_entries()` returns `sources` (the image's own file, used for `registered_image()`)
-  beside the served `files`.
+- A file that fails `.tiff_problem()` (R's copy of `imageKind()`, `layoutProblem()` and
+  the level checks; change them together) is served as its COG in `.image_cache()`, made once
+  per path, size and mtime. VRTs are skipped. `.image_entries()` returns `sources` (the image's
+  own file, used for `registered_image()`) beside the served `files`.
 - `launch_lens(image_files =)` entries have `place: 'fit'`: drawn inside the manifest extent
   (`fitPlacement()`), not at their extent.
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;

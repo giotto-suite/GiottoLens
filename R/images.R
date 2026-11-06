@@ -3,6 +3,8 @@
 # The viewer reads each image's TIFF file itself (geotiff in the browser, Viv
 # layers), one file per image, served whole or by Range at image/<k>. R only
 # says where the file is and where it sits in data coordinates (adr/0008).
+# A file the viewer cannot read is converted once to a tiled pyramidal TIFF
+# in the image cache and that copy is served (adr/0015).
 
 # The file the viewer reads for an image. This is the one place that decides
 # it; everything downstream takes the path it returns.
@@ -26,33 +28,40 @@
 
 # Manifest entries and the files behind them: the object's `images`, then
 # `image_files` (named paths), which have no place in data coordinates yet and
-# are drawn inside the data's extent (`place = "fit"`). Images whose source is
-# not a TIFF file (in memory, a VRT, a PNG) are skipped with a message.
-# Returns list(entries = manifest entries, files = k -> served path,
+# are drawn inside the data's extent (`place = "fit"`). Images without a file
+# or whose file is a VRT are skipped with a message; other files the viewer
+# cannot read are served as their cached conversion. Returns
+# list(entries = manifest entries, files = k -> served path,
 #      sources = name -> the image's own file).
-.image_entries <- function(images, image_files = character()) {
+.image_entries <- function(images, image_files = character(), cache = .image_cache()) {
     entries <- list()
     files   <- list()
     sources <- character()
     add <- function(nm, path, extent, affine = NULL, place = NULL) {
         why <- if (!length(path) || is.na(path) || !nzchar(path)) "it has no file"
                else if (!file.exists(path)) paste0("'", path, "' does not exist")
-               else if (!.is_tiff(path)) paste0("'", path, "' is not a TIFF file")
+               else if (grepl("\\.vrt$", path, ignore.case = TRUE)) paste0("'", path, "' is a VRT")
+        if (is.null(why)) {
+            served <- tryCatch(.viewable_file(path, nm, cache), error = function(e) {
+                why <<- conditionMessage(e)
+                NULL
+            })
+        }
         if (!is.null(why)) {
             message("[launch_lens] image '", nm, "' is not shown: ", why)
             return(invisible())
         }
         if (is.null(extent)) {
-            info <- .tiff_info(path)
+            info <- .tiff_info(served)
             extent <- c(0, info$width, -info$height, 0)
         }
         k <- as.character(length(files))
-        files[[k]] <<- normalizePath(path)
+        files[[k]] <<- normalizePath(served)
         sources[[nm]] <<- normalizePath(path)
         entry <- list(
             name   = nm,
             url    = paste0("image/", k),
-            bytes  = file.size(path),
+            bytes  = file.size(served),
             # The whole image spans this box; row 0 is at ymax
             extent = list(xmin = extent[[1L]], xmax = extent[[2L]],
                           ymin = extent[[3L]], ymax = extent[[4L]])
@@ -114,7 +123,16 @@
         function(m) identical(magic, as.raw(m)), logical(1L)))
 }
 
-# ── TIFF header ──────────────────────────────────────────────────────────────
+# ── TIFF layout ──────────────────────────────────────────────────────────────
+#
+# What the viewer can read (data/images.ts imageKind(), layoutProblem(),
+# reducedLevels()): page 1 with one sample of a supported type, or 3 or 4
+# 8-bit samples in RGB or YCbCr, interleaved; above 4096 px a side, tiles and
+# reduced levels (SubIFDs, or IFDs with NewSubfileType 1) that each halve the
+# one above with the same tile width.
+
+.TIFF_MAX_WHOLE <- 4096
+.TIFF_TYPES <- c("1:8", "1:16", "1:32", "2:8", "2:16", "2:32", "3:32")
 
 # Tags of the IFD at `offset`
 .tiff_ifd <- function(con, offset, big, endian) {
@@ -187,4 +205,62 @@
     list(width = p$width, height = p$height, tiled = !is.na(p$tile), levels = levels,
          samples = tag(t, 277, 1), bits = tag(t, 258), format = tag(t, 339, 1),
          photometric = tag(t, 262), planar = tag(t, 284, 1))
+}
+
+# Why the viewer cannot read the file, or NULL
+.tiff_problem <- function(path) {
+    info <- .tiff_info(path)
+    if (is.null(info)) return("not a TIFF file")
+    rgb <- info$samples %in% c(3, 4) && info$photometric %in% c(2, 6)
+    if (info$samples == 1) {
+        if (identical(info$photometric, 3)) return("palette colours")
+        if (!paste0(info$format, ":", info$bits) %in% .TIFF_TYPES)
+            return(paste0(info$bits, "-bit pixels"))
+    } else if (!rgb) {
+        return(paste(info$samples, "samples per pixel that are not RGB"))
+    } else if (info$bits != 8) {
+        return(paste0(info$bits, "-bit RGB"))
+    }
+    if (info$samples > 1 && info$planar == 2) return("planar (not interleaved) samples")
+    if (max(info$width, info$height) > .TIFF_MAX_WHOLE) {
+        if (!info$tiled) return("strips, not tiles")
+        if (info$levels < 2L) return("no pyramid whose levels halve")
+    }
+    NULL
+}
+
+# Where converted images are kept: option GiottoLens.image_cache, else the
+# user cache directory
+.image_cache <- function() {
+    getOption("GiottoLens.image_cache", tools::R_user_dir("GiottoLens", "cache"))
+}
+
+# The file the viewer reads for `path`: the file itself, or its conversion to
+# a tiled pyramidal TIFF (Cloud Optimized GeoTIFF) in `cache`, made once per
+# path, size and modification time
+.viewable_file <- function(path, name, cache = .image_cache()) {
+    problem <- .tiff_problem(path)
+    if (is.null(problem)) return(path)
+    fi <- file.info(path)
+    key <- paste(normalizePath(path), fi$size, as.numeric(fi$mtime))
+    kf <- tempfile()
+    on.exit(unlink(kf), add = TRUE)
+    writeLines(key, kf)
+    out <- file.path(cache, paste0(unname(tools::md5sum(kf)), ".tif"))
+    if (file.exists(out)) return(out)
+    dir.create(cache, recursive = TRUE, showWarnings = FALSE)
+    message("[launch_lens] image '", name, "': ", problem, "; converting it to a tiled ",
+        "pyramidal TIFF in ", cache)
+    r <- terra::rast(path)
+    tmp <- paste0(out, ".part")
+    on.exit(unlink(tmp), add = TRUE)
+    terra::writeRaster(r, tmp, filetype = "COG", overwrite = TRUE,
+        datatype = terra::datatype(r)[[1L]],
+        gdal = c("COMPRESS=DEFLATE", "BLOCKSIZE=512", "BIGTIFF=IF_SAFER",
+                 "OVERVIEW_RESAMPLING=AVERAGE"))
+    again <- .tiff_problem(tmp)
+    if (!is.null(again))
+        stop("its conversion still has ", again, call. = FALSE)
+    file.rename(tmp, out)
+    out
 }
