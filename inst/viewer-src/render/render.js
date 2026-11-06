@@ -9,21 +9,14 @@ import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
 import { cellMarkLayer, drawnMark } from './marks.ts';
 import { liveView } from '../selection/live.ts';
 import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
+import { imageLayer } from './image-layer.ts';
+import { Matrix4 } from '@math.gl/core';
+import { currentTransform, matrix4 } from '../data/registration.ts';
+import { landmarkLayers } from './landmarks.ts';
+import { landmarkHover, renderRegPane, registering } from '../ui/registration.ts';
 import { DataFilterExtension } from '@deck.gl/extensions';
-import { MultiscaleImageLayer } from '@vivjs/layers';
 
 const SEL = [255, 220, 50, 255];
-
-// Single-channel images add up: each draws its colour scaled by intensity on
-// top of the others, as the channels of one fluorescence image would. RGB
-// images (brightfield) blend normally and draw first: added, their white
-// background would wash out everything over it
-const ADDITIVE = {
-  blend: true,
-  blendColorOperation: 'add', blendColorSrcFactor: 'src-alpha', blendColorDstFactor: 'one',
-  blendAlphaOperation: 'add', blendAlphaSrcFactor: 'one', blendAlphaDstFactor: 'one',
-};
-const SELECTION = [{ t: 0, c: 0, z: 0 }];
 
 // deck.gl compares `data` by reference: a new object each render means
 // re-triangulating every polygon and re-uploading every buffer. Build each
@@ -33,6 +26,12 @@ function once(key, make) {
   let v = _memo.get(key);
   if (!v) { v = make(); _memo.set(key, v); }
   return v;
+}
+
+// The image being registered draws with the registration's transform
+function modelMatrixOf(name, img, reg) {
+  if (!reg || reg.image !== name) return img.modelMatrix;
+  return once(reg, () => new Matrix4(matrix4(currentTransform(reg))));
 }
 
 // The live brush layer's data and extension, kept for the drag
@@ -64,35 +63,16 @@ export function renderLayers(viewState) {
   if (selCountEl) selCountEl.textContent = count > 0 ? `${count.toLocaleString()} selected` : '';
 
   // Images, under everything else, RGB first. A hidden image is left out
-  // rather than made invisible, so its tiles stop loading
+  // rather than made invisible, so its tiles stop loading. While an image is
+  // registered it has its own pane, and shows here only as a preview
+  const reg = s.registration;
+  const regOn = registering();
   if (s.layers.img.show && s.layers.img.alpha > 0 && state.images) {
-    const shown = [...state.images].filter(([name]) => s.images[name]?.show);
-    for (const [, img] of shown.filter(([, img]) => img.rgb)) {
-      layers.push(new MultiscaleImageLayer({
-        id: `img-${img.entry.url}`,
-        loader: img.levels,
-        selections: SELECTION,
-        modelMatrix: img.modelMatrix,
-        opacity: s.layers.img.alpha,
-        pickable: false,
-      }));
-    }
-    for (const [name, img] of shown.filter(([, img]) => !img.rgb)) {
-      const v = s.images[name];
-      layers.push(new MultiscaleImageLayer({
-        id: `img-${img.entry.url}`,
-        loader: img.levels,
-        selections: SELECTION,
-        colors: [v.color], contrastLimits: [v.contrast], channelsVisible: [true],
-        modelMatrix: img.modelMatrix,
-        opacity: s.layers.img.alpha,
-        // No low-resolution backdrop and no parent tiles under loaded ones:
-        // with additive blending, overlaps would draw twice as bright
-        excludeBackground: true, refinementStrategy: 'no-overlap',
-        parameters: ADDITIVE,
-        pickable: false,
-      }));
-    }
+    const shown = [...state.images].filter(([name]) => s.images[name]?.show &&
+      !(regOn && name === reg.image && !reg.preview));
+    for (const [name, img] of [...shown.filter(([, i]) => i.rgb), ...shown.filter(([, i]) => !i.rgb)])
+      layers.push(imageLayer('img-' + img.entry.url, img, s.images[name],
+        modelMatrixOf(name, img, reg), s.layers.img.alpha));
   }
 
   const onHoverCell = idxOf => info => {
@@ -221,6 +201,9 @@ export function renderLayers(viewState) {
     }));
   }
 
+  // Landmarks of the image being registered, on the reference
+  if (regOn) layers.push(...landmarkLayers(reg, 'fixed', state.landmarkDrag, landmarkHover('fixed')));
+
   // In-progress drawing
   const path = (id, d, color, width = 2) => new PathLayer({
     id, data: [d], getPath: p => p, getColor: color, getWidth: width,
@@ -266,4 +249,5 @@ export function renderLayers(viewState) {
   }
 
   state.deckgl.setProps({ layers });
+  renderRegPane();
 }

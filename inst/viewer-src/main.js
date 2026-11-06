@@ -20,6 +20,7 @@ import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
+import { initRegistration, onMainView } from './ui/registration.ts';
 import { updateScalebar, fitZoom, escapeHtml, dragPan } from './ui/dom.js';
 import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
@@ -39,6 +40,7 @@ function onViewStateChange({ viewState }) {
   updateScalebar(viewState);
   updateRulerLabel();
   updateTxConnector();
+  onMainView(viewState);
   requestRender();
   scheduleTiles(viewState);
 }
@@ -79,7 +81,7 @@ const IMAGE_COLORS = [[64, 128, 255], [0, 255, 128], [255, 64, 64], [255, 200, 0
 async function loadImages(entries) {
   if (!entries.length) return;
   const pool = new ImagePool();
-  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool)));
+  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool, state.manifest.extent)));
   state.images = new Map();
   opened.forEach((r, i) => {
     if (r.status === 'rejected') { reportError(r.reason, `image '${entries[i].name}' is not shown`); return; }
@@ -253,6 +255,7 @@ async function main() {
   // Before R can ask about images
   await imagesLoaded;
   initImagePanel();
+  initRegistration();
 
   initRemote();
   // The saved config comes from R on connect ('restore'), over the defaults

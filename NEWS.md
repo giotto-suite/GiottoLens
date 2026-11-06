@@ -1,5 +1,22 @@
 # GiottoLens (development version)
 
+* `viewer$set_view(zoom =)`, `viewer$set_view(bounds =)`, `viewer$zoom_to()` and an annotation's
+  zoom button set the zoom after the view was zoomed by hand; before, the new zoom was ignored.
+* Image registration by landmarks: `viewer$register_image(image, reference)` opens the
+  landmark tool (also in the Register section of the side panel). The image is shown in its
+  own pane beside the reference. Click a point in one pane, then the matching point in the
+  other; from three pairs on, the image is drawn with their least-squares affine fit, with the
+  residual of each pair and the RMSE. Points can be dragged and deleted, the image's pane
+  flipped or turned by 90 degrees, the fit previewed over the reference, and the two panes
+  linked.
+* `viewer$registration` holds the pairs and the transform. `registration_matrix()` gives it
+  in data coordinates or in reference pixels, and `write_registration()` writes Xenium
+  Explorer's `imagealignment.csv` and `keypoints.csv`. `viewer$register_image()` loads
+  either with `alignment =` or `keypoints =`.
+* `viewer$registered_image()` returns the registered image as a `giottoAffineImage`, and
+  `viewer$add_registered_image(g)` adds it to a giotto object.
+* `launch_lens(image_files =)` shows image files that are not in the object yet, drawn inside
+  the data's extent until registered.
 * Holding Space pans the spatial view and the scatter panel with any tool; releasing it returns
   to that tool. Before, Space switched to the pan tool for good. A polygon being clicked out
   keeps its points across a hold.

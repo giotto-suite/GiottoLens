@@ -16,7 +16,8 @@ launch_lens(
   open = TRUE,
   transfer = c("auto", "whole", "columns"),
   images = NULL,
-  mark = NULL
+  mark = NULL,
+  image_files = NULL
 )
 
 serve_lens(...)
@@ -73,6 +74,11 @@ out: bins with \code{array_row} and \code{array_col} in their cell metadata are
 squares fitted to the bin grid, other cells circles as wide as the median
 distance to their nearest neighbour. Polygon cells are drawn as dots
 until their outlines load, or as this mark when one is given.}
+
+\item{image_files}{Image files to show besides the object's images, such
+as an H&E to register: a character vector of paths, named by image
+(default: the file name). They are drawn inside the data's extent until
+registered with \code{viewer$register_image()}.}
 
 \item{...}{Passed to \code{\link[=launch_lens]{launch_lens()}}.}
 }

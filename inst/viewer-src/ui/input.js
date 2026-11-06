@@ -7,9 +7,12 @@ import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterM
 import { generateAnnotId } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
+import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, consumeDrop,
+  removeLastLandmark, cancelPendingLandmark, refreshPaneCursor } from './registration.ts';
 
 let _canvas = null; // set in initInput, used by exported functions above initInput scope
 let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
+let _downPx = null;                // where the button went down: a click after a pan is no click
 // Space held: a drag pans whatever the tool (dragPan in ui/dom.js), and the
 // tool is back on release. The store's mode is left alone, so it is not saved
 // as 'pan' and a polygon being clicked out keeps its vertices.
@@ -72,9 +75,11 @@ export function setMode(m) {
 
 function applyMode(mode) {
   const m = spaceHeld() ? 'pan' : mode;   // what the toolbar shows
-  state.deckgl.setProps({ controller: DRAG_MODES.includes(mode)
-    ? { dragPan: false, doubleClickZoom: false }
-    : { doubleClickZoom: false } });
+  state.deckgl.setProps({
+    controller: DRAG_MODES.includes(mode) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
+    getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
+  });
+  refreshPaneCursor();
   document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m)
   );
@@ -257,6 +262,12 @@ export function initInput() {
   // ── Canvas events ─────────────────────────────────────────────────────────
   canvas.addEventListener('click', e => {
     const mode = toolMode();
+    if (mode === 'landmark') {
+      const moved = _downPx && Math.hypot(e.clientX - _downPx[0], e.clientY - _downPx[1]) > 4;
+      if (!consumeDrop() && !moved) landmarkClick('fixed', world(e));
+      requestRender();
+      return;
+    }
     if (mode === 'ruler') {
       const pt = world(e);
       if (!state.rulerStart || state.rulerLocked) {
@@ -302,8 +313,11 @@ export function initInput() {
   canvas.addEventListener('mousedown', e => {
     hideCellTooltip();
     if (e.button !== 0) return;
+    _downPx = [e.clientX, e.clientY];
     const mode = toolMode();
-    if (mode === 'brush') {
+    if (mode === 'landmark') {
+      if (landmarkDragStart('fixed', e, canvas)) requestRender();
+    } else if (mode === 'brush') {
       state.brushDown = true;
       state.brushPos  = world(e);
       brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, state.currentViewState.zoom), strokeOp(e));
@@ -329,6 +343,8 @@ export function initInput() {
     const coordEl = document.getElementById('cursor-coords');
     if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
     const mode = toolMode();
+
+    if (mode === 'landmark' && landmarkDragMove('fixed', coords, e)) requestRender();
 
     if (mode === 'brush') {
       state.brushPos = coords;
@@ -358,6 +374,7 @@ export function initInput() {
   window.addEventListener('mouseup', e => {
     if (e.button !== 0) return;
     const mode = store.getState().mode;
+    if (landmarkDragEnd()) requestRender();
     if (mode === 'brush' && state.brushDown) {
       state.brushDown = false;
       brushEnd();
@@ -407,11 +424,12 @@ export function initInput() {
     if (e.code === 'Space' && !inInput) {
       e.preventDefault();
       // Not in the middle of a drag: the stroke finishes with its own tool
-      const stroking = state.lassoActive || state.brushDown || state.rectStart;
+      const stroking = state.lassoActive || state.brushDown || state.rectStart || state.landmarkDrag;
       if (!e.repeat && !stroking) holdPan(true);
       return;
     }
 
+    if (e.key === 'Escape' && mode === 'landmark' && cancelPendingLandmark()) return;
     if (e.key === 'Escape') {
       resetDrawing();
       actions.selectAnnotation(null);
@@ -424,6 +442,11 @@ export function initInput() {
     if (mode === 'brush') {
       if (e.key === '[') actions.setBrushRadius(store.getState().brushRadius - 5);
       if (e.key === ']') actions.setBrushRadius(store.getState().brushRadius + 5);
+    }
+    if (mode === 'landmark' && (e.key === 'Delete' || e.key === 'Backspace')) {
+      removeLastLandmark();
+      e.preventDefault();
+      return;
     }
     const annot = store.getState().selectedAnnotId;
     if ((e.key === 'Delete' || e.key === 'Backspace') && annot) {

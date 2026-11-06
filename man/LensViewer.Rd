@@ -23,6 +23,14 @@ it like a password while the viewer runs}
 sent by the viewer (one per source: spatial, scatter, histogram, ...)}
 
     \item{\code{annotations}}{List of drawn polygons: id, name, type, geojson}
+
+    \item{\code{registration}}{The image being registered in the viewer, or
+\code{NULL}: image and reference names, the landmark pairs (\code{moving_x},
+\code{moving_y} in image pixels, \code{fixed_x}, \code{fixed_y} in data
+coordinates, \code{residual}), and \code{transform}, the 3 x 3 matrix from
+image pixels to data coordinates (the affine fit from three
+complete pairs on, the placement before). See
+\code{\link[=registration_matrix]{registration_matrix()}} and \code{\link[=write_registration]{write_registration()}}.}
   }
   \if{html}{\out{</div>}}
 }
@@ -41,6 +49,10 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
     \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
+    \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
+    \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
+    \item \href{#method-LensViewer-registered_image}{\code{LensViewer$registered_image()}}
+    \item \href{#method-LensViewer-add_registered_image}{\code{LensViewer$add_registered_image()}}
     \item \href{#method-LensViewer-show_genes}{\code{LensViewer$show_genes()}}
     \item \href{#method-LensViewer-screenshot}{\code{LensViewer$screenshot()}}
     \item \href{#method-LensViewer-log}{\code{LensViewer$log()}}
@@ -77,7 +89,8 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
   spat_unit = NULL,
   images = list(),
   locations = NULL,
-  mark = NULL
+  mark = NULL,
+  image_files = character()
 )}
     \if{html}{\out{</div>}}
   }
@@ -93,6 +106,7 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
       \item{\code{locations}}{Cells from spatial locations when there are no
 polygons (internal)}
       \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{image_files}}{Named image file paths, see \code{\link[=launch_lens]{launch_lens()}}}
     }
     \if{html}{\out{</div>}}
   }
@@ -352,6 +366,102 @@ take only \code{show}.
 full colour}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-register_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-register_image}{}}}
+\subsection{\code{LensViewer$register_image()}}{
+  Register an image by landmarks in the viewer: opens
+the landmark tool on \code{image}, shown in its own pane beside the
+main view. Click a point in one pane, then the matching point in
+the other; from three pairs on, the image is drawn with their
+least-squares affine fit. The result is kept in \verb{$registration}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$register_image(
+  image = NULL,
+  reference = NULL,
+  alignment = NULL,
+  keypoints = NULL,
+  tool = TRUE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{image}}{Name of the image to register; \code{NULL} keeps the one
+being registered.}
+      \item{\code{reference}}{Name of the image the matching points are placed
+on, such as the DAPI image.}
+      \item{\code{alignment}}{Starting placement: a 3 x 3 matrix from image
+pixels to reference pixels, or a Xenium Explorer
+\code{imagealignment.csv}.}
+      \item{\code{keypoints}}{Landmark pairs to load: a data frame with \code{fixedX},
+\code{fixedY} (reference pixels), \code{alignmentX}, \code{alignmentY} (image
+pixels), or a Xenium Explorer \code{keypoints.csv}. They replace the
+current pairs.}
+      \item{\code{tool}}{Open the landmark tool (default \code{TRUE}).}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-clear_registration"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-clear_registration}{}}}
+\subsection{\code{LensViewer$clear_registration()}}{
+  Discard the viewer's image registration
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$clear_registration()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-registered_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-registered_image}{}}}
+\subsection{\code{LensViewer$registered_image()}}{
+  The registered image as a giottoAffineImage: the image
+file with \verb{$registration}'s transform. Needs GiottoClass.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$registered_image(name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Name of the image; default the registered image's name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-add_registered_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-add_registered_image}{}}}
+\subsection{\code{LensViewer$add_registered_image()}}{
+  Add the registered image to a giotto object, replacing
+an image of the same name.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$add_registered_image(gobject, name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{gobject}}{A giotto object}
+      \item{\code{name}}{Name of the image; default the registered image's name}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The giotto object with the image
   }
 }
 
