@@ -13,15 +13,13 @@ import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
-import { renderGeneList, setGeneSearch } from './ui/panel.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
-import { initImagePanel } from './ui/images.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
 import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
-import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
+import { initDock, placeControls, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
@@ -95,12 +93,8 @@ async function main() {
   const txLayer   = state.manifest.layers.transcripts;
   const cellLayer = state.manifest.layers.cells;
   state.geneIndex = new Map((txLayer?.genes ?? []).map((g, i) => [g, i]));
-  if (!txLayer) {
-    // Polygons-only launch: no gene list or transcript controls
-    document.getElementById('panel-header').style.display = 'none';
-    document.getElementById('gene-list').style.display = 'none';
-    document.querySelector('[data-mode="txlasso"]')?.remove();
-  }
+  // Polygons-only launch: no transcript tools (nor a transcripts panel)
+  if (!txLayer) document.querySelector('[data-mode="txlasso"]')?.remove();
   // Points-only launch: transcripts are all there is to show
   if (txLayer && !cellLayer) actions.setLayer('tx', { show: true });
 
@@ -151,7 +145,7 @@ async function main() {
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
-  store.subscribe(s => [s.genes, s.txPalette, s.colorAll], () => { invalidateTx(); renderGeneList(); },
+  store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
 
   initAnnotations();
@@ -175,26 +169,6 @@ async function main() {
     document.getElementById('btn-stats-toggle')?.classList.toggle('active', statsOpen);
   });
   document.getElementById('btn-stats-toggle')?.classList.add('active');
-
-  document.querySelectorAll('.section-hd').forEach(hd =>
-    hd.addEventListener('click', () => hd.closest('[id]').classList.toggle('section-collapsed'))
-  );
-
-  // ── Gene panel ────────────────────────────────────────────────────────────
-  const $search = document.getElementById('gene-search');
-  $search?.addEventListener('input', () => setGeneSearch($search.value));
-
-  const $btnColorAll = document.getElementById('btn-color-all');
-  $btnColorAll?.addEventListener('click', () => actions.setColorAll(!store.getState().colorAll));
-  store.subscribe(s => s.colorAll, on => $btnColorAll?.classList.toggle('active', on));
-
-  const $btnPalette   = document.getElementById('btn-palette');
-  const paletteLabels = ['muted', 'vivid'];
-  $btnPalette?.addEventListener('click', () =>
-    actions.setTxPalette((store.getState().txPalette + 1) % paletteLabels.length));
-  store.subscribe(s => s.txPalette, i => { if ($btnPalette) $btnPalette.textContent = paletteLabels[i]; });
-
-  document.getElementById('btn-clear')?.addEventListener('click', () => actions.clearGenes());
 
   // ── R → viewer messages ───────────────────────────────────────────────────
   let metaUrl = null;
@@ -221,7 +195,7 @@ async function main() {
 
   // Before R can ask about images
   await imagesLoaded;
-  initImagePanel();
+  placeControls();   // the images and register panels, now that images are open
   initRegistration();
 
   initRemote();
@@ -231,7 +205,6 @@ async function main() {
   store.persist.rehydrate();
   initComms();   // after every handler is registered
 
-  renderGeneList();
   $status('ready');
   updateTiles(initialViewState);
 }

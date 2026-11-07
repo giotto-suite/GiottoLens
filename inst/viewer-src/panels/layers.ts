@@ -21,11 +21,11 @@ export function createLayersPanel(body: HTMLElement): PanelHandle {
   const unsub: (() => void)[] = [];
 
   const rows = ROWS.map(({ layer, label, has }) => {
-    // The ids are for the e2e tests: there is one layers panel
-    const check  = el('input', { type: 'checkbox', id: `show-${layer}` });
-    const slider = el('input', { type: 'range', id: `alpha-${layer}`, min: '0', max: '100' });
-    const value  = el('span', { className: 'alpha-val', id: `val-${layer}` });
+    const check  = el('input', { type: 'checkbox', className: 'show' });
+    const slider = el('input', { type: 'range', className: 'alpha', min: '0', max: '100' });
+    const value  = el('span', { className: 'alpha-val' });
     const row = el('div', { className: 'alpha-row' });
+    row.dataset.layer = layer;
     row.append(check, el('label', { textContent: label }), slider, value);
     root.append(row);
 

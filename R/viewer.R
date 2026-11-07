@@ -756,7 +756,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @description Close a docked panel: one pushed with `push_panel()`
         #'   or a built-in one (`"scatter"`, `"histogram"`, `"cells"`, ...).
         #'   The viewer's `+` menu adds built-in panels back; a closed control
-        #'   (`"cells"`, `"layers"`) stays closed after a page reload.
+        #'   (`"cells"`, `"layers"`, ...) stays closed after a page reload.
         #' @param id Panel id (see `panels()`)
         remove_panel = function(id) {
             .check_panel_id(id, builtin_ok = TRUE)
@@ -768,7 +768,8 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description The docked panels: id, kind (a chart: `"scatter"`,
         #'   `"histogram"`, `"density"`, or `"spec"` for a pushed one; a
-        #'   control: `"cells"`, `"layers"`), tab title, the group
+        #'   control: `"cells"`, `"transcripts"`, `"images"`, `"register"`,
+        #'   `"annotations"`, `"layers"`), tab title, the group
         #'   of tabs it is in, and whether it is in view (not behind another
         #'   tab). With no browser connected, only the pushed panels R holds.
         #' @return A data frame.
@@ -1057,7 +1058,8 @@ print.lens_description <- function(x, ...) {
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
-.lens_builtin_panels <- c("scatter", "histogram", "density", "cells", "layers")
+.lens_builtin_panels <- c("scatter", "histogram", "density", "cells", "transcripts",
+    "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

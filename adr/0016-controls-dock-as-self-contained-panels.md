@@ -26,17 +26,21 @@ subscriptions it drops in `destroy()`, and is styled by class. Built-in panels a
 one table (`TYPES` in `panels/dock.ts`): a chart needs metadata and can be added more than
 once; a control is one per viewer, its id is its kind, and `available()` says whether the
 launch has what it shows. The default layout puts the controls in a 260 px column at the
-dock's right edge. A control closed by hand is recorded in the saved config
-(`closedPanels`) so a reload leaves it closed, and a saved layout without a control (from
-before it existed) gets it placed. A chart pushed from R without `ref` goes next to the
-charts, never among the controls.
+dock's right edge, grouped by subject into slots of at most two tabs (cells and transcripts;
+images and register; annotations; layers), since a third tab does not fit the column's tab
+bar. A control carries no element ids; tests find it by `[data-panel=<id>]` and class. A
+control closed by hand is recorded in the saved config (`closedPanels`) so a reload leaves
+it closed, and a saved layout without a control (from before it existed) gets it placed. A
+chart pushed from R without `ref` goes next to the charts, never among the controls.
 
 ## Consequences
 
 - Controls tab, split, close and restore like charts; `push_panel(ref = "cells")` works.
 - The stats toggle hides every panel, controls included.
-- Element ids inside a control remain only as test hooks; a second instance of a control
-  (per view) means dropping them, not restructuring the module.
+- A second instance of a control (per view) needs a per-instance id in `TYPES`, not changes
+  to the control's module.
+- dockview mounts a tab's content the first time it is shown; a control must not rely on its
+  DOM existing before then (it reads the store when created).
 - `.lens_builtin_panels` in R and `TYPES` in the browser list the same kinds; keep them in step.
 - `panels()` lists panels in layout order rather than creation order, so a reload keeps it.
 

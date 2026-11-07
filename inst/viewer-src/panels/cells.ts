@@ -30,9 +30,8 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
   const note = Object.assign(document.createElement('div'), {
     className: 'panel-note', textContent: 'Push metadata from R to colour the cells: viewer$push_metadata(g)' });
   const row = Object.assign(document.createElement('div'), { className: 'alpha-row' });
-  // The ids are for the e2e tests: there is one cells panel
-  const select = Object.assign(document.createElement('select'), { className: 'ctl-select', id: 'meta-col-select' });
-  const legend = Object.assign(document.createElement('div'), { className: 'cells-legend', id: 'meta-legend' });
+  const select = Object.assign(document.createElement('select'), { className: 'ctl-select color-by' });
+  const legend = Object.assign(document.createElement('div'), { className: 'cells-legend' });
   row.append(Object.assign(document.createElement('label'), { textContent: 'color by' }), select);
   root.append(row, legend);
   body.append(note, root);

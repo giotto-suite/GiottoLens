@@ -1,5 +1,5 @@
-// Register an image by landmarks (adr/0014): the Register section of the side
-// panel, the landmark tool (mode 'landmark') and the registration sent to R.
+// Register an image by landmarks (adr/0014): the landmark tool (mode
+// 'landmark') and the registration sent to R; its panel is panels/register.ts.
 // In landmark mode the spatial view splits: the image being registered in its
 // own pane on the left (its pixels, in the pane's orientation), the reference
 // and the data on the right. A click in one pane places that side of a pair,
@@ -13,16 +13,14 @@ import { sendToR } from '../core/comms.js';
 import { setViewState } from '../data/schedule.js';
 import { requestRender } from '../render/schedule.js';
 import { imageLayer } from '../render/image-layer.ts';
-import { landmarkLayers, MOVING_COLOR, FIXED_COLOR, type Side, type LandmarkDrag } from '../render/landmarks.ts';
+import { landmarkLayers, type Side, type LandmarkDrag } from '../render/landmarks.ts';
 import { clientToWorld, fitZoom, dragPan, spaceHeld } from './dom.js';
 import {
-  apply, compose, invert, flip, rotate90, currentTransform, registrationFit, completePairs, matrix4,
-  mapView, MIN_PAIRS, UPRIGHT, type Registration, type Landmark, type XY, type Affine,
+  apply, compose, invert, flip, rotate90, currentTransform, registrationFit, matrix4,
+  mapView, UPRIGHT, type Registration, type Landmark, type XY, type Affine,
 } from '../data/registration.ts';
-import { createIcons, icons } from 'lucide';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement | null;
-const css = ([r, g, b]: number[]) => `rgb(${r},${g},${b})`;
 
 let _seq = 0;
 const landmarkId = () => `lm_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
@@ -80,7 +78,7 @@ export function registrationPayload(reg: Registration | null) {
 }
 
 // The pair with one side placed, if any
-const pending = (reg: Registration) => reg.landmarks.find(l => !l.moving !== !l.fixed) ?? null;
+export const pending = (reg: Registration) => reg.landmarks.find(l => !l.moving !== !l.fixed) ?? null;
 
 // Pane coordinates → the side's stored coordinates (image pixels or data)
 function stored(reg: Registration, side: Side, pt: XY): XY | null {
@@ -322,100 +320,11 @@ function initPaneInput() {
   });
 }
 
-// ── Panel ─────────────────────────────────────────────────────────────────────
-
-function options(sel: HTMLSelectElement, names: string[], none: string | null) {
-  sel.replaceChildren(...[...(none != null ? [[ '', none ]] : []), ...names.map(n => [n, n])].map(([v, t]) =>
-    Object.assign(document.createElement('option'), { value: v, textContent: t })));
-}
-
+// The image's pane and the registration sent to R; the Register panel
+// (panels/register.ts) is the UI, and R's register_image() works without it
 export function initRegistration() {
   if (!state.images?.size) return;
-  const panel = $('reg-panel');
-  if (!panel) return;
-  panel.style.display = '';
-  const names = [...state.images.keys()] as string[];
-  const $image = $('reg-image') as HTMLSelectElement;
-  const $ref = $('reg-reference') as HTMLSelectElement;
-  const $start = $('reg-start') as HTMLButtonElement;
-  const $preview = $('reg-preview') as HTMLInputElement;
-  const $link = $('reg-link') as HTMLInputElement;
-  const $status = $('reg-status')!;
-  const $list = $('reg-list')!;
-  const orientBtns = ['reg-flip-h', 'reg-flip-v', 'reg-rot-ccw', 'reg-rot-cw'].map($) as HTMLButtonElement[];
-
-  options($image, names, null);
-  // Default: the first RGB image (an H&E) against the first other image
-  const rgb = names.find(n => state.images.get(n).rgb);
-  $image.value = rgb ?? names[names.length - 1];
-  const refFor = (img: string) => names.find(n => n !== img && !state.images.get(n).rgb) ?? names.find(n => n !== img) ?? '';
-  const fillRef = () => { options($ref, names.filter(n => n !== $image.value), 'none'); $ref.value = refFor($image.value); };
-  fillRef();
-  $image.addEventListener('change', fillRef);
-
-  $start.addEventListener('click', () => {
-    const s = store.getState();
-    if (s.mode === 'landmark') { actions.setMode('pan'); return; }
-    if (!s.registration || s.registration.image !== $image.value || s.registration.reference !== ($ref.value || null))
-      startRegistration($image.value, $ref.value || null);
-    actions.setMode('landmark');
-  });
-  $('reg-reset')?.addEventListener('click', () => {
-    actions.setRegistration(null);
-    if (store.getState().mode === 'landmark') actions.setMode('pan');
-  });
-  $('reg-flip-h')?.addEventListener('click', () => flipImage('h'));
-  $('reg-flip-v')?.addEventListener('click', () => flipImage('v'));
-  $('reg-rot-ccw')?.addEventListener('click', () => rotateImage(1));
-  $('reg-rot-cw')?.addEventListener('click', () => rotateImage(-1));
-  $preview.addEventListener('change', () => actions.patchRegistration({ preview: $preview.checked }));
-  $link.addEventListener('change', () => {
-    actions.patchRegistration({ link: $link.checked });
-    if ($link.checked && state.currentViewState) onMainView(state.currentViewState);
-  });
-
-  const render = () => {
-    const s = store.getState();
-    const reg = s.registration;
-    const active = registering();
-    $start.textContent = active ? 'done' : reg ? 'place points' : 'start';
-    $start.classList.toggle('active', active);
-    $image.disabled = $ref.disabled = active;
-    if (reg) { $image.value = reg.image; if (!active) { fillRef(); $ref.value = reg.reference ?? ''; } }
-    const fit = reg ? registrationFit(reg) : null;
-    for (const b of orientBtns) b.disabled = !active;
-    ($('reg-reset') as HTMLButtonElement).disabled = !reg;
-    $preview.checked = !!reg?.preview;
-    $preview.disabled = !reg;
-    $link.checked = !!reg?.link;
-    $link.disabled = !fit;
-
-    const done = reg ? completePairs(reg).length : 0;
-    const open = reg && pending(reg);
-    const fixedName = reg?.reference ?? 'the data';
-    $status.textContent = !reg ? 'pick an image and a reference, then start'
-      : open ? (open.moving ? `click the matching point on ${fixedName} (right)` : `click the matching point on ${reg.image} (left)`)
-      : fit ? `${done} pairs · RMSE ${fit.rmse.toFixed(2)} μm`
-      : active ? `click a point in either pane · ${done}/${MIN_PAIRS} pairs for a fit`
-      : `${done}/${MIN_PAIRS} pairs for a fit`;
-
-    $list.replaceChildren();
-    if (!reg) return;
-    let k = 0;
-    reg.landmarks.forEach((l, i) => {
-      const row = Object.assign(document.createElement('div'), { className: 'reg-row' });
-      const dot = (on: boolean, c: number[]) => `<span class="reg-dot" style="${on ? `background:${css(c)}` : ''};border-color:${css(c)}"></span>`;
-      const res = l.moving && l.fixed && fit ? fit.residuals[k++] : null;
-      row.innerHTML = `<span class="reg-n">${i + 1}</span>${dot(!!l.moving, MOVING_COLOR)}${dot(!!l.fixed, FIXED_COLOR)}` +
-        `<span class="reg-res">${res != null ? `${res.toFixed(2)} μm` : ''}</span>` +
-        `<button class="annot-row-btn" title="delete"><i data-lucide="x"></i></button>`;
-      row.querySelector('button')!.addEventListener('click', () => actions.removeLandmark(l.id));
-      $list.appendChild(row);
-    });
-    createIcons({ icons, root: $list });
-  };
-  render();
-  store.subscribe(s => [s.registration, s.mode], () => { render(); syncPane(); },
+  store.subscribe(s => [s.registration, s.mode], syncPane,
     { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] });
   initPaneInput();
   syncPane();

@@ -1,9 +1,9 @@
 # GiottoLens (development version)
 
-* The cells (colour by and legend) and layers (visibility and opacity) controls dock as panels
-  in a column beside the charts: they can be moved, tabbed, closed and added back from the `+`
-  menu, and `push_panel(ref = "cells")` places a chart next to them. A closed control stays
-  closed after a reload.
+* The side panel is gone: its sections dock as panels in a column beside the charts (cells,
+  transcripts, images, register, annotations and layers, the old opacity section). They can be
+  moved, tabbed, closed and added back from the `+` menu, and `push_panel(ref = "cells")`
+  places a chart next to them. A closed control stays closed after a reload.
 * `viewer$panels()` lists panels in layout order, and a chart pushed without `ref` goes next to
   the charts.
 

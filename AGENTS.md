@@ -54,11 +54,12 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               live.ts (panel brush drags: bucket index, live counts, adr/0013)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
               landmarks.ts (registration pairs)
-  ui/         input.js, annotations.js, panel.js, tooltip.js, rules.js, release.js,
-              dom.js, images.js, registration.ts (Register section, landmark tool)
+  ui/         input.js, annotations.js (name popup, sync to R), tooltip.js, rules.js, release.js,
+              dom.js, registration.ts (landmark tool, image pane)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
-              control bar), cells.ts (colour by, legend), layers.ts (layer visibility, opacity)
+              control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
+              images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -251,11 +252,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Charts and controls dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
   not a panel. Built-in kinds are listed once in `TYPES`: charts (`meta`) need metadata and can
   repeat; controls (`single`) are one per viewer with their kind as id, placed in a column at
-  the dock's right edge, and left closed after a reload once closed (`closedPanels`). Keep
-  `.lens_builtin_panels` in R in step. A pushed panel without `ref` goes next to the charts.
-- A control builds its own DOM and keeps references to it: no `getElementById`, no markup in
-  `index.html`, styles by class. Ids inside it are test hooks only. A closed panel's DOM leaves
-  the document, so nothing may look it up later.
+  the dock's right edge by `slot` (at most two tabs each: more do not fit), and left closed
+  after a reload once closed (`closedPanels`). Keep `.lens_builtin_panels` in R in step. A
+  pushed panel without `ref` goes next to the charts.
+- A control builds its own DOM and keeps references to it: no `getElementById`, no ids, no
+  markup in `index.html`, styles by class; e2e tests select `[data-panel=<id>] .class`. A tab's
+  content is mounted when first shown (`dock_tab()` in the tests) and leaves the document when
+  closed, so nothing may look it up from outside.
 - A panel's id names its slot, its selection source (`scatter` or
   `scatter:<id>`, `density` or `density:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
 - A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip

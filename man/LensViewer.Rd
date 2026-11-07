@@ -712,7 +712,7 @@ than the controls}
   Close a docked panel: one pushed with \code{push_panel()}
 or a built-in one (\code{"scatter"}, \code{"histogram"}, \code{"cells"}, ...).
 The viewer's \code{+} menu adds built-in panels back; a closed control
-(\code{"cells"}, \code{"layers"}) stays closed after a page reload.
+(\code{"cells"}, \code{"layers"}, ...) stays closed after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$remove_panel(id)}
@@ -733,7 +733,8 @@ The viewer's \code{+} menu adds built-in panels back; a closed control
 \subsection{\code{LensViewer$panels()}}{
   The docked panels: id, kind (a chart: \code{"scatter"},
 \code{"histogram"}, \code{"density"}, or \code{"spec"} for a pushed one; a
-control: \code{"cells"}, \code{"layers"}), tab title, the group
+control: \code{"cells"}, \code{"transcripts"}, \code{"images"}, \code{"register"},
+\code{"annotations"}, \code{"layers"}), tab title, the group
 of tabs it is in, and whether it is in view (not behind another
 tab). With no browser connected, only the pushed panels R holds.
   \subsection{Usage}{

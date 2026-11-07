@@ -7,8 +7,9 @@
 // layout is config (store `layout`): it is saved through R and restored after
 // a reload. Charts (scatter, histogram, density) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// Controls (cells, layers) are one per viewer, with their kind as id, and
-// keep their own state in the store (adr/0016).
+// Controls (cells, transcripts, images, annotations, register, layers) are one
+// per viewer, with their kind as id, and keep their own state in the store
+// (adr/0016).
 // Why dockview-core 4, and why R holds the saved config: adr/0009.
 import {
   createDockview, themeDark,
@@ -30,27 +31,39 @@ import { createHistogramPanel } from './histogram.js';
 import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createCellsPanel } from './cells.ts';
+import { createTranscriptsPanel } from './transcripts.ts';
+import { createImagesPanel } from './images.ts';
+import { createAnnotationsPanel } from './annotations.ts';
+import { createRegisterPanel } from './register.ts';
 import { createLayersPanel } from './layers.ts';
 
 // The built-in panels. A chart (`meta`) shows a note until metadata arrives
 // and is rebuilt when it changes; there can be several. A control (`single`)
 // is one per viewer, its id is its kind, and it follows the store itself.
-// `available`: whether this launch has what the panel shows. `below`: a
-// control placed in its own group under the others, not as a tab, this many
-// px tall.
+// `available`: whether this launch has what the panel shows. `slot`: controls
+// in one slot are tabs of one group, the first one shown; slots stack in the
+// controls' column in the order below, `height` px tall where given.
 interface PanelType {
   create(body: HTMLElement, ctx: PanelCtx): PanelHandle;
   meta?: boolean;
   single?: boolean;
-  below?: number;
+  slot?: string;
+  height?: number;
   available?(): boolean;
 }
+const hasImages = () => !!state.images?.size;
 const TYPES = {
-  scatter:   { create: createScatterPanel, meta: true },
-  histogram: { create: createHistogramPanel, meta: true },
-  density:   { create: createDensityPanel, meta: true },
-  cells:     { create: createCellsPanel, single: true, available: () => !!state.cells },
-  layers:    { create: createLayersPanel, single: true, below: 150 },
+  scatter:     { create: createScatterPanel, meta: true },
+  histogram:   { create: createHistogramPanel, meta: true },
+  density:     { create: createDensityPanel, meta: true },
+  // Two tabs at most per slot: more do not fit the column's tab bar
+  cells:       { create: createCellsPanel, single: true, slot: 'data', available: () => !!state.cells },
+  transcripts: { create: createTranscriptsPanel, single: true, slot: 'data',
+                 available: () => !!state.manifest?.layers?.transcripts },
+  images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
+  register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
+  annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },
+  layers:      { create: createLayersPanel, single: true, slot: 'layers', height: 130 },
 } satisfies Record<string, PanelType>;
 export type PanelKind = keyof typeof TYPES | 'spec';
 type BuiltinKind = keyof typeof TYPES;
@@ -219,23 +232,56 @@ function defaultLayout(host: HTMLElement): void {
   placeControls();
 }
 
-// Every control this launch has, unless closed by hand: next to another
-// control, or as a column at the dock's right edge. A saved layout from before
-// a control existed gets it here too.
-function placeControls(): void {
+// Every control this launch has, unless closed by hand: a tab next to one in
+// its slot, else a group above the next control in TYPES order (or under the
+// last), else a column at the dock's right edge. A saved layout from before a
+// control existed gets it here too, and so do controls whose data arrives
+// after the dock (images).
+export function placeControls(): void {
   if (!dock) return;
   const closed = store.getState().closedPanels;
+  const order = (Object.keys(TYPES) as BuiltinKind[]).filter(isControl);
+  let added = false;
   for (const kind of builtins()) {
     if (!isControl(kind) || closed.includes(kind) || dock.getPanel(kind)) continue;
-    const near = dock.panels.find(p => isControl(views.get(p.id)?.kind));
-    const below = typeOf(kind)!.below;
-    const direction = !near ? 'right' : below ? 'below' : 'within';
+    const { slot, height } = typeOf(kind)!;
+    const controls = layoutIds().map(id => dock!.getPanel(id)!).filter(p => isControl(views.get(p.id)?.kind));
+    const mate = controls.find(p => typeOf(p.id)?.slot === slot);
+    const next = order.slice(order.indexOf(kind) + 1).map(k => dock!.getPanel(k)).find(p => !!p);
+    const ref = mate ?? next ?? controls.at(-1);
+    const direction = mate ? 'within' : next ? 'above' : ref ? 'below' : 'right';
     // Inactive only as a tab: a new group needs its panel active to draw it
     const panel = dock.addPanel({ id: kind, component: kind, title: kind, inactive: direction === 'within',
-      position: near ? { referencePanel: near, direction } : { direction } });
-    if (!near) panel.group.api.setSize({ width: CONTROL_WIDTH });
-    else if (below) panel.group.api.setSize({ height: below });
+      position: ref ? { referencePanel: ref, direction } : { direction } });
+    if (direction === 'right') panel.group.api.setSize({ width: CONTROL_WIDTH });
+    added = true;
   }
+  if (added) sizeControls();
+}
+
+// The controls' column: slots with a height get it, the others (the data)
+// share what is left. Set top down, since dockview gives a group's change to
+// the group below it; the last takes what rounding leaves.
+function sizeControls(): void {
+  if (!dock) return;
+  const groups = [...new Set(layoutIds().map(id => dock!.getPanel(id)!)
+    .filter(p => isControl(views.get(p.id)?.kind)).map(p => p.group))];
+  const fixed = groups.map(g => Math.max(0, ...g.panels.map(p => typeOf(p.id)?.height ?? 0)) || null);
+  const total = groups.reduce((h, g) => h + g.api.height, 0);
+  const free = groups.length - fixed.filter(h => h).length;
+  const rest = free ? (total - fixed.reduce<number>((h, f) => h + (f ?? 0), 0)) / free : 0;
+  groups.slice(0, -1).forEach((g, i) => g.api.setSize({ height: Math.round(fixed[i] ?? rest) }));
+}
+
+// Panel ids in layout order: groups left to right and top to bottom, then
+// tabs. A reload keeps it; dockview's own list is in order of creation.
+function layoutIds(): string[] {
+  if (!dock) return [];
+  type Node = { type: 'leaf' | 'branch'; data: any };
+  const ids: string[] = [];
+  const walk = (n: Node) => n.type === 'leaf' ? ids.push(...n.data.views) : n.data.forEach(walk);
+  walk(dock.toJSON().grid.root as Node);
+  return ids;
 }
 
 // Controls this launch does not have (a saved layout from another launch)
@@ -355,16 +401,9 @@ export function removePanel(id: string): boolean {
   return true;
 }
 
-// For R's state(): what is docked, and where, in layout order (groups left
-// to right and top to bottom, then tabs), which a reload keeps; dockview's
-// own list is in order of creation
+// For R's state(): what is docked, and where, in layout order
 export function listPanels(): { id: string; kind: string; title: string; group: string; visible: boolean }[] {
-  if (!dock) return [];
-  type Node = { type: 'leaf' | 'branch'; data: any };
-  const ids: string[] = [];
-  const walk = (n: Node) => n.type === 'leaf' ? ids.push(...n.data.views) : n.data.forEach(walk);
-  walk(dock.toJSON().grid.root as Node);
-  return ids.map(id => dock!.getPanel(id)).filter(p => !!p).map(p => ({
+  return layoutIds().map(id => dock!.getPanel(id)).filter(p => !!p).map(p => ({
     id: p.id, kind: views.get(p.id)?.kind ?? '', title: p.title ?? p.id,
     group: p.group.id, visible: p.api.isVisible,
   }));
