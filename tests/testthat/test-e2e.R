@@ -155,6 +155,9 @@ test_that("a points-only viewer boots without errors", {
     on.exit(br$close(), add = TRUE)
 
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
+    # No cells, so no cells panel
+    expect_true(pump_until(function() v$connected()))
+    expect_identical(v$panels()$id, c("scatter", "histogram", "layers"))
     expect_identical(br$errors(), character())
 })
 
@@ -378,7 +381,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("scatter", "histogram", "panel-1"))
+    expect_setequal(p$id, c("scatter", "histogram", "panel-1", "cells", "layers"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; all in view
@@ -424,7 +427,74 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1", "cells", "layers"))))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the controls dock in their own column; a closed one stays closed after a reload", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=layers] #alpha-poly')"))
+    expect_true(browser_wait(br, "document.getElementById('r-status').className === 'connected'"))
+    expect_true(pump_until(function() v$connected()))
+
+    # Charts on the left, the controls in a column of their own on the right
+    p <- v$panels()
+    expect_identical(p$id, c("scatter", "histogram", "cells", "layers"))
+    expect_identical(p$kind, p$id)
+    expect_false(any(p$group[3:4] %in% p$group[1:2]))
+    expect_true(all(p$visible))
+    width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
+    expect_equal(width, 260, tolerance = 2)
+
+    # The cells panel waits for metadata, then colours by a column
+    expect_true(br$js("getComputedStyle(document.querySelector('[data-panel=cells] .panel-note')).display !== 'none'"))
+    v$push_metadata(fx$meta)
+    expect_true(browser_wait(br, "document.getElementById('meta-col-select').options.length === 3"))
+    br$js("(() => { const s = document.getElementById('meta-col-select'); s.value = 'leiden_clus'; s.dispatchEvent(new Event('change')); })()")
+    expect_true(pump_until(function() identical(v$state()$config$colorBy, "leiden_clus")))
+    expect_true(browser_wait(br, "document.querySelectorAll('#meta-legend .legend-item').length > 0"))
+    v$color_by(NULL)
+    expect_true(browser_wait(br, "document.getElementById('meta-col-select').value === ''"))
+    # The layers panel follows set_layer()
+    v$set_layer("poly", alpha = 0.3)
+    expect_true(browser_wait(br, "document.getElementById('alpha-poly').value === '30'"))
+
+    # A chart pushed without a ref joins the charts, even with a control active
+    tab <- br$js("(() => { const t = [...document.querySelectorAll('.dv-tab')].find(t => t.textContent.trim() === 'layers').getBoundingClientRect(); return [t.left + t.width / 2, t.top + t.height / 2]; })()")
+    for (type in c("mousePressed", "mouseReleased"))
+        br$session$Input$dispatchMouseEvent(type = type, x = tab[[1]], y = tab[[2]], button = "left", clickCount = 1L)
+    v$push_panel(list(mark = "bar", encoding = list(x = list(field = "a", type = "nominal"))),
+        data = data.frame(a = c("x", "y")), id = "bars")
+    expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
+    p <- v$panels()
+    expect_true(p$group[p$id == "bars"] %in% p$group[p$id %in% c("scatter", "histogram")])
+
+    # Closed from R, it stays closed after a reload; the + menu brings it back
+    v$remove_panel("layers")
+    expect_true(pump_until(function() !"layers" %in% v$panels()$id))
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"closedPanels":["layers"]', priv$config_json %||% "", fixed = TRUE)))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    # The cells panel is there at boot; the restore, once connected, leaves layers out
+    expect_true(browser_wait(br, paste("document.getElementById('r-status')?.className === 'connected'",
+        "&& window.__giottolens.store.getState().closedPanels.includes('layers')",
+        "&& !!document.querySelector('[data-panel=cells]') && !document.querySelector('[data-panel=layers]')")))
+    expect_false("layers" %in% v$panels()$id)
+    menu <- function(kind) {
+        br$js("document.querySelector('.dock-add').click()")
+        br$js(sprintf("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === '%s').click()", kind))
+    }
+    menu("layers")
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=layers] #alpha-poly')"))
+    # A control is one per viewer: adding it again shows the one there is
+    menu("cells")
+    expect_identical(sum(v$panels()$id == "cells"), 1L)
+    expect_true(pump_until(function() grepl('"closedPanels":[]', priv$config_json %||% "", fixed = TRUE)))
     expect_identical(br$errors(), character())
 })
 

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-02
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** 0016 in part (controls dock too)
 
 ## Context
 

@@ -50,6 +50,7 @@ export interface Config {
   brushRadius: number;          // screen pixels
   showRules: boolean;           // the rules strip under the HUD
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
+  closedPanels: string[];       // control panels closed by hand: a restore leaves them out
   registration: Registration | null;  // an image being registered (data/registration.ts)
 }
 
@@ -82,6 +83,7 @@ export const initialConfig = (): Config => ({
   brushRadius: 30,
   showRules: true,
   layout: null,
+  closedPanels: [],
   registration: null,
 });
 
@@ -189,6 +191,10 @@ export const actions = {
   setShowRules(on: boolean) { set({ showRules: on }); },
   setBrushRadius(px: number) { set({ brushRadius: Math.min(300, Math.max(8, px)) }); },
   setLayout(layout: object | null) { set({ layout }); },
+  setPanelClosed(id: string, closed: boolean) {
+    const ids = get().closedPanels.filter(x => x !== id);
+    set({ closedPanels: closed ? [...ids, id] : ids });
+  },
 
   setRegistration(reg: Registration | null) { set({ registration: reg }); },
   patchRegistration(patch: Partial<Registration>) {

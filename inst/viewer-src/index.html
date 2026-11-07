@@ -182,22 +182,20 @@
     .annot-row-btn:hover { color: #9ca3af; }
     .annot-row-btn svg { width: 12px; height: 12px; }
 
-    #meta-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #meta-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    #meta-legend { margin-top: 6px; max-height: 140px; overflow-y: auto; }
-    #meta-legend::-webkit-scrollbar { width: 4px; }
-    #meta-legend::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    /* Control panels (panels/cells.ts, layers.ts) */
+    .ctl-body { padding: 10px 12px; font-size: 12px; }
+    .ctl-select {
+      flex: 1; min-width: 0; padding: 4px 6px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
+    }
+    .cells-legend { margin-top: 6px; }
     .legend-item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .legend-label { font-size: 11px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .legend-overflow { font-size: 10px; color: #4b5563; padding-top: 2px; }
     .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; font-family: monospace; }
-    #meta-col-select {
-      flex: 1; padding: 4px 6px; background: #1f2937;
-      border: 1px solid #374151; border-radius: 4px;
-      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
-    }
     #img-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
     #img-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     #img-list { max-height: 260px; overflow-y: auto; }
@@ -261,11 +259,9 @@
       pointer-events: auto; cursor: pointer; width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; border: none;
     }
     .range2 input[type=range]:focus-visible::-webkit-slider-thumb { outline: 1px solid #9ca3af; }
-    #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
     .alpha-row label { width: 72px; flex-shrink: 0; }
-    .alpha-row input[type=range] { flex: 1; height: 3px; accent-color: #4b5563; cursor: pointer; }
+    .alpha-row input[type=range] { flex: 1; min-width: 0; height: 3px; accent-color: #4b5563; cursor: pointer; }
     .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
     .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
     .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
@@ -424,7 +420,7 @@
     <div class="tool-sep"></div>
     <button class="tool-btn" id="btn-crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
     <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
-    <button class="tool-btn" id="btn-stats-toggle" title="toggle stats panels"><i data-lucide="bar-chart-2"></i></button>
+    <button class="tool-btn" id="btn-stats-toggle" title="show or hide the panels"><i data-lucide="bar-chart-2"></i></button>
   </div>
       <div id="scalebar">
         <div id="scalebar-bar"></div>
@@ -487,16 +483,6 @@
         <div id="annot-list"></div>
       </div>
     </div>
-    <div id="meta-panel" style="display:none">
-      <h3 class="section-hd" data-target="meta-body">Cells<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="meta-body" class="section-body">
-        <div class="alpha-row">
-          <label>color by</label>
-          <select id="meta-col-select"><option value="">none</option></select>
-        </div>
-        <div id="meta-legend"></div>
-      </div>
-    </div>
     <div id="img-panel" style="display:none">
       <h3 class="section-hd" data-target="img-body">Images<i data-lucide="chevron-down" class="section-chevron"></i></h3>
       <div id="img-body" class="section-body">
@@ -520,35 +506,6 @@
         <div class="alpha-row"><input type="checkbox" id="reg-link"><label for="reg-link">link views</label></div>
         <div id="reg-status"></div>
         <div id="reg-list"></div>
-      </div>
-    </div>
-    <div id="alpha-panel">
-      <h3 class="section-hd" data-target="opacity-body">Opacity<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="opacity-body" class="section-body">
-        <div class="alpha-row">
-          <input type="checkbox" id="show-poly" checked>
-          <label>cells</label>
-          <input type="range" id="alpha-poly" min="0" max="100" value="60">
-          <span class="alpha-val" id="val-poly">60</span>
-        </div>
-        <div class="alpha-row">
-          <input type="checkbox" id="show-tx">
-          <label>transcripts</label>
-          <input type="range" id="alpha-tx" min="0" max="100" value="70">
-          <span class="alpha-val" id="val-tx">70</span>
-        </div>
-        <div class="alpha-row" id="img-alpha-row" style="display:none">
-          <input type="checkbox" id="show-img" checked>
-          <label>images</label>
-          <input type="range" id="alpha-img" min="0" max="100" value="100">
-          <span class="alpha-val" id="val-img">100</span>
-        </div>
-        <div class="alpha-row">
-          <input type="checkbox" id="show-annotations" checked>
-          <label>annotations</label>
-          <input type="range" id="alpha-annotations" min="0" max="100" value="60">
-          <span class="alpha-val" id="val-annotations">60</span>
-        </div>
       </div>
     </div>
   </div>

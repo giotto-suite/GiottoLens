@@ -706,10 +706,10 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   replaced where it is; `NULL` makes a new one (`"panel-1"`, ...).
         #' @param title Tab title (default: the spec's title, else the id)
         #' @param where Where a new panel goes: `"tab"` (a tab next to `ref`),
-        #'   or `"right"` / `"below"` (a split beside `ref`, or at the edge of
-        #'   the panel area without one)
+        #'   or `"right"` / `"below"` (a split beside `ref`)
         #' @param ref Id of the panel to place it next to (see `panels()`);
-        #'   `NULL` for the active panel
+        #'   `NULL` for the active chart, so that it joins the charts rather
+        #'   than the controls
         #' @return The panel id, invisibly.
         push_panel = function(spec, data = NULL, id = NULL, title = NULL,
                               where = c("tab", "right", "below"), ref = NULL) {
@@ -754,8 +754,9 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Close a docked panel: one pushed with `push_panel()`
-        #'   or a built-in one (`"scatter"`, `"histogram"`, ...). The viewer's
-        #'   `+` menu adds built-in panels back.
+        #'   or a built-in one (`"scatter"`, `"histogram"`, `"cells"`, ...).
+        #'   The viewer's `+` menu adds built-in panels back; a closed control
+        #'   (`"cells"`, `"layers"`) stays closed after a page reload.
         #' @param id Panel id (see `panels()`)
         remove_panel = function(id) {
             .check_panel_id(id, builtin_ok = TRUE)
@@ -765,8 +766,9 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description The docked panels: id, kind (`"scatter"`,
-        #'   `"histogram"` or `"spec"` for a pushed chart), tab title, the group
+        #' @description The docked panels: id, kind (a chart: `"scatter"`,
+        #'   `"histogram"`, `"density"`, or `"spec"` for a pushed one; a
+        #'   control: `"cells"`, `"layers"`), tab title, the group
         #'   of tabs it is in, and whether it is in view (not behind another
         #'   tab). With no browser connected, only the pushed panels R holds.
         #' @return A data frame.
@@ -1052,14 +1054,17 @@ print.lens_description <- function(x, ...) {
 }
 
 # Panel ids name a dock slot, a selection source (`panel:<id>`) and a file:
-# letters, digits, `_`, `.`, `-`. The built-in panels' ids (scatter,
-# histogram, and scatter-2, ... for ones added in the viewer) are the
-# viewer's, so push_panel() cannot take them.
+# letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
+# and scatter-2, ... for charts added in the viewer) are the viewer's, so
+# push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
+.lens_builtin_panels <- c("scatter", "histogram", "density", "cells", "layers")
+
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
         stop("[LensViewer] `", arg, "` must be one string of letters, digits, '_', '.' or '-'",
             call. = FALSE)
-    if (!builtin_ok && grepl("^(scatter|histogram)(-[0-9]+)?$", id))
+    builtin <- paste0("^(", paste(.lens_builtin_panels, collapse = "|"), ")(-[0-9]+)?$")
+    if (!builtin_ok && grepl(builtin, id))
         stop("[LensViewer] '", id, "' is a built-in panel; pick another id", call. = FALSE)
     invisible(id)
 }

@@ -14,15 +14,14 @@ import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { renderGeneList, setGeneSearch } from './ui/panel.js';
-import { renderLegend } from './ui/legend.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initImagePanel } from './ui/images.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
-import { updateScalebar, fitZoom, escapeHtml, dragPan } from './ui/dom.js';
-import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
+import { initDock, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
@@ -45,24 +44,6 @@ function onViewStateChange({ viewState }) {
   scheduleTiles(viewState);
 }
 
-// ── Layer controls ────────────────────────────────────────────────────────────
-function bindLayerControl(name, checkId, sliderId, valId) {
-  const check  = document.getElementById(checkId);
-  const slider = document.getElementById(sliderId);
-  const label  = document.getElementById(valId);
-  if (!check || !slider) return;
-  const sync = ({ show, alpha }) => {
-    check.checked = show;
-    slider.disabled = !show;
-    slider.value = Math.round(alpha * 100);
-    if (label) label.textContent = slider.value;
-  };
-  sync(store.getState().layers[name]);
-  store.subscribe(s => s.layers[name], sync);
-  check.addEventListener('change', () => actions.setLayer(name, { show: check.checked }));
-  slider.addEventListener('input', () => actions.setLayer(name, { alpha: slider.value / 100 }));
-}
-
 // ── Cell colours ──────────────────────────────────────────────────────────────
 function recolorCells() {
   if (!state.cells) return;
@@ -70,7 +51,6 @@ function recolorCells() {
   const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null);
   state.cellColors  = colors;
   state.colorLegend = legend;
-  renderLegend();
   actions.bumpMeta();
 }
 
@@ -119,7 +99,6 @@ async function main() {
     // Polygons-only launch: no gene list or transcript controls
     document.getElementById('panel-header').style.display = 'none';
     document.getElementById('gene-list').style.display = 'none';
-    document.getElementById('show-tx')?.closest('.alpha-row')?.remove();
     document.querySelector('[data-mode="txlasso"]')?.remove();
   }
   // Points-only launch: transcripts are all there is to show
@@ -134,9 +113,12 @@ async function main() {
     recolorCells();
   }
 
-  // Split first so the canvas has its final size when the zoom is fitted
+  // Split first so the canvas has its final size when the zoom is fitted. The
+  // charts get 35% of what the controls' column leaves
+  const width = document.getElementById('main-layout').clientWidth || window.innerWidth;
+  const dockPct = Math.min(60, (0.35 * (width - CONTROL_WIDTH) + CONTROL_WIDTH) / width * 100);
   const mainSplit = Split(['#spatial-pane', '#dock'], {
-    sizes: [65, 35], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
+    sizes: [100 - dockPct, dockPct], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
     onDragEnd: () => {
       window.dispatchEvent(new Event('resize'));
       if (state.currentViewState) updateTiles(state.currentViewState);
@@ -179,7 +161,7 @@ async function main() {
   initDock(document.getElementById('dock'));
 
   let statsOpen      = true;
-  let lastStatsSizes = [65, 35];
+  let lastStatsSizes = mainSplit.getSizes();
   document.getElementById('btn-stats-toggle')?.addEventListener('click', () => {
     statsOpen = !statsOpen;
     if (statsOpen) {
@@ -214,16 +196,6 @@ async function main() {
 
   document.getElementById('btn-clear')?.addEventListener('click', () => actions.clearGenes());
 
-  // ── Layers ────────────────────────────────────────────────────────────────
-  bindLayerControl('poly',        'show-poly',        'alpha-poly',        'val-poly');
-  bindLayerControl('tx',          'show-tx',          'alpha-tx',          'val-tx');
-  bindLayerControl('annotations', 'show-annotations', 'alpha-annotations', 'val-annotations');
-  bindLayerControl('img',         'show-img',         'alpha-img',         'val-img');
-
-  const $colSel = document.getElementById('meta-col-select');
-  $colSel?.addEventListener('change', e => actions.setColorBy(e.target.value || null));
-  store.subscribe(s => s.colorBy, c => { if ($colSel) $colSel.value = c ?? ''; });
-
   // ── R → viewer messages ───────────────────────────────────────────────────
   let metaUrl = null;
   onMessage('load_metadata', async ({ url, columns }) => {
@@ -231,11 +203,6 @@ async function main() {
     if (!state.cells || url === metaUrl) return;
     metaUrl = url;
     state.meta = await loadMeta(url, columns ?? []);
-    if ($colSel) {
-      $colSel.innerHTML = '<option value="">none</option>' +
-        [...state.meta.keys()].map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-      document.getElementById('meta-panel').style.display = '';
-    }
     const colorBy = store.getState().colorBy;
     if (colorBy && !state.meta.has(colorBy)) actions.setColorBy(null);
     else recolorCells();

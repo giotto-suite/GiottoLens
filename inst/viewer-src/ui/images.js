@@ -50,7 +50,6 @@ function dualRange([min, max], step, onChange) {
 export function initImagePanel() {
   if (!state.images?.size) return;
   document.getElementById('img-panel').style.display = '';
-  document.getElementById('img-alpha-row').style.display = '';
   const list = document.getElementById('img-list');
   const rows = new Map();
 
