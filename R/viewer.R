@@ -313,16 +313,39 @@ LensViewer <- R6::R6Class("LensViewer",
             } else {
                 as.data.frame(x)
             }
-            out <- .write_metadata(meta, file.path(private$session, "metadata"),
-                private$cell_ids)
-            msg <- out$msg
-            private$meta_table  <- out$table
-            private$cached_meta <- msg
-            if (self$connected())
-                private$broadcast(.encode_ws_message("load_metadata", msg))
+            private$meta_raw <- meta
+            msg <- private$publish_meta()
             message("[LensViewer] metadata: ", length(msg$columns), " column(s): ",
                 paste(vapply(msg$columns, `[[`, "", "name"), collapse = ", "),
                 if (!self$connected()) " (sent when the viewer connects)")
+            invisible(self)
+        },
+
+        #' @description Show a numeric metadata column as categories (one
+        #'   per distinct value, at most 1000) or as a continuous scale.
+        #'   Integer and double columns are continuous by default. The
+        #'   viewer's "treat as" menu in the cells panel sets the same. Rules
+        #'   on the column are dropped, and the metadata is sent again.
+        #'   The setting is kept for later `push_metadata()` calls.
+        #' @param column Column name, as pushed
+        #' @param type `"categorical"` or `"continuous"`
+        set_column_type = function(column, type = c("categorical", "continuous")) {
+            type <- match.arg(type)
+            if (is.null(private$meta_raw))
+                stop("[LensViewer] no metadata pushed yet", call. = FALSE)
+            if (!is.character(column) || length(column) != 1L)
+                stop("[LensViewer] `column` must be one column name", call. = FALSE)
+            raw <- private$meta_raw
+            names(raw) <- make.unique(gsub("[^A-Za-z0-9_]", "_", names(raw)), sep = "_")
+            if (!column %in% setdiff(names(raw), "cell_ID"))
+                stop("[LensViewer] no metadata column '", column, "'", call. = FALSE)
+            if (!is.numeric(raw[[column]]))
+                stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
+                    "change type", call. = FALSE)
+            old <- private$col_types
+            private$col_types[[column]] <- type
+            msg <- tryCatch(private$publish_meta(drop_rules_on = column),
+                error = function(e) { private$col_types <- old; stop(e) })
             invisible(self)
         },
 
@@ -428,6 +451,41 @@ LensViewer <- R6::R6Class("LensViewer",
             }
             private$request("set_mark", if (length(m)) list(mark = m) else list(reset = TRUE))
             invisible(self)
+        },
+
+        #' @description Set the color scale of a continuous metadata column:
+        #'   a preset, or custom colors spaced evenly from the column's
+        #'   minimum to its maximum. The viewer's legend sets the same values.
+        #'   `NULL` arguments leave a setting as is.
+        #' @param column Continuous column; `NULL` for the column cells are
+        #'   colored by
+        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
+        #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
+        #'   `"gray"`, `"blue-white-red"`
+        #' @param colors 2 to 9 colors (names or hex strings), low to high;
+        #'   sets a custom scale
+        #' @param reverse `TRUE` to run the scale high to low
+        #' @param reset `TRUE` to return the column to the default scale first
+        #' @returns The column styled, invisibly
+        set_color_scale = function(column = NULL, preset = NULL, colors = NULL,
+                                   reverse = NULL, reset = FALSE) {
+            if (!is.null(column) && (!is.character(column) || length(column) != 1L))
+                stop("[LensViewer] `column` must be one column name", call. = FALSE)
+            if (!is.null(preset) && (!is.character(preset) || length(preset) != 1L))
+                stop("[LensViewer] `preset` must be one preset name", call. = FALSE)
+            if (!is.null(colors) && (!is.character(colors) || length(colors) < 2L ||
+                    length(colors) > 9L))
+                stop("[LensViewer] `colors` must be 2 to 9 colors", call. = FALSE)
+            if (!is.null(reverse) && (!is.logical(reverse) || length(reverse) != 1L ||
+                    is.na(reverse)))
+                stop("[LensViewer] `reverse` must be TRUE or FALSE", call. = FALSE)
+            if (!is.null(colors))
+                colors <- lapply(unname(colors), function(cl)
+                    as.list(as.integer(grDevices::col2rgb(cl)[, 1L])))
+            r <- private$request("set_color_scale", list(column = column,
+                preset = preset, colors = colors, reverse = reverse,
+                reset = isTRUE(reset)))
+            invisible(r$column)
         },
 
         #' @description Show or hide an image, or set its colour or contrast;
@@ -867,6 +925,32 @@ LensViewer <- R6::R6Class("LensViewer",
         cbs         = list(),
         cached_meta = NULL,
         meta_table  = NULL,
+        meta_raw    = NULL,
+        col_types   = list(),
+
+        # Write private$meta_raw with the column types and send it to every
+        # tab; `drop_rules_on` drops rules on that column first
+        publish_meta = function(drop_rules_on = NULL) {
+            types <- unlist(private$col_types)
+            out <- .write_metadata(private$meta_raw, file.path(private$session, "metadata"),
+                private$cell_ids, types = types)
+            if (!is.null(drop_rules_on) && length(private$rule_set)) {
+                on_col <- vapply(private$rule_set, function(r)
+                    identical(r$space, drop_rules_on), logical(1L))
+                if (any(on_col)) {
+                    for (src in names(private$rule_set)[on_col])
+                        if (self$connected())
+                            private$broadcast(.encode_ws_message("set_rule",
+                                list(source = src, rule = NULL, replace = FALSE)))
+                    private$rule_set <- private$rule_set[!on_col]
+                }
+            }
+            private$meta_table  <- out$table
+            private$cached_meta <- out$msg
+            if (self$connected())
+                private$broadcast(.encode_ws_message("load_metadata", out$msg))
+            out$msg
+        },
         rule_set    = list(),
         combine     = "or",
         config_json = NULL,     # the page's saved config, as it sent it (JSON text)
@@ -975,6 +1059,18 @@ LensViewer <- R6::R6Class("LensViewer",
                                 .console_text(dat$message))
                         },
                         log = priv$add_log(dat$action %||% "", dat$detail),
+                        # "treat as" menu in the viewer
+                        set_column_type = tryCatch({
+                            pub$set_column_type(as.character(dat$column %||% ""),
+                                as.character(dat$type %||% ""))
+                            priv$add_log("set_column_type",
+                                paste0(dat$column, " = ", dat$type))
+                        }, error = function(e) {
+                            priv$add_log("error", list(where = "set_column_type",
+                                message = conditionMessage(e)))
+                            warning("[LensViewer] ", .console_text(conditionMessage(e)),
+                                call. = FALSE)
+                        }),
                         {
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
                                 error = function(e) warning("[LensViewer] message error: ",

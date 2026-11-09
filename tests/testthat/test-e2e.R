@@ -348,6 +348,26 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     v$color_by("leiden_clus")
     expect_identical(v$state()$config$colorBy, "leiden_clus")
     expect_error(v$color_by("nope"), "no metadata column")
+    expect_error(v$set_color_scale(), "is not continuous")
+    expect_identical(v$set_color_scale("score", preset = "viridis", reverse = TRUE), "score")
+    sc <- v$state()$config$colorScales$score
+    expect_identical(sc$preset, "viridis")
+    expect_true(sc$reverse)
+    v$color_by("score")
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=cells] .scale-preset')?.value === 'viridis'"))
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=cells] .cells-type')?.style.display === ''"))
+    v$color_by("leiden_clus")
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=cells] .cells-type')?.style.display === 'none'"))
+    v$set_color_scale("score", colors = c("black", "#ff0000", "white"))
+    sc <- v$state()$config$colorScales$score
+    expect_identical(sc$preset, "custom")
+    expect_identical(lapply(sc$colors, unlist), list(c(0L, 0L, 0L), c(255L, 0L, 0L), c(255L, 255L, 255L)))
+    expect_error(v$set_color_scale("score", preset = "nope"), "preset must be one of")
+    v$set_color_scale("score", reset = TRUE)
+    expect_null(v$state()$config$colorScales$score)
     v$set_layer("tx", show = TRUE)
     v$show_genes(c("Actb", "Cd3e"))
 

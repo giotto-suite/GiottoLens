@@ -23,6 +23,14 @@ describe('store', () => {
     expect(store.getState().brushRadius).toBe(300);
   });
 
+  it('patches and resets color scales per column', () => {
+    actions.setColorScale('v', { preset: 'magma' });
+    actions.setColorScale('v', { reverse: true });
+    expect(store.getState().colorScales.v).toEqual({ preset: 'magma', reverse: true });
+    actions.resetColorScale('v');
+    expect(store.getState().colorScales).toEqual({});
+  });
+
   it('getConfig returns only the savable part as JSON', () => {
     actions.setSelection(new Uint8Array(3), 0);
     const cfg = getConfig();

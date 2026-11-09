@@ -51,6 +51,9 @@ viewer$select(lens_range("nr_feats", 50, 200), source = "hist", replace = FALSE,
 viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
+viewer$set_column_type("leiden_clus", "categorical")       # numeric column shown as categories
+viewer$set_color_scale("nr_feats", preset = "viridis")      # continuous scale: preset, or
+viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors
 viewer$set_layer("tx", show = TRUE)
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
