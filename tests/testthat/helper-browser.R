@@ -42,3 +42,14 @@ browser_drag <- function(br, pts, modifiers = 0L) {
     for (p in pts[-1]) send("mouseMoved", p)
     send("mouseReleased", pts[[length(pts)]])
 }
+
+# Click a dock tab by its title. A panel's content is mounted the first time
+# its tab is shown, so a panel behind another tab has none until then. Two
+# frames first: a panel just added moves the tabs when the dock lays out.
+dock_tab <- function(br, title) {
+    at <- br$js(sprintf("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))).then(() => { const t = [...document.querySelectorAll('.dv-tab')].find(t => t.textContent.trim() === '%s')?.getBoundingClientRect(); return t ? [t.left + t.width / 2, t.top + t.height / 2] : null; })", title))
+    if (is.null(at)) stop("no dock tab '", title, "'", call. = FALSE)
+    for (type in c("mousePressed", "mouseReleased"))
+        br$session$Input$dispatchMouseEvent(type = type, x = at[[1]], y = at[[2]], button = "left",
+            buttons = if (type == "mousePressed") 1L else 0L, clickCount = 1L)
+}

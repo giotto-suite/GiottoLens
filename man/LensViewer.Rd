@@ -693,10 +693,10 @@ a parquet file rather than inline)}
 replaced where it is; \code{NULL} makes a new one (\code{"panel-1"}, ...).}
       \item{\code{title}}{Tab title (default: the spec's title, else the id)}
       \item{\code{where}}{Where a new panel goes: \code{"tab"} (a tab next to \code{ref}),
-or \code{"right"} / \code{"below"} (a split beside \code{ref}, or at the edge of
-the panel area without one)}
+or \code{"right"} / \code{"below"} (a split beside \code{ref})}
       \item{\code{ref}}{Id of the panel to place it next to (see \code{panels()});
-\code{NULL} for the active panel}
+\code{NULL} for the active chart, so that it joins the charts rather
+than the controls}
     }
     \if{html}{\out{</div>}}
   }
@@ -710,8 +710,9 @@ the panel area without one)}
 \if{latex}{\out{\hypertarget{method-LensViewer-remove_panel}{}}}
 \subsection{\code{LensViewer$remove_panel()}}{
   Close a docked panel: one pushed with \code{push_panel()}
-or a built-in one (\code{"scatter"}, \code{"histogram"}, ...). The viewer's
-\code{+} menu adds built-in panels back.
+or a built-in one (\code{"scatter"}, \code{"histogram"}, \code{"cells"}, ...).
+The viewer's \code{+} menu adds built-in panels back; a closed control
+(\code{"cells"}, \code{"layers"}, ...) stays closed after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$remove_panel(id)}
@@ -730,8 +731,10 @@ or a built-in one (\code{"scatter"}, \code{"histogram"}, ...). The viewer's
 \if{html}{\out{<a id="method-LensViewer-panels"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-panels}{}}}
 \subsection{\code{LensViewer$panels()}}{
-  The docked panels: id, kind (\code{"scatter"},
-\code{"histogram"} or \code{"spec"} for a pushed chart), tab title, the group
+  The docked panels: id, kind (a chart: \code{"scatter"},
+\code{"histogram"}, \code{"density"}, or \code{"spec"} for a pushed one; a
+control: \code{"cells"}, \code{"transcripts"}, \code{"images"}, \code{"register"},
+\code{"annotations"}, \code{"layers"}), tab title, the group
 of tabs it is in, and whether it is in view (not behind another
 tab). With no browser connected, only the pushed panels R holds.
   \subsection{Usage}{

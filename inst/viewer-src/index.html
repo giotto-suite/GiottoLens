@@ -5,6 +5,10 @@
   <title>GiottoLens</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Every scrollbar in the viewer's colours, panels made at runtime included:
+       a dark page for the browser's own controls, and a thin grey thumb */
+    :root { color-scheme: dark; }
+    * { scrollbar-width: thin; scrollbar-color: #374151 transparent; }
     body { background: #111827; overflow: hidden; font-family: monospace; }
     canvas { position: absolute; inset: 0; }
 
@@ -90,9 +94,6 @@
     }
     #tx-lasso-close:hover { color: #e5e7eb; }
     #tx-lasso-results { overflow-y: auto; padding: 4px 0; flex: 1; }
-    #tx-lasso-results::-webkit-scrollbar { width: 4px; }
-    #tx-lasso-results::-webkit-scrollbar-track { background: transparent; }
-    #tx-lasso-results::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
     .tx-gene-row {
       display: flex; align-items: center; gap: 6px;
       padding: 2px 10px; font-size: 11px;
@@ -118,42 +119,26 @@
     }
     #annot-name:focus { border-color: #4b5563; }
 
-    #panel {
-      position: absolute; top: 0; right: 0; bottom: 0; width: 260px;
-      background: rgba(17,24,39,0.92); border-left: 1px solid #1f2937;
-      display: flex; flex-direction: column; color: #d1d5db; font-size: 12px;
-    }
-    #panel-header { padding: 12px 12px 8px; border-bottom: 1px solid #1f2937; flex-shrink: 0; }
-    #panel-header h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-    .section-hd { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
-    .section-collapsed .section-hd { margin-bottom: 0 !important; }
-    .section-hd:hover { color: #d1d5db; }
-    .section-chevron { width: 13px; height: 13px; transition: transform 0.15s; flex-shrink: 0; }
-    .section-collapsed .section-chevron { transform: rotate(-90deg); }
-    .section-body { overflow: hidden; }
-    .section-collapsed .section-body { display: none; }
-    .section-collapsed + #gene-list { display: none; }
-    #gene-search {
+    /* The transcripts panel (panels/transcripts.ts) */
+    .gene-head { flex-shrink: 0; border-bottom: 1px solid #1f2937; }
+    .ctl-input {
       width: 100%; padding: 5px 8px;
       background: #1f2937; border: 1px solid #374151; border-radius: 4px;
       color: #e5e7eb; font-size: 12px; font-family: monospace; outline: none;
     }
-    #gene-search:focus { border-color: #4b5563; }
-    #panel-actions { display: flex; gap: 6px; margin-top: 8px; }
-    #panel-actions button {
+    .ctl-input:focus { border-color: #4b5563; }
+    .ctl-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .ctl-actions button {
       flex: 1; padding: 4px; background: #1f2937;
       border: 1px solid #374151; border-radius: 4px;
       color: #9ca3af; font-size: 11px; font-family: monospace; cursor: pointer;
     }
-    #panel-actions button:hover { background: #374151; color: #e5e7eb; }
-    #btn-color-all.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+    .ctl-actions button:hover { background: #374151; color: #e5e7eb; }
+    .ctl-actions button.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
     .stats-ctrl-sep { width: 1px; height: 14px; background: #374151; margin: 0 4px; flex-shrink: 0; align-self: center; }
-    #gene-count { color: #6b7280; font-size: 11px; margin-left: 6px; align-self: center; }
+    .gene-count { color: #6b7280; font-size: 11px; margin-left: 6px; align-self: center; }
 
-    #gene-list { flex: 1; overflow-y: auto; padding: 4px 0; }
-    #gene-list::-webkit-scrollbar { width: 4px; }
-    #gene-list::-webkit-scrollbar-track { background: transparent; }
-    #gene-list::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    .gene-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; font-size: 12px; }
 
     .gene-row { display: flex; align-items: center; gap: 7px; padding: 3px 12px; cursor: pointer; user-select: none; }
     .gene-row:hover { background: #1f2937; }
@@ -162,13 +147,9 @@
     .gene-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .gene-row.selected .gene-name { color: #e5e7eb; }
     .gene-row:not(.selected) .gene-name { color: #6b7280; }
-    #list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
+    .list-overflow { padding: 6px 12px; color: #4b5563; font-size: 11px; }
 
-    #annot-panel { flex-shrink: 0; border-top: 1px solid #1f2937; max-height: 160px; overflow-y: auto; padding: 8px 0 4px; }
-    #annot-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; padding: 0 12px; }
-    #annot-panel::-webkit-scrollbar { width: 4px; }
-    #annot-panel::-webkit-scrollbar-track { background: transparent; }
-    #annot-panel::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    .annot-list { padding: 6px 0; }
     .annot-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; cursor: pointer; user-select: none; }
     .annot-row:hover { background: #1f2937; }
     .annot-row.selected { background: #1e2d40; }
@@ -182,25 +163,20 @@
     .annot-row-btn:hover { color: #9ca3af; }
     .annot-row-btn svg { width: 12px; height: 12px; }
 
-    #meta-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #meta-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    #meta-legend { margin-top: 6px; max-height: 140px; overflow-y: auto; }
-    #meta-legend::-webkit-scrollbar { width: 4px; }
-    #meta-legend::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    /* Control panels (panels/cells.ts, layers.ts) */
+    .ctl-body { padding: 10px 12px; font-size: 12px; }
+    .ctl-select {
+      flex: 1; min-width: 0; padding: 4px 6px; background: #1f2937;
+      border: 1px solid #374151; border-radius: 4px;
+      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
+    }
+    .cells-legend { margin-top: 6px; }
     .legend-item { display: flex; align-items: center; gap: 6px; padding: 1px 0; }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
     .legend-label { font-size: 11px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .legend-overflow { font-size: 10px; color: #4b5563; padding-top: 2px; }
     .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; font-family: monospace; }
-    #meta-col-select {
-      flex: 1; padding: 4px 6px; background: #1f2937;
-      border: 1px solid #374151; border-radius: 4px;
-      color: #e5e7eb; font-size: 11px; font-family: monospace; outline: none;
-    }
-    #img-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #img-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    #img-list { max-height: 260px; overflow-y: auto; }
     .img-item { margin-bottom: 6px; }
     .img-item .alpha-row { margin-bottom: 2px; }
     .img-name { flex: 1; color: #d1d5db; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -222,9 +198,6 @@
     #spatial-pane.registering #hud, #spatial-pane.registering #rule-strip,
     #spatial-pane.registering #scalebar { left: calc(50% + 12px); }
     #spatial-pane.registering #toolbar { left: 75%; }
-    #reg-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #reg-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
-    #reg-panel select { flex: 1; min-width: 0; }
     .reg-actions { display: flex; gap: 4px; margin: 4px 0; }
     .reg-actions button {
       padding: 3px 6px; background: #1f2937; border: 1px solid #374151; border-radius: 4px;
@@ -235,9 +208,9 @@
     .reg-actions button:hover:not(:disabled) { background: #374151; color: #e5e7eb; }
     .reg-actions button:disabled { opacity: 0.35; cursor: default; }
     .reg-actions button.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
-    #reg-start { flex: 1; }
-    #reg-status { font-size: 11px; color: #9ca3af; margin: 4px 0; }
-    #reg-list { max-height: 180px; overflow-y: auto; }
+    .reg-start { flex: 1; }
+    .reg-status { font-size: 11px; color: #9ca3af; margin: 4px 0; }
+    .check-row { cursor: pointer; }
     .reg-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d1d5db; padding: 1px 0; }
     .reg-n { width: 18px; text-align: right; color: #9ca3af; font-family: monospace; }
     .reg-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid; flex-shrink: 0; }
@@ -261,17 +234,15 @@
       pointer-events: auto; cursor: pointer; width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; border: none;
     }
     .range2 input[type=range]:focus-visible::-webkit-slider-thumb { outline: 1px solid #9ca3af; }
-    #alpha-panel { flex-shrink: 0; padding: 8px 12px 10px; border-top: 1px solid #1f2937; }
-    #alpha-panel h3 { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .alpha-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: #6b7280; }
     .alpha-row label { width: 72px; flex-shrink: 0; }
-    .alpha-row input[type=range] { flex: 1; height: 3px; accent-color: #4b5563; cursor: pointer; }
+    .alpha-row input[type=range] { flex: 1; min-width: 0; height: 3px; accent-color: #4b5563; cursor: pointer; }
     .alpha-row input[type=range]:disabled { opacity: 0.3; cursor: default; }
     .alpha-row input[type=checkbox] { flex-shrink: 0; cursor: pointer; accent-color: #4b5563; }
     .alpha-val { width: 26px; text-align: right; color: #9ca3af; }
 
     #main-layout {
-      position: absolute; top: 0; left: 0; bottom: 0; right: 260px;
+      position: absolute; top: 0; left: 0; bottom: 0; right: 0;
       display: flex; overflow: hidden;
     }
     #spatial-pane { position: relative; overflow: hidden; min-width: 150px; }
@@ -424,7 +395,7 @@
     <div class="tool-sep"></div>
     <button class="tool-btn" id="btn-crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
     <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
-    <button class="tool-btn" id="btn-stats-toggle" title="toggle stats panels"><i data-lucide="bar-chart-2"></i></button>
+    <button class="tool-btn" id="btn-stats-toggle" title="show or hide the panels"><i data-lucide="bar-chart-2"></i></button>
   </div>
       <div id="scalebar">
         <div id="scalebar-bar"></div>
@@ -466,92 +437,6 @@
     <div id="dock"></div>
 
   </div><!-- /main-layout -->
-
-  <div id="panel">
-    <div id="panel-header">
-      <h3 class="section-hd" data-target="transcripts-body">Transcripts<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="transcripts-body" class="section-body">
-        <input id="gene-search" type="text" placeholder="search genes…" autocomplete="off" spellcheck="false">
-        <div id="panel-actions">
-          <button id="btn-color-all">color all</button>
-          <button id="btn-palette">muted</button>
-          <button id="btn-clear">clear</button>
-          <span id="gene-count"></span>
-        </div>
-      </div>
-    </div>
-    <div id="gene-list"></div>
-    <div id="annot-panel" style="display:none">
-      <h3 class="section-hd" data-target="annot-body">Annotations<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="annot-body" class="section-body">
-        <div id="annot-list"></div>
-      </div>
-    </div>
-    <div id="meta-panel" style="display:none">
-      <h3 class="section-hd" data-target="meta-body">Cells<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="meta-body" class="section-body">
-        <div class="alpha-row">
-          <label>color by</label>
-          <select id="meta-col-select"><option value="">none</option></select>
-        </div>
-        <div id="meta-legend"></div>
-      </div>
-    </div>
-    <div id="img-panel" style="display:none">
-      <h3 class="section-hd" data-target="img-body">Images<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="img-body" class="section-body">
-        <div id="img-list"></div>
-      </div>
-    </div>
-    <div id="reg-panel" style="display:none">
-      <h3 class="section-hd" data-target="reg-body">Register<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="reg-body" class="section-body">
-        <div class="alpha-row"><label>image</label><select id="reg-image"></select></div>
-        <div class="alpha-row"><label>reference</label><select id="reg-reference"></select></div>
-        <div class="reg-actions">
-          <button id="reg-start">start</button>
-          <button id="reg-flip-h" title="flip the image's pane left-right"><i data-lucide="flip-horizontal-2"></i></button>
-          <button id="reg-flip-v" title="flip the image's pane top-bottom"><i data-lucide="flip-vertical-2"></i></button>
-          <button id="reg-rot-ccw" title="turn the image's pane 90° counterclockwise"><i data-lucide="rotate-ccw"></i></button>
-          <button id="reg-rot-cw" title="turn the image's pane 90° clockwise"><i data-lucide="rotate-cw"></i></button>
-          <button id="reg-reset" title="discard the registration">reset</button>
-        </div>
-        <div class="alpha-row"><input type="checkbox" id="reg-preview"><label for="reg-preview">preview on reference</label></div>
-        <div class="alpha-row"><input type="checkbox" id="reg-link"><label for="reg-link">link views</label></div>
-        <div id="reg-status"></div>
-        <div id="reg-list"></div>
-      </div>
-    </div>
-    <div id="alpha-panel">
-      <h3 class="section-hd" data-target="opacity-body">Opacity<i data-lucide="chevron-down" class="section-chevron"></i></h3>
-      <div id="opacity-body" class="section-body">
-        <div class="alpha-row">
-          <input type="checkbox" id="show-poly" checked>
-          <label>cells</label>
-          <input type="range" id="alpha-poly" min="0" max="100" value="60">
-          <span class="alpha-val" id="val-poly">60</span>
-        </div>
-        <div class="alpha-row">
-          <input type="checkbox" id="show-tx">
-          <label>transcripts</label>
-          <input type="range" id="alpha-tx" min="0" max="100" value="70">
-          <span class="alpha-val" id="val-tx">70</span>
-        </div>
-        <div class="alpha-row" id="img-alpha-row" style="display:none">
-          <input type="checkbox" id="show-img" checked>
-          <label>images</label>
-          <input type="range" id="alpha-img" min="0" max="100" value="100">
-          <span class="alpha-val" id="val-img">100</span>
-        </div>
-        <div class="alpha-row">
-          <input type="checkbox" id="show-annotations" checked>
-          <label>annotations</label>
-          <input type="range" id="alpha-annotations" min="0" max="100" value="60">
-          <span class="alpha-val" id="val-annotations">60</span>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script type="module" src="./main.js"></script>
 </body>

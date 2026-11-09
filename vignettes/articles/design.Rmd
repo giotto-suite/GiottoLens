@@ -241,7 +241,8 @@ are forwarded and printed in the R console.
 ## Panels
 
 Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
-spatial view itself is not a panel. The built-in panels are a scatter of any two metadata
+spatial view itself is not a panel. The viewer's controls dock the same way, one of each, in a
+column of their own (adr/0016). The built-in panels are a scatter of any two metadata
 columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
 image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
 selection rules; the `+` menu adds more. The density rectangle is two range rules

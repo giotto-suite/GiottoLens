@@ -13,7 +13,7 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
         "document.getElementById('r-status').className === 'connected'"))
 
     # Transcripts on: tiles go through the Range handler
-    br$js("document.getElementById('show-tx').click()")
+    br$js("document.querySelector('[data-panel=layers] [data-layer=tx] .show').click()")
     expect_true(browser_wait(br, tiles_loaded))
 
     br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
@@ -31,7 +31,7 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
 
     v$push_metadata(fx$meta)
     expect_true(browser_wait(br,
-        "document.getElementById('meta-col-select').options.length === 3"))
+        "document.querySelector('[data-panel=cells] .color-by').options.length === 3"))
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
 
     # Everything comes from this server: works offline, one DuckDB
@@ -143,7 +143,9 @@ test_that("a polygons-only viewer boots without errors", {
     on.exit(br$close(), add = TRUE)
 
     expect_true(browser_wait(br, tiles_loaded))
-    expect_true(br$js("document.getElementById('gene-list').style.display === 'none'"))
+    # No transcripts, so no transcripts panel
+    expect_true(pump_until(function() v$connected()))
+    expect_false("transcripts" %in% v$panels()$id)
     expect_identical(br$errors(), character())
 })
 
@@ -155,6 +157,9 @@ test_that("a points-only viewer boots without errors", {
     on.exit(br$close(), add = TRUE)
 
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
+    # No cells, so no cells panel
+    expect_true(pump_until(function() v$connected()))
+    expect_identical(v$panels()$id, c("scatter", "histogram", "transcripts", "annotations", "layers"))
     expect_identical(br$errors(), character())
 })
 
@@ -378,12 +383,12 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("scatter", "histogram", "panel-1"))
+    expect_setequal(p$id, c("scatter", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
-    # "right" with no ref: its own group, beside the others; all in view
+    # "right" with no ref: its own group, beside the others; the charts in view
     expect_false(p$group[p$id == "panel-1"] %in% p$group[p$id != "panel-1"])
-    expect_true(all(p$visible))
+    expect_true(all(p$visible[p$id %in% c("scatter", "histogram", "panel-1")]))
     # Issue #3: the chart, axes and titles fit inside the panel
     fits <- br$js("(() => { const a = document.querySelector('[data-panel=\"panel-1\"] .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panel('panel-1').view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
     expect_true(fits)
@@ -424,7 +429,75 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the controls dock in their own column; a closed one stays closed after a reload", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=layers] [data-layer=poly] .alpha')"))
+    expect_true(browser_wait(br, "document.getElementById('r-status').className === 'connected'"))
+    expect_true(pump_until(function() v$connected()))
+
+    # Charts on the left, the controls in a column of their own on the right:
+    # cells and transcripts as tabs, then annotations, then layers (images and
+    # register come between them when there are images)
+    p <- v$panels()
+    expect_identical(p$id, c("scatter", "histogram", "cells", "transcripts", "annotations", "layers"))
+    expect_identical(p$kind, p$id)
+    expect_false(any(p$group[3:6] %in% p$group[1:2]))
+    expect_identical(p$group[3], p$group[4])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, FALSE, TRUE, TRUE))
+    width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
+    expect_equal(width, 260, tolerance = 2)
+
+    # The cells panel waits for metadata, then colours by a column
+    expect_true(br$js("getComputedStyle(document.querySelector('[data-panel=cells] .panel-note')).display !== 'none'"))
+    v$push_metadata(fx$meta)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=cells] .color-by').options.length === 3"))
+    br$js("(() => { const s = document.querySelector('[data-panel=cells] .color-by'); s.value = 'leiden_clus'; s.dispatchEvent(new Event('change')); })()")
+    expect_true(pump_until(function() identical(v$state()$config$colorBy, "leiden_clus")))
+    expect_true(browser_wait(br, "document.querySelectorAll('[data-panel=cells] .legend-item').length > 0"))
+    v$color_by(NULL)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=cells] .color-by').value === ''"))
+    # The layers panel follows set_layer()
+    v$set_layer("poly", alpha = 0.3)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=layers] [data-layer=poly] .alpha').value === '30'"))
+
+    # A chart pushed without a ref joins the charts, even with a control active
+    dock_tab(br, "layers")
+    v$push_panel(list(mark = "bar", encoding = list(x = list(field = "a", type = "nominal"))),
+        data = data.frame(a = c("x", "y")), id = "bars")
+    expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
+    p <- v$panels()
+    expect_true(p$group[p$id == "bars"] %in% p$group[p$id %in% c("scatter", "histogram")])
+
+    # Closed from R, it stays closed after a reload; the + menu brings it back
+    v$remove_panel("layers")
+    expect_true(pump_until(function() !"layers" %in% v$panels()$id))
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"closedPanels":["layers"]', priv$config_json %||% "", fixed = TRUE)))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    # The cells panel is there at boot; the restore, once connected, leaves layers out
+    expect_true(browser_wait(br, paste("document.getElementById('r-status')?.className === 'connected'",
+        "&& window.__giottolens.store.getState().closedPanels.includes('layers')",
+        "&& !!document.querySelector('[data-panel=cells]') && !document.querySelector('[data-panel=layers]')")))
+    expect_false("layers" %in% v$panels()$id)
+    menu <- function(kind) {
+        br$js("document.querySelector('.dock-add').click()")
+        br$js(sprintf("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === '%s').click()", kind))
+    }
+    menu("layers")
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=layers] [data-layer=poly] .alpha')"))
+    # A control is one per viewer: adding it again shows the one there is
+    menu("cells")
+    expect_identical(sum(v$panels()$id == "cells"), 1L)
+    expect_true(pump_until(function() grepl('"closedPanels":[]', priv$config_json %||% "", fixed = TRUE)))
     expect_identical(br$errors(), character())
 })
 
@@ -873,7 +946,9 @@ test_that("images draw under the cells in data coordinates, and R sets them", {
     expect_lt(at(px(75, -25)), 0.2)
 
     # The contrast thumbs cannot pass each other, by pointer or keyboard
-    br$js("(() => { const [lo, hi] = document.querySelectorAll('#img-list .range2 input');
+    dock_tab(br, "images")
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=images] .range2')"))
+    br$js("(() => { const [lo, hi] = document.querySelectorAll('[data-panel=images] .range2 input');
         lo.value = 3000; lo.dispatchEvent(new Event('input'));
         hi.value = 1000; hi.dispatchEvent(new Event('input')); })()")
     ct <- unlist(v$state()$config$images$stain$contrast)
@@ -888,7 +963,7 @@ test_that("images draw under the cells in data coordinates, and R sets them", {
     expect_true(he$rgb)
     expect_null(he$contrast)
     expect_error(v$set_image("he", contrast = c(0, 10)), "RGB image; it has no colour or contrast")
-    expect_true(br$js("document.querySelectorAll('#img-list .img-item')[1].querySelector('.range2') === null"))
+    expect_true(br$js("document.querySelectorAll('[data-panel=images] .img-item')[1].querySelector('.range2') === null"))
     pump_until(function() FALSE, 0.3)
     expect_true(browser_wait(br, loaded))
     shot <- png::readPNG(v$screenshot())
@@ -939,7 +1014,9 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     br <- lens_browser(v$url, width = 900, height = 700)
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "window.__giottolens?.state.images?.size === 2"))
-    expect_true(browser_wait(br, "document.getElementById('reg-panel').style.display === ''"))
+    expect_true(browser_wait(br, "[...document.querySelectorAll('.dv-tab')].some(t => t.textContent.trim() === 'register')"))
+    dock_tab(br, "register")
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=register] .reg-start')"))
     expect_true(pump_until(function() v$connected()))
     expect_true(browser_wait(br,
         "document.getElementById('r-status').className === 'connected'"))
@@ -971,8 +1048,8 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
         " && window.__giottolens.state.regDeck?.getViewports()[0]?.width > 0")))
     widths <- br$js("[document.getElementById('reg-canvas').clientWidth, document.getElementById('deck-canvas').clientWidth]")
     expect_lt(abs(widths[[1]] - widths[[2]]), 3)
-    expect_false(br$js("document.getElementById('reg-flip-h').disabled"))
-    expect_false(br$js("document.getElementById('reg-link').disabled"))
+    expect_false(br$js("document.querySelector('[data-panel=register] .reg-flip-h').disabled"))
+    expect_false(br$js("document.querySelector('[data-panel=register] .reg-link').disabled"))
 
     # Two clicks make a pair: on the image in its pane (pane coordinates are
     # pixels with y negated), then on the reference in the main view
@@ -1022,7 +1099,7 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
 
     # Turning the image's pane changes where it is drawn there, not the fit
     fit <- v$registration$transform
-    br$js("document.getElementById('reg-rot-ccw').click()")
+    br$js("document.querySelector('[data-panel=register] .reg-rot-ccw').click()")
     expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.orient[1] !== 0"))
     pump_until(function() FALSE, 0.3)
     expect_equal(v$registration$transform, fit)
