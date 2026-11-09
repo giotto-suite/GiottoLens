@@ -1,5 +1,24 @@
 # GiottoLens (development version)
 
+* `launch_lens_analysis()` opens the viewer with an Analysis panel that runs the first steps
+  of a Giotto analysis: QC filter, normalization, highly variable features, PCA, UMAP,
+  nearest network, Leiden clusters, markers and cell-type labels. Each parameter has a
+  menu; changing one reruns that step and the steps below it in a background R session
+  (callr) and updates the cell metadata, the QC histograms and the PCA elbow plot.
+  `viewer$analysis` (`LensAnalysis`) has `params()`, `set()`, `labels()`, `code()`,
+  `gobject()`, `wait()` and `cancel()`. Protocol 4.
+* Analysis mode: an Automatic types step scores cells against a marker list
+  (`launch_lens_analysis(cell_markers =)`, `viewer$analysis$cell_markers()`) with Giotto's
+  PAGE or hypergeometric enrichment, adds `cell_type_auto` and its score, and suggests a
+  label for each cluster that has none. Numeric parameters have a slider and an editable
+  value; PCs are a from-to range. Labels carry over to new clusters by cell overlap.
+* Analysis mode: saved settings (`save_settings()`, `restore_settings()`, `write_settings()`,
+  `launch_lens_analysis(settings =)`) keep the parameters, marker list and labels to come back
+  to; the Network step has a neighbor search `engine` (`dbscan`, `hnsw`).
+* Analysis mode: a Region step runs the analysis on the cells selected in the viewer
+  ("analyze selection") or set with `viewer$analysis$region()`; cells outside keep empty values.
+* Analysis mode: Leiden clusters with the same label take that label's cell type color, so
+  `leiden_clus` shows merged types as one color; colors set by hand are kept.
 * Cell outline color, width and opacity can be set: `viewer$set_outline(color =, width =,
   alpha =)` from R, or the "outlines" section of the cells panel (color picker, hex field,
   preset colors, width slider and number box, opacity slider, reset). Selected cells draw in

@@ -24,6 +24,9 @@ sent by the viewer (one per source: spatial, scatter, histogram, ...)}
 
     \item{\code{annotations}}{List of drawn polygons: id, name, type, geojson}
 
+    \item{\code{analysis}}{The \link{LensAnalysis} of a viewer started with
+\code{\link[=launch_lens_analysis]{launch_lens_analysis()}}, otherwise \code{NULL}}
+
     \item{\code{registration}}{The image being registered in the viewer, or
 \code{NULL}: image and reference names, the landmark pairs (\code{moving_x},
 \code{moving_y} in image pixels, \code{fixed_x}, \code{fixed_y} in data

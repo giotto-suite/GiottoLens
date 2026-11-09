@@ -234,6 +234,9 @@ LensViewer <- R6::R6Class("LensViewer",
         selection_rules = NULL,
         #' @field annotations List of drawn polygons: id, name, type, geojson
         annotations = list(),
+        #' @field analysis The [LensAnalysis] of a viewer started with
+        #'   [launch_lens_analysis()], otherwise `NULL`
+        analysis = NULL,
         #' @field registration The image being registered in the viewer, or
         #'   `NULL`: image and reference names, the landmark pairs (`moving_x`,
         #'   `moving_y` in image pixels, `fixed_x`, `fixed_y` in data
@@ -976,6 +979,7 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Stop the server and remove this viewer's temp files
         close = function() {
+            if (!is.null(self$analysis)) self$analysis$close()
             if (!is.null(private$server)) {
                 private$server$stop()
                 private$server <- NULL
@@ -1134,7 +1138,17 @@ LensViewer <- R6::R6Class("LensViewer",
                                         combine = priv$combine)))
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                            if (!is.null(pub$analysis)) pub$analysis$on_ready(ws)
                         },
+                        analysis_param = , analysis_labels = , analysis_cancel = , analysis_settings = , analysis_region =
+                            if (!is.null(pub$analysis)) tryCatch(
+                                pub$analysis$handle(parsed$type, dat),
+                                error = function(e) {
+                                    priv$add_log("error", list(where = parsed$type,
+                                        message = conditionMessage(e)))
+                                    warning("[LensViewer] ", .console_text(conditionMessage(e)),
+                                        call. = FALSE)
+                                }),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
                         panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {

@@ -67,3 +67,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0013](0013-panel-brush-drags-are-live.md) | A panel brush drag is live; its rule is set on release | Accepted | 2026-11-05 |
 | [0014](0014-images-registered-by-landmarks-in-the-browser.md) | Images are registered by landmarks in the browser | Proposed | 2026-11-03 |
 | [0016](0016-controls-dock-as-self-contained-panels.md) | The side panel's controls dock as self-contained panels | Proposed | 2026-11-07 |
+| [0017](0017-analysis-mode-runs-giotto-in-a-worker.md) | Analysis mode runs the Giotto steps in a persistent R worker, as a cached step tree | Proposed | 2026-11-04 |

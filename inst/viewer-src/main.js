@@ -19,7 +19,8 @@ import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
 import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
-import { initDock, placeControls, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
+import { initDock, placeControls, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH, ensureAnalysisPanel } from './panels/dock.ts';
+import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
@@ -177,11 +178,16 @@ async function main() {
 
   // ── R → viewer messages ───────────────────────────────────────────────────
   let metaUrl = null;
+  let metaSeq = 0;
   onMessage('load_metadata', async ({ url, columns }) => {
     // A reconnect re-sends the current metadata; keep the panels as they are
     if (!state.cells || url === metaUrl) return;
     metaUrl = url;
-    state.meta = await loadMeta(url, columns ?? []);
+    // A table that arrives after a newer one was announced is dropped
+    const seq = ++metaSeq;
+    const meta = await loadMeta(url, columns ?? []);
+    if (seq !== metaSeq) return;
+    state.meta = meta;
     const colorBy = store.getState().colorBy;
     if (colorBy && !state.meta.has(colorBy)) actions.setColorBy(null);
     else recolorCells();
@@ -189,6 +195,15 @@ async function main() {
     recompute({ reset: true });
     refreshBuiltins();
   });
+
+  // Analysis mode: the dock widens when its panel is first added
+  initAnalysis({ place: () => {
+    if (ensureAnalysisPanel()) {
+      mainSplit.setSizes([45, 55]);
+      window.dispatchEvent(new Event('resize'));
+      if (state.currentViewState) updateTiles(state.currentViewState);
+    }
+  } });
 
   onMessage('push_panel', pushPanel);
   onMessage('remove_panel', ({ id }) => { removePanel(id); });
@@ -215,7 +230,7 @@ async function main() {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panel: panelHandle };
+window.__giottolens = { state, store, actions, panel: panelHandle, analysis: analysisModel };
 
 main().catch(err => {
   $status('error: ' + err.message);

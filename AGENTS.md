@@ -34,6 +34,8 @@ R/
   server.R     httpuv app: static paths, Range data handler, WebSocket token/Origin
   protocol.R   message types, parsing, selection bitmasks
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
+  analysis.R   launch_lens_analysis(), LensAnalysis (step keys, callr worker, results to the viewer)
+  analysis-steps.R  the analysis steps: parameters, menu choices, worker-side run/result (adr/0017)
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   metadata.R   prep_meta(), .write_metadata()
@@ -59,7 +61,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
-              images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
+              images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity);
+              analysis.js + analysis-model.ts (Analysis panel)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build

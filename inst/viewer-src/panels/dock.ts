@@ -36,6 +36,8 @@ import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
 import { createLayersPanel } from './layers.ts';
+// @ts-ignore: plain JS module
+import { createAnalysisPanel } from './analysis.js';
 
 // The built-in panels. A chart (`meta`) shows a note until metadata arrives
 // and is rebuilt when it changes; there can be several. A control (`single`)
@@ -65,7 +67,7 @@ const TYPES = {
   annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },
   layers:      { create: createLayersPanel, single: true, slot: 'layers', height: 130 },
 } satisfies Record<string, PanelType>;
-export type PanelKind = keyof typeof TYPES | 'spec';
+export type PanelKind = keyof typeof TYPES | 'spec' | 'analysis';
 type BuiltinKind = keyof typeof TYPES;
 const typeOf = (kind: string): PanelType | undefined => (TYPES as Record<string, PanelType>)[kind];
 const available = (kind: BuiltinKind) => typeOf(kind)!.available?.() ?? true;
@@ -140,7 +142,9 @@ class PanelView implements IContentRenderer {
     this.handle = null;
     this.element.replaceChildren();
     try {
-      if (this.kind === 'spec') {
+      if (this.kind === 'analysis') {
+        this.handle = createAnalysisPanel(this.element, this.ctx());
+      } else if (this.kind === 'spec') {
         const p = payloads.get(this.id);
         if (!p) { this.element.append(el('div', 'panel-note', 'waiting for R…')); return; }
         const h: PanelHandle = await createSpecPanel(this.element, p, this.ctx());
@@ -294,11 +298,16 @@ function dropUnavailable(): void {
 }
 
 // Where a pushed panel goes without a `ref`: next to the active chart, else
-// the last one active, else any chart, never among the controls
+// the last one active, else any chart, never among the controls or in the
+// Analysis panel's group
 let lastChart: string | null = null;
+const isChart = (p?: IDockviewPanel | null) => {
+  const kind = p ? views.get(p.id)?.kind : undefined;
+  return !!p && !isControl(kind) && kind !== 'analysis' &&
+    !p.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
+};
 function chartRef(): IDockviewPanel | undefined {
   if (!dock) return undefined;
-  const isChart = (p?: IDockviewPanel | null) => !!p && !isControl(views.get(p.id)?.kind);
   if (isChart(dock.activePanel)) return dock.activePanel!;
   const last = lastChart ? dock.getPanel(lastChart) : undefined;
   return isChart(last) ? last : dock.panels.find(isChart);
@@ -353,7 +362,7 @@ export function initDock(host: HTMLElement): void {
     if (!byR.delete(p.id) && payloads.has(p.id)) sendToR('panel_closed', { id: p.id });
     payloads.delete(p.id);
   });
-  dock.onDidActivePanelChange(p => { if (p && !isControl(views.get(p.id)?.kind)) lastChart = p.id; });
+  dock.onDidActivePanelChange(p => { if (isChart(p)) lastChart = p!.id; });
   // Its real size first: dockview otherwise lays out at 0 x 0 until its
   // resize observer fires, and the default sizes come out wrong
   dock.layout(host.clientWidth, host.clientHeight);
@@ -387,8 +396,10 @@ export function pushPanel(p: PanelPayload): void {
   if (p.ref && !ref) reportError(new Error(`no panel '${p.ref}'; placed next to the charts`), 'push_panel');
   ref ??= chartRef();
   const where = p.where ?? 'tab';
+  // A tab next to the Analysis panel goes beside its group instead
+  const beside = where === 'tab' && !!ref && ref.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
   const position: AddPanelOptions['position'] = !ref ? { direction: 'left' }
-    : { referencePanel: ref, direction: where === 'tab' ? 'within' : where };
+    : { referencePanel: ref, direction: beside ? 'right' : where === 'tab' ? 'within' : where };
   const title = p.title ?? (typeof p.spec?.title === 'string' ? p.spec.title : null) ?? p.id;
   dock.addPanel({ id: p.id, component: 'spec', title, ...(position && { position }) });
 }
@@ -411,3 +422,13 @@ export function listPanels(): { id: string; kind: string; title: string; group: 
 
 // For tests and the browser console: a panel's handle (its Vega view, ...)
 export const panelHandle = (id: string): PanelHandle | null => views.get(id)?.panel ?? null;
+
+// The Analysis panel (launch_lens_analysis()), left of the other panels; kept
+// where the user or a restored layout put it
+export function ensureAnalysisPanel(): boolean {
+  if (!dock || dock.getPanel('analysis')) return false;
+  const first = layoutIds()[0];
+  dock.addPanel({ id: 'analysis', component: 'analysis', title: 'analysis',
+    position: first ? { referencePanel: first, direction: 'left' } : { direction: 'left' } });
+  return true;
+}

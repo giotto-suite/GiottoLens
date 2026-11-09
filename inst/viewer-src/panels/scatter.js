@@ -174,7 +174,10 @@ export function createScatterPanel(body, ctx) {
     destroy() {
       unsub.forEach(u => u());
       listeners.abort();
+      const gl = deck?.device?.gl;
       deck?.finalize(); deck = null;
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+      canvas?.remove(); canvas = null;
     },
   };
 }
