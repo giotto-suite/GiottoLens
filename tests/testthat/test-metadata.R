@@ -24,9 +24,12 @@ test_that(".write_metadata writes rows in cell order with category codes", {
     expect_identical(written$a_b_1, c(1, NA, 0.5))
     expect_identical(written$lab, c(-1L, -1L, 0L))
 
-    Sys.sleep(0.01)
-    msg2 <- suppressMessages(.write_metadata(meta, dir, ids))$msg
-    expect_identical(list.files(dir), basename(msg2$url))
+    urls <- basename(msg$url)
+    for (k in 1:4) {
+        Sys.sleep(0.01)
+        urls <- c(urls, basename(suppressMessages(.write_metadata(meta, dir, ids))$msg$url))
+    }
+    expect_identical(sort(list.files(dir)), sort(utils::tail(urls, 3L)))
 })
 
 test_that(".parse_col_types maps aliases and rejects unknown types", {
