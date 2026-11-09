@@ -50,7 +50,7 @@ export const DEFAULT_CELL: RGBA = [255, 255, 255, 200];
 const NA: RGBA = [80, 80, 80, 180];
 const HIDDEN: RGBA = [160, 160, 160, 120];
 // polygon fill opacity of a colored cell, and of an uncolored one
-export const DEFAULT_FILL_ALPHA = 110 / 255;
+export const DEFAULT_FILL_ALPHA = 0.9;
 export const UNCOLORED_FILL = 20;
 const CONTINUOUS_FILL = 110;
 

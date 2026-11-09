@@ -551,6 +551,34 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(r$column)
         },
 
+        #' @description Set the color, width and opacity of cell outlines;
+        #'   `NULL` arguments leave a setting as is. Selected cells draw in the
+        #'   selection color, 1 px wider. Outlines show once zoomed in far
+        #'   enough to draw polygons. The "outlines" section of the cells panel
+        #'   sets the same values.
+        #' @param color Colour, as a name or hex string (`"#3d7dff"`)
+        #' @param width Width in screen pixels, in \[0.01, 20\]
+        #' @param alpha Opacity, in \[0, 1\]
+        set_outline = function(color = NULL, width = NULL, alpha = NULL) {
+            if (!is.null(color)) {
+                if (!is.character(color) || length(color) != 1L)
+                    stop("[LensViewer] `color` must be one color name or hex string",
+                        call. = FALSE)
+                color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            }
+            if (!is.null(width) && (!is.numeric(width) || length(width) != 1L ||
+                    is.na(width) || width < 0.01 || width > 20))
+                stop("[LensViewer] `width` must be one number in [0.01, 20]", call. = FALSE)
+            if (!is.null(alpha) && (!is.numeric(alpha) || length(alpha) != 1L ||
+                    is.na(alpha) || alpha < 0 || alpha > 1))
+                stop("[LensViewer] `alpha` must be one number in [0, 1]", call. = FALSE)
+            private$request("set_outline", list(
+                color = if (!is.null(color)) as.list(color),
+                width = if (!is.null(width)) as.numeric(width),
+                alpha = if (!is.null(alpha)) as.numeric(alpha)))
+            invisible(self)
+        },
+
         #' @description Show or hide an image, or set its colour or contrast;
         #'   `NULL` arguments leave a setting as is. Images draw under the
         #'   cells, each in its own colour, added together;

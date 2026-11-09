@@ -55,6 +55,20 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
 })
 
+test_that("set_outline checks its arguments before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_outline(width = 0), "must be one number in \\[0.01, 20\\]")
+    expect_error(v$set_outline(width = 0.009), "must be one number in \\[0.01, 20\\]")
+    expect_error(v$set_outline(width = c(1, 2)), "must be one number")
+    expect_error(v$set_outline(color = c("red", "blue")), "one color name or hex string")
+    expect_error(v$set_outline(color = "notacolour"), "invalid color name")
+    expect_error(v$set_outline(alpha = 1.5), "must be one number in \\[0, 1\\]")
+    expect_error(v$set_outline(color = "black", width = 2), "no viewer connected")
+    expect_error(v$set_outline(width = 0.01), "no viewer connected")
+})
+
 test_that("set_column_type switches numeric columns and keeps the setting", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)

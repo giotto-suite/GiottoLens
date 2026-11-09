@@ -3,7 +3,7 @@
 // legend. A continuous column's legend edits its color scale: a preset menu
 // (or custom colors, 2 to 9, each editable), reverse and reset. A categorical
 // column's legend edits each category's color, visibility and fill opacity.
-// A note until metadata arrives.
+// Cell outline color, width and opacity below. A note until metadata arrives.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 // @ts-ignore: plain JS module
@@ -172,6 +172,66 @@ function syncScale(el: HTMLElement, lg: ContinuousLegend) {
   });
 }
 
+// Cell outline color (picker, hex field, presets), width (log-scale slider
+// from 0.01 to 20 px and a number box), opacity and reset (store `outline`,
+// also set from R by set_outline())
+const OUTLINE_PRESETS: [string, string][] = [['#000000', 'black'], ['#ffffff', 'white'], ['#9ca3af', 'gray'], ['#d62728', 'red']];
+function createOutlineSection(): { el: HTMLElement; destroy(): void } {
+  const el = Object.assign(document.createElement('div'), { className: 'ctl-body cells-outline' });
+  el.innerHTML =
+    `<div class="ctl-subhead">outlines</div>` +
+    `<div class="alpha-row"><label>color</label>` +
+    `<input type="color" class="outline-color" title="outline color">` +
+    `<input type="text" class="outline-hex" maxlength="7" spellcheck="false" title="hex color">` +
+    `<span class="outline-presets">` +
+    OUTLINE_PRESETS.map(([c, name]) =>
+      `<button class="outline-preset" data-color="${c}" style="background:${c}" title="${name}"></button>`).join('') +
+    `</span></div>` +
+    `<div class="alpha-row"><label>width px</label>` +
+    `<input type="range" class="outline-width" min="-2" max="1.30103" step="0.01" title="width, log scale: 0.01 to 20 px">` +
+    `<input type="number" class="outline-width-num" min="0.01" max="20" step="any" title="width in pixels (0.01 to 20)"></div>` +
+    `<div class="alpha-row"><label>opacity</label>` +
+    `<input type="range" class="outline-alpha" min="0" max="100">` +
+    `<span class="alpha-val outline-alpha-val"></span></div>` +
+    `<div class="alpha-row"><button class="scale-btn outline-reset" title="black, 1 px, 80%">reset</button></div>`;
+  const q = <T extends HTMLElement>(c: string) => el.querySelector(`.${c}`) as T;
+  const color = q<HTMLInputElement>('outline-color'), hexIn = q<HTMLInputElement>('outline-hex');
+  const slider = q<HTMLInputElement>('outline-width'), num = q<HTMLInputElement>('outline-width-num');
+  const alpha = q<HTMLInputElement>('outline-alpha'), alphaV = q<HTMLElement>('outline-alpha-val');
+  const isHex = (h: string) => /^#[0-9a-fA-F]{6}$/.test(h);
+  const sync = ({ color: c, width, alpha: a }: { color: number[]; width: number; alpha: number }) => {
+    color.value = hex(c);
+    if (document.activeElement !== hexIn) hexIn.value = hex(c);
+    slider.value = String(Math.log10(width));
+    if (document.activeElement !== num) num.value = String(width);
+    alpha.value = String(Math.round(a * 100));
+    alphaV.textContent = alpha.value;
+  };
+  sync(store.getState().outline);
+  const unsub = store.subscribe(s => s.outline, sync);
+  color.addEventListener('input', () => actions.setOutline({ color: rgb(color.value) }));
+  hexIn.addEventListener('input', () => {
+    const h = hexIn.value.startsWith('#') ? hexIn.value : '#' + hexIn.value;
+    if (isHex(h)) actions.setOutline({ color: rgb(h.toLowerCase()) });
+  });
+  hexIn.addEventListener('blur', () => { hexIn.value = hex(store.getState().outline.color); });
+  el.querySelectorAll<HTMLElement>('.outline-preset').forEach(b =>
+    b.addEventListener('click', () => actions.setOutline({ color: rgb(b.dataset.color!) })));
+  // 4 significant digits, kept within [0.01, 20]
+  slider.addEventListener('input', () => {
+    const w = Math.min(20, Math.max(0.01, Number((10 ** Number(slider.value)).toPrecision(4))));
+    actions.setOutline({ width: w });
+  });
+  num.addEventListener('change', () => {
+    const w = Number(num.value);
+    if (Number.isFinite(w) && w >= 0.01 && w <= 20) actions.setOutline({ width: w });
+    else num.value = String(store.getState().outline.width);
+  });
+  alpha.addEventListener('input', () => actions.setOutline({ alpha: Number(alpha.value) / 100 }));
+  q<HTMLButtonElement>('outline-reset').addEventListener('click', () => actions.resetOutline());
+  return { el, destroy: unsub };
+}
+
 export function createCellsPanel(body: HTMLElement): PanelHandle {
   const root = Object.assign(document.createElement('div'), { className: 'ctl-body' });
   const note = Object.assign(document.createElement('div'), {
@@ -187,7 +247,9 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
   row.append(Object.assign(document.createElement('label'), { textContent: 'color by' }), select);
   typeRow.append(Object.assign(document.createElement('label'), { textContent: 'treat as' }), typeSel);
   root.append(row, typeRow, legend);
-  body.append(note, root);
+  const outline = createOutlineSection();
+  outline.el.style.display = state.manifest?.layers?.cells?.geometry ? '' : 'none';
+  body.append(note, root, outline.el);
   select.addEventListener('change', () => actions.setColorBy(select.value || null));
 
   // "treat as": numeric columns only; R sends the metadata again with the new type
@@ -248,5 +310,5 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
     store.subscribe(s => s.colorBy, c => { select.value = c ?? ''; syncType(); }),
   ];
 
-  return { destroy() { clearTimeout(typeTimer); unsub.forEach(u => u()); } };
+  return { destroy() { clearTimeout(typeTimer); outline.destroy(); unsub.forEach(u => u()); } };
 }

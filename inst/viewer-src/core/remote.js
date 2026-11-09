@@ -118,6 +118,18 @@ export function initRemote() {
     return { column: name };
   });
 
+  onMessage('set_outline', ({ color, width, alpha }) => {
+    if (color != null && !(Array.isArray(color) && color.length === 3 &&
+        color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+      throw new Error('color must be three integers 0-255');
+    if (width != null && !(typeof width === 'number' && width >= 0.01 && width <= 20))
+      throw new Error('width must be a number in [0.01, 20]');
+    if (alpha != null && !(typeof alpha === 'number' && alpha >= 0 && alpha <= 1))
+      throw new Error('alpha must be a number in [0, 1]');
+    actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
+      ...(alpha != null && { alpha }) });
+  });
+
   onMessage('set_mark', ({ mark, reset }) => {
     if (!state.manifest?.layers?.cells) throw new Error('the viewer has no cells');
     actions.setCellMark(reset ? null : mark);

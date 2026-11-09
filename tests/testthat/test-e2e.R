@@ -387,6 +387,18 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_null(v$state()$config$colorScales$score)
     v$set_layer("tx", show = TRUE)
     v$show_genes(c("Actb", "Cd3e"))
+    expect_identical(unlist(v$state()$config$outline$color), c(0L, 0L, 0L))
+    v$set_outline(color = "#102030", width = 2.5)
+    expect_identical(unlist(v$state()$config$outline$color), c(16L, 32L, 48L))
+    expect_equal(v$state()$config$outline$width, 2.5)
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=cells] .outline-hex')?.value === '#102030'"))
+    v$set_outline(width = 1, alpha = 0.4)
+    expect_identical(unlist(v$state()$config$outline$color), c(16L, 32L, 48L))
+    expect_equal(v$state()$config$outline$alpha, 0.4)
+    br$js("document.querySelector('[data-panel=cells] .outline-reset').click()")
+    expect_true(browser_wait(br,
+        "window.__giottolens.store.getState().outline.alpha === 0.8"))
 
     png <- v$screenshot()
     expect_true(file.exists(png))

@@ -89,6 +89,11 @@ export function renderLayers(viewState) {
     const mask      = sel.mask;
     const colored   = s.colorBy != null && colors && state.cellFill;
     const fillA     = state.cellFill;
+    // outline style from the store (set_outline); selected cells draw 1 px wider
+    const lineColor = [...s.outline.color, Math.round(s.outline.alpha * 255)];
+    const lineWidth = s.outline.width;
+    const selWidth  = lineWidth + 1;
+    const lineKey   = lineColor.join(',');
 
     for (const [t, d] of loaded) {
       const off = d.offset;
@@ -109,11 +114,11 @@ export function renderLayers(viewState) {
       }));
       layers.push(new PathLayer({
         id: `poly-line-${t.index}`, data: lineData,
-        getColor: (_, { index }) => mask && mask[off + index] ? SEL : [255, 255, 255, 200],
-        getWidth: (_, { index }) => mask && mask[off + index] ? 2 : 1,
-        widthUnits: 'pixels', widthMinPixels: 1,
+        getColor: (_, { index }) => mask && mask[off + index] ? SEL : lineColor,
+        getWidth: (_, { index }) => mask && mask[off + index] ? selWidth : lineWidth,
+        widthUnits: 'pixels', widthMinPixels: Math.min(1, lineWidth),
         opacity: s.layers.poly.alpha,
-        updateTriggers: { getColor: sel.version, getWidth: sel.version },
+        updateTriggers: { getColor: [sel.version, lineKey], getWidth: [sel.version, lineWidth] },
       }));
     }
 

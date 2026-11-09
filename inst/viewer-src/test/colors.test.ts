@@ -14,11 +14,11 @@ describe('cellColorBuffer', () => {
     expect([...colors.slice(4, 8)]).toEqual([80, 80, 80, 180]);
     expect([...colors.slice(0, 3)]).not.toEqual([...colors.slice(8, 11)]);
   });
-  it('keeps the default category alpha: centroids 220, fills 110', () => {
+  it('keeps the default category alpha: centroids 255, fills 230', () => {
     const col = { name: 'c', kind: 'categorical' as const, levels: ['a'], values: Int32Array.from([0]), min: 0, max: 0 };
     const { colors, fill } = cellColorBuffer(1, col);
-    expect(colors[3]).toBe(220);
-    expect(fill[0]).toBe(110);
+    expect(colors[3]).toBe(255);
+    expect(fill[0]).toBe(230);
   });
   it('applies per-category color, visibility and opacity', () => {
     const col = { name: 'c', kind: 'categorical' as const, levels: ['a', 'b', 'c'], values: Int32Array.from([0, 1, 2, -1]), min: 0, max: 0 };
@@ -34,7 +34,7 @@ describe('cellColorBuffer', () => {
     expect(fill[2]).toBe(51);
     expect(colors[11]).toBe(102);
     expect(legend?.type === 'categorical' && legend.items.map(i => [i.label, i.show, i.alpha]))
-      .toEqual([['a', true, 1], ['b', false, 110 / 255], ['c', true, 0.2]]);
+      .toEqual([['a', true, 1], ['b', false, 0.9], ['c', true, 0.2]]);
   });
   it('interpolates between evenly spaced stops', () => {
     const st: [number, number, number][] = [[0, 0, 0], [100, 200, 0], [200, 0, 100]];

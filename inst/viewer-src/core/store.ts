@@ -26,6 +26,11 @@ export interface CellMark {
   size?: number;
   angle?: number;
 }
+export interface OutlineStyle {
+  color: [number, number, number];   // cell outline color
+  width: number;                     // cell outline width, screen pixels
+  alpha: number;                     // cell outline opacity, 0-1
+}
 export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush' | 'landmark';
 export type Combine = 'or' | 'and';
 
@@ -38,6 +43,7 @@ export interface Annotation {
 
 export interface Config {
   layers: Record<LayerName, LayerVis>;
+  outline: OutlineStyle;
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
@@ -74,6 +80,7 @@ export const initialConfig = (): Config => ({
     annotations: { show: true,  alpha: 0.6 },
     img:         { show: true,  alpha: 1 },
   },
+  outline: { color: [0, 0, 0], width: 1, alpha: 0.8 },
   images: {},
   txPalette: 0,
   colorAll: false,
@@ -150,6 +157,10 @@ export const actions = {
   setLayer(name: LayerName, patch: Partial<LayerVis>) {
     set(s => ({ layers: { ...s.layers, [name]: { ...s.layers[name], ...patch } } }));
   },
+  setOutline(patch: Partial<OutlineStyle>) {
+    set(s => ({ outline: { ...s.outline, ...patch } }));
+  },
+  resetOutline() { set({ outline: initialConfig().outline }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
   },

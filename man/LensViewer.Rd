@@ -51,6 +51,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
+    \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
     \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
@@ -448,6 +449,31 @@ and opacity first}
   }
   \subsection{Returns}{
     The column styled, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_outline"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_outline}{}}}
+\subsection{\code{LensViewer$set_outline()}}{
+  Set the color, width and opacity of cell outlines;
+\code{NULL} arguments leave a setting as is. Selected cells draw in the
+selection color, 1 px wider. Outlines show once zoomed in far
+enough to draw polygons. The "outlines" section of the cells panel
+sets the same values.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_outline(color = NULL, width = NULL, alpha = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
+      \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
+      \item{\code{alpha}}{Opacity, in [0, 1]}
+    }
+    \if{html}{\out{</div>}}
   }
 }
 

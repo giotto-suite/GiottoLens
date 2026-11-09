@@ -1,5 +1,13 @@
 # GiottoLens (development version)
 
+* Cell outline color, width and opacity can be set: `viewer$set_outline(color =, width =,
+  alpha =)` from R, or the "outlines" section of the cells panel (color picker, hex field,
+  preset colors, width slider and number box, opacity slider, reset). Selected cells draw in
+  the selection color, 1 px wider than the outline width. The width ranges from 0.01 to
+  20 px; the width slider is on a log scale. The settings are part of the saved config
+  (`state()$config$outline`).
+* Cells colored by a categorical column fill at 90% opacity by default (was 43%), and cell
+  outlines are black at 80% opacity by default (was white at 78%).
 * The legend of a categorical color-by column in the cells panel is editable: per category,
   a checkbox turns its color on or off, the swatch opens a color picker, and a slider sets its
   fill opacity. Double-clicking a label draws that category at full opacity and the others at
