@@ -87,7 +87,8 @@ export function renderLayers(viewState) {
     const loaded    = tiles.map(t => [t, state.cache.get(`polygons:${t.index}`)]).filter(([, d]) => d);
     const colors    = state.cellColors;
     const mask      = sel.mask;
-    const colored   = s.colorBy != null && colors;
+    const colored   = s.colorBy != null && colors && state.cellFill;
+    const fillA     = state.cellFill;
 
     for (const [t, d] of loaded) {
       const off = d.offset;
@@ -100,7 +101,7 @@ export function renderLayers(viewState) {
         getFillColor: (_, { index }) => {
           if (!colored) return [255, 255, 255, 20];
           const k = (off + index) * 4;
-          return [colors[k], colors[k + 1], colors[k + 2], 110];
+          return [colors[k], colors[k + 1], colors[k + 2], fillA[off + index]];
         },
         opacity: s.layers.poly.alpha, pickable: true,
         onHover: onHoverCell(i => off + i),

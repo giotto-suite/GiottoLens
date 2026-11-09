@@ -1,8 +1,9 @@
 // The cells panel: color the cells by a metadata column (store `colorBy`,
 // also set from R by color_by()), "treat as" for numeric columns, and its
 // legend. A continuous column's legend edits its color scale: a preset menu
-// (or custom colors, 2 to 9, each editable), reverse and reset. A note until
-// metadata arrives.
+// (or custom colors, 2 to 9, each editable), reverse and reset. A categorical
+// column's legend edits each category's color, visibility and fill opacity.
+// A note until metadata arrives.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 // @ts-ignore: plain JS module
@@ -15,6 +16,7 @@ import type { PanelHandle } from './dock.ts';
 
 const LEGEND_MAX = 30;
 const TYPE_TIMEOUT_MS = 5000;
+const FOCUS_OTHERS = 0.2;
 type RGB = [number, number, number];
 type ContinuousLegend = Extract<Legend, { type: 'continuous' }>;
 
@@ -23,13 +25,78 @@ const rgb = (h: string): RGB => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 1
 const css = (c: number[]) => `rgb(${c[0]},${c[1]},${c[2]})`;
 const gradient = (stops: number[][]) => `linear-gradient(to right, ${stops.map(css).join(', ')})`;
 
-function renderCategories(el: HTMLElement, lg: Extract<Legend, { type: 'categorical' }>) {
-  el.innerHTML = lg.items.slice(0, LEGEND_MAX).map(({ label, color }) =>
-    `<div class="legend-item">` +
-    `<span class="legend-dot" style="background:${css(color)}"></span>` +
-    `<span class="legend-label">${escapeHtml(label)}</span></div>`
-  ).join('') + (lg.items.length > LEGEND_MAX
-    ? `<div class="legend-overflow">+${lg.items.length - LEGEND_MAX} more</div>` : '');
+type CategoricalLegend = Extract<Legend, { type: 'categorical' }>;
+
+// One row per category: a checkbox (color on/off), a color swatch (click to
+// edit), the label (double-click: this category at full opacity, the others
+// at 20%) and a fill opacity slider; "all on", "all off" and "reset" above
+function buildRows(el: HTMLElement, lg: CategoricalLegend, current: () => CategoricalLegend) {
+  const items = lg.items.slice(0, LEGEND_MAX);
+  el.innerHTML =
+    `<div class="legend-actions">` +
+    `<button class="scale-btn" data-act="all-on" title="color every category">all on</button>` +
+    `<button class="scale-btn" data-act="all-off" title="uncolor every category">all off</button>` +
+    `<button class="scale-btn" data-act="reset" title="default colors and opacity">reset</button></div>` +
+    items.map(({ label }, k) =>
+      `<div class="legend-item" data-k="${k}">` +
+      `<input type="checkbox" class="legend-show" title="color on/off">` +
+      `<input type="color" class="legend-color" title="edit color">` +
+      `<span class="legend-label" title="double-click: show only this category at full opacity">${escapeHtml(label)}</span>` +
+      `<input type="range" class="legend-alpha" min="0" max="100" title="fill opacity">` +
+      `<span class="legend-alpha-val"></span></div>`
+    ).join('') +
+    (lg.items.length > LEGEND_MAX
+      ? `<div class="legend-overflow">+${lg.items.length - LEGEND_MAX} more</div>` : '');
+
+  const column = lg.column;
+  const labelOf = (row: HTMLElement) => current().items[Number(row.dataset.k)].label;
+  const rowOf = (e: Event) => (e.target as HTMLElement).closest('.legend-item') as HTMLElement | null;
+  el.oninput = (e: Event) => {
+    const row = rowOf(e), t = e.target as HTMLInputElement;
+    if (!row) return;
+    if (t.classList.contains('legend-color'))
+      actions.setCategoryStyles(column, { [labelOf(row)]: { color: rgb(t.value) } });
+    else if (t.classList.contains('legend-alpha'))
+      actions.setCategoryStyles(column, { [labelOf(row)]: { alpha: Number(t.value) / 100 } });
+  };
+  el.onchange = (e: Event) => {
+    const row = rowOf(e), t = e.target as HTMLInputElement;
+    if (row && t.classList.contains('legend-show'))
+      actions.setCategoryStyles(column, { [labelOf(row)]: { show: t.checked } });
+  };
+  el.ondblclick = (e: Event) => {
+    const row = rowOf(e);
+    if (!row || !(e.target as HTMLElement).classList.contains('legend-label')) return;
+    const pick = labelOf(row);
+    const patch: Record<string, { show?: boolean; alpha: number }> = {};
+    for (const { label } of current().items)
+      patch[label] = label === pick ? { show: true, alpha: 1 } : { alpha: FOCUS_OTHERS };
+    actions.setCategoryStyles(column, patch);
+  };
+  el.onclick = (e: Event) => {
+    const act = ((e.target as HTMLElement).closest('button') as HTMLElement | null)?.dataset.act;
+    if (!act) return;
+    if (act === 'reset') { actions.resetCategoryStyles(column); return; }
+    const patch: Record<string, { show: boolean }> = {};
+    for (const { label } of current().items) patch[label] = { show: act === 'all-on' };
+    actions.setCategoryStyles(column, patch);
+  };
+}
+
+function syncRows(el: HTMLElement, lg: CategoricalLegend) {
+  el.querySelectorAll<HTMLElement>('.legend-item').forEach(row => {
+    const it = lg.items[Number(row.dataset.k)];
+    const show  = row.querySelector('.legend-show') as HTMLInputElement;
+    const color = row.querySelector('.legend-color') as HTMLInputElement;
+    const alpha = row.querySelector('.legend-alpha') as HTMLInputElement;
+    const val   = row.querySelector('.legend-alpha-val') as HTMLElement;
+    show.checked = it.show;
+    if (document.activeElement !== color) color.value = hex(it.color);
+    alpha.value = String(Math.round(it.alpha * 100));
+    alpha.disabled = !it.show;
+    val.textContent = alpha.value;
+    row.classList.toggle('legend-off', !it.show);
+  });
 }
 
 // The scale editor's DOM, for one column and one number of custom colors
@@ -57,6 +124,7 @@ function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => Contin
       : '');
 
   const column = lg.column;
+  el.ondblclick = null;
   el.onchange = (e: Event) => {
     const t = e.target as HTMLInputElement;
     if (t.classList.contains('scale-preset')) {
@@ -148,14 +216,14 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
     if (!lg) { legend.innerHTML = ''; legendKey = null; return; }
     if (lg.type === 'continuous') {
       const custom = lg.scale.preset === 'custom';
-      const key = JSON.stringify([lg.column, custom, custom ? lg.scale.colors?.length : 0]);
+      const key = JSON.stringify(['scale', lg.column, custom, custom ? lg.scale.colors?.length : 0]);
       if (key !== legendKey) { buildScale(legend, lg, current); legendKey = key; }
       syncScale(legend, lg);
       return;
     }
-    legendKey = null;
-    legend.onchange = legend.oninput = legend.onclick = null;
-    renderCategories(legend, lg);
+    const key = JSON.stringify(['cat', lg.column, lg.items.map(i => i.label)]);
+    if (key !== legendKey) { buildRows(legend, lg, () => state.colorLegend as CategoricalLegend); legendKey = key; }
+    syncRows(legend, lg);
   };
 
   // Options follow the metadata table, the legend the coloring; both bump

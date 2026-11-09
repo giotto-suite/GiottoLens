@@ -64,6 +64,37 @@ export function initRemote() {
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
   });
 
+  onMessage('set_category_style', ({ column, all, styles, reset }) => {
+    const name = column ?? store.getState().colorBy;
+    if (name == null) throw new Error('no column given and cells are not colored by one');
+    const col = state.meta?.get(name);
+    if (!col) throw new Error(`no metadata column '${name}'`);
+    if (col.kind !== 'categorical') throw new Error(`'${name}' is not categorical`);
+    const levels = col.levels ?? [];
+    const check = (st, where) => {
+      if (st.color != null && !(Array.isArray(st.color) && st.color.length === 3 &&
+          st.color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+        throw new Error(`${where}: color must be three integers 0-255`);
+      if (st.alpha != null && !(typeof st.alpha === 'number' && st.alpha >= 0 && st.alpha <= 1))
+        throw new Error(`${where}: alpha must be a number in [0, 1]`);
+      if (st.show != null && typeof st.show !== 'boolean')
+        throw new Error(`${where}: show must be TRUE or FALSE`);
+      const out = {};
+      if (st.color != null) out.color = st.color;
+      if (st.alpha != null) out.alpha = st.alpha;
+      if (st.show != null) out.show = st.show;
+      return out;
+    };
+    const unknown = Object.keys(styles ?? {}).filter(l => !levels.includes(l));
+    if (unknown.length) throw new Error(`not categories of '${name}': ${unknown.join(', ')}`);
+    if (reset) actions.resetCategoryStyles(name);
+    const patch = {};
+    if (all) { const a = check(all, 'all'); for (const l of levels) patch[l] = { ...a }; }
+    for (const [l, st] of Object.entries(styles ?? {})) patch[l] = { ...(patch[l] ?? {}), ...check(st, l) };
+    if (Object.keys(patch).length) actions.setCategoryStyles(name, patch);
+    return { column: name };
+  });
+
   onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
     const name = column ?? store.getState().colorBy;
     if (name == null) throw new Error('no column given and cells are not colored by one');

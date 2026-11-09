@@ -51,6 +51,8 @@ viewer$select(lens_range("nr_feats", 50, 200), source = "hist", replace = FALSE,
 viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
+viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
+                        alpha = c(0.2, Myeloid = 1))
 viewer$set_column_type("leiden_clus", "categorical")       # numeric column shown as categories
 viewer$set_color_scale("nr_feats", preset = "viridis")      # continuous scale: preset, or
 viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors

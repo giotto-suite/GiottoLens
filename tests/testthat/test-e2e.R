@@ -348,6 +348,23 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     v$color_by("leiden_clus")
     expect_identical(v$state()$config$colorBy, "leiden_clus")
     expect_error(v$color_by("nope"), "no metadata column")
+    expect_identical(v$style_categories(colors = c(a = "#010203"), alpha = c(0.2, b = 1)),
+        "leiden_clus")
+    cs <- v$state()$config$categoryStyles$leiden_clus
+    expect_identical(unlist(cs$a$color), 1:3)
+    expect_equal(cs$a$alpha, 0.2)
+    expect_equal(cs$b$alpha, 1)
+    v$style_categories(show = c(a = FALSE))
+    expect_false(v$state()$config$categoryStyles$leiden_clus$a$show)
+    expect_error(v$style_categories(alpha = c(zz = 1)), "not categories of 'leiden_clus': zz")
+    v$style_categories(reset = TRUE)
+    expect_length(v$state()$config$categoryStyles$leiden_clus, 0L)
+    v$style_categories(colors = c(a = "#010203"))
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=cells] .legend-color')?.value === '#010203'"))
+    br$js("document.querySelector('[data-panel=cells] .legend-actions [data-act=reset]').click()")
+    expect_true(browser_wait(br,
+        "Object.keys(window.__giottolens.store.getState().categoryStyles.leiden_clus ?? {}).length === 0"))
     expect_error(v$set_color_scale(), "is not continuous")
     expect_identical(v$set_color_scale("score", preset = "viridis", reverse = TRUE), "score")
     sc <- v$state()$config$colorScales$score

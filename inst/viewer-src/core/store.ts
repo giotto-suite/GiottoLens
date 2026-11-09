@@ -8,7 +8,7 @@ import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
 import type { Registration, Landmark, Affine } from '../data/registration.ts';
-import type { ColorScale } from '../render/colors.ts';
+import type { CategoryStyle, ColorScale } from '../render/colors.ts';
 
 export type LayerName = 'poly' | 'tx' | 'annotations' | 'img';
 export interface LayerVis { show: boolean; alpha: number }
@@ -43,6 +43,8 @@ export interface Config {
   colorAll: boolean;
   genes: number[];              // selected gene indices into manifest genes
   colorBy: string | null;       // metadata column colouring the cells
+  // per categorical column, per category: color, visibility, fill opacity
+  categoryStyles: Record<string, Record<string, CategoryStyle>>;
   colorScales: Record<string, ColorScale>;   // per continuous column
   cellMark: CellMark;           // how cells are drawn zoomed in, over the launch mark
   rules: Record<string, Rule>;  // selection rule per source
@@ -77,6 +79,7 @@ export const initialConfig = (): Config => ({
   colorAll: false,
   genes: [],
   colorBy: null,
+  categoryStyles: {},
   colorScales: {},
   cellMark: {},
   rules: {},
@@ -159,6 +162,20 @@ export const actions = {
   addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
   clearGenes() { set({ genes: [] }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  // patch the styles of some categories of `column`
+  setCategoryStyles(column: string, patch: Record<string, Partial<CategoryStyle>>) {
+    set(s => {
+      const cur = { ...(s.categoryStyles[column] ?? {}) };
+      for (const [label, p] of Object.entries(patch)) cur[label] = { ...(cur[label] ?? {}), ...p };
+      return { categoryStyles: { ...s.categoryStyles, [column]: cur } };
+    });
+  },
+  resetCategoryStyles(column: string) {
+    set(s => {
+      const { [column]: _, ...rest } = s.categoryStyles;
+      return { categoryStyles: rest };
+    });
+  },
   setColorScale(column: string, patch: Partial<ColorScale>) {
     set(s => ({ colorScales: { ...s.colorScales, [column]: { ...(s.colorScales[column] ?? {}), ...patch } } }));
   },

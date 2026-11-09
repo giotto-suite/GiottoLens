@@ -47,9 +47,10 @@ function recolorCells() {
   if (!state.cells) return;
   const s = store.getState();
   const col = s.colorBy;
-  const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
-    col ? s.colorScales[col] : undefined);
+  const { colors, fill, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
+    col ? s.categoryStyles[col] : undefined, col ? s.colorScales[col] : undefined);
   state.cellColors  = colors;
+  state.cellFill    = fill;
   state.colorLegend = legend;
   actions.bumpMeta();
 }
@@ -146,6 +147,7 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
+  store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,

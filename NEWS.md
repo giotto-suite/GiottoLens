@@ -1,5 +1,13 @@
 # GiottoLens (development version)
 
+* The legend of a categorical color-by column in the cells panel is editable: per category,
+  a checkbox turns its color on or off, the swatch opens a color picker, and a slider sets its
+  fill opacity. Double-clicking a label draws that category at full opacity and the others at
+  20%; "all on", "all off" and "reset" act on every category.
+  `viewer$style_categories(column =, colors =, show =, alpha =, reset =)` sets the same from
+  R; `alpha = c(0.2, Myeloid = 1)` sets every category to 0.2 and Myeloid to 1. Centroids
+  draw at twice the fill opacity, capped at 1. Styles are kept per column and are part of the
+  saved config (`state()$config$categoryStyles`).
 * Integer metadata columns are continuous by default (before, categorical), like double
   columns; factor, character and logical columns stay categorical. Any numeric column can be
   shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the

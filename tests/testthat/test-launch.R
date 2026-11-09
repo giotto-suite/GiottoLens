@@ -89,6 +89,19 @@ test_that("set_color_scale checks its arguments before sending", {
     expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
 })
 
+test_that("style_categories checks its arguments before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$style_categories(column = c("a", "b")), "one column name")
+    expect_error(v$style_categories(show = c(A = NA)), "TRUE/FALSE")
+    expect_error(v$style_categories(alpha = c(A = 2)), "must be in \\[0, 1\\]")
+    expect_error(v$style_categories(alpha = c(0.1, 0.2)), "at most one unnamed value")
+    expect_error(v$style_categories(colors = "red"), "named by category")
+    expect_error(v$style_categories(colors = c(A = "notacolour")), "invalid color name")
+    expect_error(v$style_categories(alpha = c(0.2, A = 1)), "no viewer connected")
+})
+
 test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs", {
     fx <- lens_fixture()
     skip_if_not_installed("websocket")
