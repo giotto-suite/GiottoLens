@@ -353,11 +353,12 @@ LensViewer <- R6::R6Class("LensViewer",
                 stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
                     "change type", call. = FALSE)
             if (entry$kind != type) {
-                out <- .retype_meta(private$meta_file, entry, type,
-                    private$meta_values[[column]], private$cached_meta$columns,
-                    private$cached_meta$n)
-                private$meta_values[column] <- out$values
-                private$publish_meta(out, drop_rules_on = column)
+                re <- .retype_meta(private$meta_dir(), entry, type,
+                    private$meta_values[[column]])
+                private$meta_values[column] <- list(re$values)
+                msg <- private$cached_meta
+                msg$columns[[match(column, private$meta_names())]] <- re$entry
+                private$publish_meta(list(msg = msg), drop_rules_on = column)
             }
             private$col_types[[column]] <- type
             invisible(self)
@@ -937,8 +938,7 @@ LensViewer <- R6::R6Class("LensViewer",
         server      = NULL,
         conns       = NULL,
         cbs         = list(),
-        cached_meta = NULL,     # the load_metadata payload: columns, types, levels
-        meta_file   = NULL,     # the table it points to, the only copy of the metadata
+        cached_meta = NULL,     # the load_metadata payload: columns, types, levels, files
         meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
 
@@ -951,11 +951,15 @@ LensViewer <- R6::R6Class("LensViewer",
         meta_column = function(name) {
             entry <- private$meta_entry(name)
             if (is.null(entry)) return(NULL)
-            .read_meta_column(private$meta_file, entry)
+            .read_meta_column(private$meta_dir(), entry)
         },
 
-        # Adopt a written table (.write_metadata() or .retype_meta()) and send
-        # it to every tab; `drop_rules_on` drops rules on that column first
+        # The column files (one per column: the only copy of the metadata)
+        meta_dir = function() file.path(private$session, "metadata"),
+        # Adopt a payload (from .write_metadata(), or with a column rewritten
+        # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
+        # rules on that column first. Files neither it nor the previous
+        # payload points to are deleted.
         publish_meta = function(out, drop_rules_on = NULL) {
             if (!is.null(drop_rules_on) && length(private$rule_set)) {
                 on_col <- vapply(private$rule_set, function(r)
@@ -968,7 +972,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     private$rule_set <- private$rule_set[!on_col]
                 }
             }
-            private$meta_file   <- out$file
+            urls <- function(msg) vapply(msg$columns, `[[`, "", "url")
+            .prune_meta_files(private$meta_dir(), c(urls(out$msg), urls(private$cached_meta)))
             private$cached_meta <- out$msg
             if (self$connected())
                 private$broadcast(.encode_ws_message("load_metadata", out$msg))

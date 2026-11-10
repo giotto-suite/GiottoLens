@@ -24,6 +24,16 @@ export interface Ctx { cells: Cells; meta: Meta | null }
 
 let cache = new WeakMap<object, Uint8Array>();
 
+// Metadata columns a rule reads
+export function ruleColumns(rule: Rule, out = new Set<string>()): Set<string> {
+  switch (rule.kind) {
+    case 'polygon': if (rule.space !== 'spatial') { out.add(rule.space.x); out.add(rule.space.y); } break;
+    case 'range': case 'categories': case 'compare': out.add(rule.space); break;
+    case 'union': case 'intersect': for (const p of rule.params.parts) ruleColumns(p, out); break;
+  }
+  return out;
+}
+
 // Drop cached masks, e.g. when metadata changes under column rules
 export function resetMaskCache(): void { cache = new WeakMap(); }
 

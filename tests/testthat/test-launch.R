@@ -67,7 +67,9 @@ test_that("set_column_type switches numeric columns and keeps the setting", {
     v$set_column_type("score", "categorical")
     expect_identical(kind("score"), "categorical")
     expect_true(is.factor(priv$meta_column("score")))
-    expect_identical(length(list.files(dirname(priv$meta_file))), 1L)
+    # one file per column; the previous payload's are kept
+    files <- list.files(priv$meta_dir())
+    expect_true(all(basename(vapply(priv$cached_meta$columns, `[[`, "", "url")) %in% files))
     suppressMessages(v$push_metadata(fx$meta))
     expect_identical(kind("score"), "categorical")
     v$set_column_type("score", "continuous")

@@ -80,10 +80,17 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
   appear in 0.12–0.16 s. Polygon tiles are only fetched for outlines, near outline zoom.
 - Metadata pushed with `push_metadata()` is written in the same order, one typed array per
   column (categories as integer codes with their levels), so the browser joins nothing.
-  That file is the only copy: R reads the columns it needs from it for rules and
-  `describe()`, and a type change (`set_column_type()`) rewrites it from itself with arrow,
-  re-encoding one column. At 1M cells and 30 columns this keeps ~35 KB in R instead of
-  ~450 MB, a type change takes ~0.35 s and a column read 6 to 24 ms.
+  Each column is its own parquet file, named by its content, with no key column: a row's
+  position is its cell index. The files are the only copy: R reads the columns it needs for
+  rules and `describe()`, and a type change (`set_column_type()`) rewrites one file. The
+  browser lists every column from the payload and loads one when it is used (colour-by,
+  a panel, a rule), whole, from the session's static path, so no read goes through R; the
+  rest load in the background while all columns fit 256 MB of typed arrays. A column whose
+  file did not change stays loaded across pushes. At 1M cells and 30 columns: ~35 KB kept
+  in R (it was ~450 MB), a push 0.85 s, a type change 0.03 to 0.06 s, a column read in R 4
+  to 23 ms; in the browser a column decodes in 25 to 35 ms. Single-column parquet over raw
+  typed arrays: raw saves that decode but is up to 12 times larger for codes and integer
+  columns (0.6 MB against 7.6 MB), which costs more over a remote link.
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
 
 Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in

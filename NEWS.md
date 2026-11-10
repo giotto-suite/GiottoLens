@@ -9,7 +9,11 @@
   column with more than 1000 distinct values is dropped with a warning. New inbound message
   type `set_column_type`.
 * `push_metadata()` keeps no copy of the metadata in R: R reads columns from the viewer's
-  metadata table when it needs them, and a type change re-encodes that one column in it.
+  metadata files when it needs them.
+* Metadata is one file per column. The viewer loads a column when it is used, and the rest
+  in the background while all columns fit 256 MB; above that the tooltip shows the loaded
+  columns. A type change rewrites one column, and columns that did not change stay loaded
+  after a new push. The message format changed (protocol 4).
 * Continuous color-by columns can use other color scales: presets (blue-red, the default;
   viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red), reversed, or a
   custom scale of 2 to 9 colors edited in the cells panel legend.

@@ -126,7 +126,7 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
   let typeTimer: ReturnType<typeof setTimeout> | undefined;
   const syncType = () => {
     const col = store.getState().colorBy;
-    const m = col ? state.meta?.get(col) : null;
+    const m = col ? state.metaInfo?.get(col) : null;
     typeRow.style.display = m?.numeric ? '' : 'none';
     if (m?.numeric) { typeSel.value = m.kind; typeSel.disabled = false; }
   };
@@ -158,13 +158,13 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
     renderCategories(legend, lg);
   };
 
-  // Options follow the metadata table, the legend the coloring; both bump
+  // Options follow the metadata columns, the legend the coloring; both bump
   // metaVersion
   let metaFor: unknown;
   const update = () => {
-    if (state.meta !== metaFor) {
-      metaFor = state.meta;
-      const cols = [...(state.meta?.keys() ?? [])] as string[];
+    if (state.metaInfo !== metaFor) {
+      metaFor = state.metaInfo;
+      const cols = [...(state.metaInfo?.keys() ?? [])] as string[];
       select.replaceChildren(...['', ...cols].map(c =>
         Object.assign(document.createElement('option'), { value: c, textContent: c || 'none' })));
       note.style.display = cols.length ? 'none' : '';

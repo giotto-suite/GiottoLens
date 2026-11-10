@@ -30,7 +30,7 @@ export function initRemote() {
     view: state.currentViewState && viewInfo(state.currentViewState),
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,
-    metadata: state.meta ? [...state.meta.keys()] : [],
+    metadata: state.metaInfo ? [...state.metaInfo.keys()] : [],
   }));
 
   onMessage('set_rule', ({ source, rule, replace, combine }) => {
@@ -55,7 +55,7 @@ export function initRemote() {
   });
 
   onMessage('set_color_by', ({ column }) => {
-    if (column != null && !state.meta?.has(column)) throw new Error(`no metadata column '${column}'`);
+    if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
     actions.setColorBy(column ?? null);
   });
 
@@ -67,7 +67,7 @@ export function initRemote() {
   onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
     const name = column ?? store.getState().colorBy;
     if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.meta?.get(name);
+    const col = state.metaInfo?.get(name);
     if (!col) throw new Error(`no metadata column '${name}'`);
     if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
     if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))

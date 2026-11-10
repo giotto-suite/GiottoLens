@@ -237,7 +237,7 @@ export function initInput() {
     const open = $metaSelPanel.classList.toggle('visible');
     if (open) {
       const colSel = document.getElementById('meta-sel-col');
-      const names  = state.meta ? [...state.meta.keys()] : [];
+      const names  = state.metaInfo ? [...state.metaInfo.keys()] : [];
       if (colSel) colSel.innerHTML = names.length
         ? names.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
         : '<option value="">no metadata loaded</option>';
@@ -248,7 +248,7 @@ export function initInput() {
     const col = document.getElementById('meta-sel-col')?.value;
     const op  = document.getElementById('meta-sel-op')?.value ?? '=';
     const val = document.getElementById('meta-sel-val')?.value ?? '';
-    if (!col || !state.meta?.has(col)) return;
+    if (!col || !state.metaInfo?.has(col)) return;
     filterMeta(col, op === 'LIKE' ? 'contains' : op, val);
   });
 

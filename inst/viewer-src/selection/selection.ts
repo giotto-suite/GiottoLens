@@ -4,18 +4,31 @@ import { store, actions } from '../core/store.ts';
 import { state } from '../core/state.js';
 // @ts-ignore: plain JS module
 import { sendToR } from '../core/comms.js';
-import { combine, evaluate, primeMask, markSegment, encodeMask, resetMaskCache, type Rule, type Ctx, type CompareOp } from './rules.ts';
+import { combine, evaluate, primeMask, markSegment, encodeMask, resetMaskCache, ruleColumns, type Rule, type Ctx, type CompareOp } from './rules.ts';
+import { needColumns } from '../data/meta.ts';
 import type { Pt, Ring } from './geometry.ts';
 
 export function ctx(): Ctx | null {
   return state.cells ? { cells: state.cells, meta: state.meta } : null;
 }
 
-export function recompute({ reset = false } = {}): void {
+// Columns the rules read that exist but are not loaded yet
+function missingColumns(rules: Record<string, Rule | null | undefined>): string[] {
+  const cols = new Set<string>();
+  for (const r of Object.values(rules)) if (r) ruleColumns(r, cols);
+  return [...cols].filter(c => state.metaInfo?.has(c) && !state.meta?.has(c));
+}
+
+// `loaded`: called again once the rules' columns were asked for (a column
+// that failed to load then fails the selection instead of retrying)
+export function recompute({ reset = false, loaded = false } = {}): void {
   if (reset) resetMaskCache();
   const c = ctx();
   const s = store.getState();
   if (!c) { actions.setSelection(null, 0); return; }
+  // The selection stays as it is until the rules' columns have loaded
+  const missing = loaded ? [] : missingColumns(s.rules);
+  if (missing.length) { needColumns(missing).then(() => recompute({ loaded: true })); return; }
   let res: { mask: Uint8Array | null; count: number };
   try {
     res = combine(s.rules, c, s.combine);
@@ -32,6 +45,7 @@ export function maskExcept(source: string): Uint8Array | null {
   const c = ctx();
   if (!c) return null;
   const s = store.getState();
+  if (missingColumns(s.rules).length) return null;   // recompute() loads them
   return combine(s.rules, c, s.combine, source).mask;
 }
 

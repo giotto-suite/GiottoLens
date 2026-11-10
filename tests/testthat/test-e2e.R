@@ -884,6 +884,7 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
 })
 
 test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE) in R", {
+    priv_rules <- function(v) get("private", v$.__enclos_env__)$rule_set
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
@@ -900,6 +901,9 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     # Strip: one chip per source with its own count, plus AND
     chips <- function() unlist(br$js("[...document.querySelectorAll('#rule-strip .rule-chip')].map(c => c.textContent)"))
     expect_true(browser_wait(br, "document.querySelectorAll('#rule-strip .rule-chip').length === 3"))
+    # A selection the page sent before it had R's rules can land after them;
+    # the page's next one brings R back in step
+    expect_true(pump_until(function() setequal(names(priv_rules(v)), c("spatial", "hist:score"))))
     tab <- v$rules()
     expect_identical(tab$source, c("spatial", "hist:score"))
     expect_true(any(grepl(sprintf("^lasso · %d", tab$cells[1]), chips())))
