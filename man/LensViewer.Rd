@@ -191,7 +191,8 @@ per distinct value, at most 1000) or as a continuous scale.
 Integer and double columns are continuous by default. The
 viewer's "treat as" menu in the cells panel sets the same. Rules
 on the column are dropped, and the metadata is sent again.
-The setting is kept for later \code{push_metadata()} calls.
+The setting is kept for later \code{push_metadata()} calls, unless
+one sets the column's type through \code{cols}.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_column_type(column, type = c("categorical", "continuous"))}
