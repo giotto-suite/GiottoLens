@@ -11,7 +11,7 @@ test_that(".write_metadata writes rows in cell order with category codes", {
         a_b = c(0.5, 1, 2), lab = c("y", NA, "z"), check.names = FALSE)
     expect_message(out <- .write_metadata(meta, dir, ids), "1 metadata row")
     msg <- out$msg
-    expect_identical(out$table$a_b_1, c(1, NA, 0.5))
+    expect_identical(out$file, file.path(dir, basename(msg$url)))
     expect_match(msg$url, "^session/metadata/cell_meta_[0-9]+\\.parquet$")
     expect_identical(msg$n, 3L)
     expect_identical(vapply(msg$columns, `[[`, "", "name"), c("a_b", "a_b_1", "lab"))
@@ -24,6 +24,9 @@ test_that(".write_metadata writes rows in cell order with category codes", {
     expect_identical(written$a_b, c(1, NA, 3))          # integers are continuous; c2 → NA
     expect_identical(written$a_b_1, c(1, NA, 0.5))
     expect_identical(written$lab, c(-1L, -1L, 0L))
+    # R reads columns back from the file
+    expect_identical(.read_meta_column(out$file, msg$columns[[2]]), c(1, NA, 0.5))
+    expect_identical(.read_meta_column(out$file, msg$columns[[3]]), factor(c(NA, NA, "y")))
 
     Sys.sleep(0.01)
     msg2 <- suppressMessages(.write_metadata(meta, dir, ids))$msg
@@ -46,12 +49,48 @@ test_that(".write_metadata shows numeric columns as categories when asked", {
     expect_null(cols[[3]]$numeric)
     written <- arrow::read_parquet(file.path(dir, basename(out$msg$url)))
     expect_identical(written$clus, c(0L, 1L, 0L, -1L))
+    expect_identical(out$values, list(clus = c(2, 10), n = c(5L, 7L, 100000L)))
     # rules in R see the categories
-    expect_identical(as.character(out$table$clus), c("2", "10", "2", NA))
+    expect_identical(as.character(.read_meta_column(out$file, cols[[1]])), c("2", "10", "2", NA))
+
+    # A kept type over the level limit is not applied: the push goes on
+    many <- data.frame(cell_ID = paste0("c", 1:1001), v = as.double(1:1001), w = 1)
+    expect_warning(out <- .write_metadata(many, dir, many$cell_ID,
+        types = c(v = "categorical", w = "categorical")), "1001 distinct values")
+    expect_identical(vapply(out$msg$columns, `[[`, "", "kind"), c("continuous", "categorical"))
+    expect_identical(out$dropped, "v")
+})
+
+test_that("numeric category labels keep their format", {
+    expect_identical(.numeric_labels(c(-2, 0.5, 1e-7, 1e5, 123456789012, 1/3)),
+        c("-2", "0.5", "0.0000001", "100000", "123456789012", "0.333333333333333"))
+})
+
+test_that(".retype_meta changes one column in the file and back exactly", {
+    dir <- tempfile("meta"); dir.create(dir)
+    on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+    ids <- c("c1", "c2", "c3", "c4")
+    x <- c(0.1 + 0.2, 1/3, NA, 0.1 + 0.2)
+    meta <- data.frame(cell_ID = ids, x = x, lab = c("a", "b", "a", NA))
+    out <- .write_metadata(meta, dir, ids)
+    Sys.sleep(0.01)
+    cat <- .retype_meta(out$file, out$msg$columns[[1]], "categorical",
+        columns = out$msg$columns, n = 4L)
+    expect_identical(list.files(dir), basename(cat$file))
+    expect_identical(cat$msg$columns[[1]]$kind, "categorical")
+    expect_identical(cat$msg$columns[[2]], out$msg$columns[[2]])
+    written <- arrow::read_parquet(cat$file)
+    expect_identical(written$x, c(0L, 1L, -1L, 0L))          # 0.1 + 0.2 < 1/3
+    expect_identical(written$lab, c(0L, 1L, 0L, -1L))          # untouched
+    back <- .retype_meta(cat$file, cat$msg$columns[[1]], "continuous",
+        cat$values$x, cat$msg$columns, 4L)
+    expect_identical(.read_meta_column(back$file, back$msg$columns[[1]]), x)
+    expect_null(back$values$x)
 
     many <- data.frame(cell_ID = paste0("c", 1:1001), v = as.double(1:1001))
-    expect_error(.write_metadata(many, dir, many$cell_ID, types = c(v = "categorical")),
-        "1001 distinct values")
+    out <- .write_metadata(many, dir, many$cell_ID)
+    expect_error(.retype_meta(out$file, out$msg$columns[[1]], "categorical",
+        columns = out$msg$columns, n = 1001L), "1001 distinct values")
 })
 
 test_that(".parse_col_types maps aliases and rejects unknown types", {

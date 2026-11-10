@@ -66,7 +66,8 @@ test_that("set_column_type switches numeric columns and keeps the setting", {
     expect_identical(kind("score"), "continuous")
     v$set_column_type("score", "categorical")
     expect_identical(kind("score"), "categorical")
-    expect_true(is.factor(priv$meta_table$score))
+    expect_true(is.factor(priv$meta_column("score")))
+    expect_identical(length(list.files(dirname(priv$meta_file))), 1L)
     suppressMessages(v$push_metadata(fx$meta))
     expect_identical(kind("score"), "categorical")
     v$set_column_type("score", "continuous")
@@ -74,6 +75,23 @@ test_that("set_column_type switches numeric columns and keeps the setting", {
     expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
     expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
     expect_error(v$set_column_type("score", "other"), "should be one of")
+})
+
+test_that("a type given to push_metadata() replaces a kept one", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- v$.__enclos_env__$private
+    kind <- function(name) priv$meta_entry(name)$kind
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
+    expect_identical(kind("array_row"), "continuous")
+    v$set_column_type("array_row", "categorical")
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
+    expect_identical(kind("array_row"), "categorical")
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin",
+        cols = list(array_row = "continuous", "array_col")))
+    expect_identical(kind("array_row"), "continuous")
+    expect_null(priv$col_types$array_row)
 })
 
 test_that("set_color_scale checks its arguments before sending", {

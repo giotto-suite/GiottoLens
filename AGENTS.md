@@ -143,6 +143,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `R/rules.R` and `selection/rules.ts` implement the same evaluation; change both together
   (the e2e tests compare them). `lens_cells()` is R-only and resolves to an `ids` rule.
 - Metadata is written in cell order; categorical columns as 0-based codes (-1 = NA) with levels.
+  The session's `cell_meta_*.parquet` is the only copy: R keeps the payload (`cached_meta`)
+  and reads columns through `private$meta_column()`; never hold the pushed data.frame.
 
 ### Data model (adr/0003)
 

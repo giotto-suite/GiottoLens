@@ -5,7 +5,11 @@
   shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the
   cells panel or `viewer$set_column_type(column, "categorical")`, and back with
   `"continuous"`. Rules on the column are dropped when its type changes; the setting is kept
-  for later `push_metadata()` calls. New inbound message type `set_column_type`.
+  for later `push_metadata()` calls unless `cols` sets the column's type. A kept setting on a
+  column with more than 1000 distinct values is dropped with a warning. New inbound message
+  type `set_column_type`.
+* `push_metadata()` keeps no copy of the metadata in R: R reads columns from the viewer's
+  metadata table when it needs them, and a type change re-encodes that one column in it.
 * Continuous color-by columns can use other color scales: presets (blue-red, the default;
   viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red), reversed, or a
   custom scale of 2 to 9 colors edited in the cells panel legend.

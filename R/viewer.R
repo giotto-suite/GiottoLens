@@ -313,8 +313,18 @@ LensViewer <- R6::R6Class("LensViewer",
             } else {
                 as.data.frame(x)
             }
-            private$meta_raw <- meta
-            msg <- private$publish_meta()
+            # A type given here replaces one kept from set_column_type()
+            if (inherits(x, "giotto")) {
+                casts <- .parse_col_types(cols)
+                given <- gsub("[^A-Za-z0-9_]", "_", names(casts)[!is.na(casts)])
+                private$col_types[given] <- NULL
+            }
+            out <- .write_metadata(meta, file.path(private$session, "metadata"),
+                private$cell_ids, types = unlist(private$col_types))
+            rm(meta)
+            private$col_types[out$dropped] <- NULL
+            private$meta_values <- out$values
+            msg <- private$publish_meta(out)
             message("[LensViewer] metadata: ", length(msg$columns), " column(s): ",
                 paste(vapply(msg$columns, `[[`, "", "name"), collapse = ", "),
                 if (!self$connected()) " (sent when the viewer connects)")
@@ -326,26 +336,30 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   Integer and double columns are continuous by default. The
         #'   viewer's "treat as" menu in the cells panel sets the same. Rules
         #'   on the column are dropped, and the metadata is sent again.
-        #'   The setting is kept for later `push_metadata()` calls.
+        #'   The setting is kept for later `push_metadata()` calls, unless
+        #'   one sets the column's type through `cols`.
         #' @param column Column name, as pushed
         #' @param type `"categorical"` or `"continuous"`
         set_column_type = function(column, type = c("categorical", "continuous")) {
             type <- match.arg(type)
-            if (is.null(private$meta_raw))
+            if (is.null(private$cached_meta))
                 stop("[LensViewer] no metadata pushed yet", call. = FALSE)
             if (!is.character(column) || length(column) != 1L)
                 stop("[LensViewer] `column` must be one column name", call. = FALSE)
-            raw <- private$meta_raw
-            names(raw) <- make.unique(gsub("[^A-Za-z0-9_]", "_", names(raw)), sep = "_")
-            if (!column %in% setdiff(names(raw), "cell_ID"))
+            entry <- private$meta_entry(column)
+            if (is.null(entry))
                 stop("[LensViewer] no metadata column '", column, "'", call. = FALSE)
-            if (!is.numeric(raw[[column]]))
+            if (!isTRUE(entry$numeric))
                 stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
                     "change type", call. = FALSE)
-            old <- private$col_types
+            if (entry$kind != type) {
+                out <- .retype_meta(private$meta_file, entry, type,
+                    private$meta_values[[column]], private$cached_meta$columns,
+                    private$cached_meta$n)
+                private$meta_values[column] <- out$values
+                private$publish_meta(out, drop_rules_on = column)
+            }
             private$col_types[[column]] <- type
-            msg <- tryCatch(private$publish_meta(drop_rules_on = column),
-                error = function(e) { private$col_types <- old; stop(e) })
             invisible(self)
         },
 
@@ -634,7 +648,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 combine = private$combine,
                 rules = vapply(private$rule_set, function(r) r$kind %||% "", ""),
                 selected = length(self$selection),
-                metadata = names(private$meta_table)
+                metadata = private$meta_names()
             )
             if (n && !is.null(st$view$bounds)) {
                 b   <- unlist(st$view$bounds)
@@ -642,10 +656,10 @@ LensViewer <- R6::R6Class("LensViewer",
                 out$in_view <- sum(ctx$x >= b[1L] & ctx$x <= b[2L] & ctx$y >= b[3L] & ctx$y <= b[4L])
             }
             if (!is.null(by)) {
-                v <- private$meta_table[[by]]
+                v <- private$meta_column(by)
                 if (is.null(v))
                     stop("[LensViewer] no metadata column '", by, "'; pushed: ",
-                        paste(names(private$meta_table), collapse = ", "), call. = FALSE)
+                        paste(private$meta_names(), collapse = ", "), call. = FALSE)
                 v <- v[match(self$selection, private$cell_ids)]
                 out$by <- by
                 out$breakdown <- if (is.numeric(v) && !is.factor(v)) summary(v)
@@ -923,17 +937,26 @@ LensViewer <- R6::R6Class("LensViewer",
         server      = NULL,
         conns       = NULL,
         cbs         = list(),
-        cached_meta = NULL,
-        meta_table  = NULL,
-        meta_raw    = NULL,
+        cached_meta = NULL,     # the load_metadata payload: columns, types, levels
+        meta_file   = NULL,     # the table it points to, the only copy of the metadata
+        meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
 
-        # Write private$meta_raw with the column types and send it to every
-        # tab; `drop_rules_on` drops rules on that column first
-        publish_meta = function(drop_rules_on = NULL) {
-            types <- unlist(private$col_types)
-            out <- .write_metadata(private$meta_raw, file.path(private$session, "metadata"),
-                private$cell_ids, types = types)
+        meta_entry = function(name) {
+            for (cl in private$cached_meta$columns) if (identical(cl$name, name)) return(cl)
+            NULL
+        },
+        meta_names = function() vapply(private$cached_meta$columns, `[[`, "", "name"),
+        # One column in cell order, read from the table; NULL if there is none
+        meta_column = function(name) {
+            entry <- private$meta_entry(name)
+            if (is.null(entry)) return(NULL)
+            .read_meta_column(private$meta_file, entry)
+        },
+
+        # Adopt a written table (.write_metadata() or .retype_meta()) and send
+        # it to every tab; `drop_rules_on` drops rules on that column first
+        publish_meta = function(out, drop_rules_on = NULL) {
             if (!is.null(drop_rules_on) && length(private$rule_set)) {
                 on_col <- vapply(private$rule_set, function(r)
                     identical(r$space, drop_rules_on), logical(1L))
@@ -945,7 +968,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     private$rule_set <- private$rule_set[!on_col]
                 }
             }
-            private$meta_table  <- out$table
+            private$meta_file   <- out$file
             private$cached_meta <- out$msg
             if (self$connected())
                 private$broadcast(.encode_ws_message("load_metadata", out$msg))
@@ -970,7 +993,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 # As float32, exactly what the browser tests against
                 private$cells_xy <- list(x = as.numeric(cells$x), y = as.numeric(cells$y))
             }
-            c(private$cells_xy, list(meta = private$meta_table))
+            c(private$cells_xy, list(meta = if (!is.null(private$cached_meta)) private$meta_column))
         },
 
         # Send a request to the first tab and wait for its reply

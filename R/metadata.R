@@ -124,6 +124,11 @@ prep_meta <- function(
 # Factor, character and logical columns are categorical; integer and double
 # columns are continuous unless `types` (column -> "categorical") names them.
 # Numeric columns carry `numeric = TRUE` in the payload.
+# The written file is the only copy: R reads columns back from it
+# (.read_meta_column()) and changes a column's type in it (.retype_meta()).
+# `values` keeps the numbers behind each numeric column shown as categories,
+# so it can go back to continuous exactly. A `types` entry over the level
+# limit is not applied; its column is in `dropped`.
 .write_metadata <- function(meta, dir, cell_ids, types = NULL) {
     if (!"cell_ID" %in% names(meta))
         stop("[push_metadata] metadata needs a `cell_ID` column matching the ",
@@ -144,27 +149,34 @@ prep_meta <- function(
             "in the viewer and are not shown")
 
     data_cols <- setdiff(names(meta), "cell_ID")
-    table <- meta[row, data_cols, drop = FALSE]
-    rownames(table) <- NULL
     if (!length(data_cols))
         stop("[push_metadata] metadata has no columns besides cell_ID", call. = FALSE)
     columns <- list()
     arrays  <- list()
+    values  <- list()
+    dropped <- character()
     for (cn in data_cols) {
         v <- meta[[cn]][row]
         numeric <- is.numeric(v)
         if (numeric && identical(unname(types[cn]), "categorical")) {
-            v <- .numeric_factor(v, cn)
-            table[[cn]] <- v
+            lv <- .numeric_levels(v)
+            if (length(lv) <= .max_numeric_levels) {
+                enc <- .encode_numeric_categories(v, cn, lv)
+                arrays[[cn]] <- enc$codes
+                values[[cn]] <- lv
+                columns[[length(columns) + 1L]] <- enc$entry
+                next
+            }
+            warning("[push_metadata] `", cn, "` has ", length(lv), " distinct values, ",
+                "more than the ", .max_numeric_levels, " that can be shown as ",
+                "categories; it is continuous", call. = FALSE)
+            dropped <- c(dropped, cn)
         }
         if (is.factor(v) || is.character(v) || is.logical(v)) {
             f <- if (is.factor(v)) droplevels(v) else factor(v)
-            codes <- as.integer(f) - 1L
-            codes[is.na(codes)] <- -1L
-            arrays[[cn]]  <- codes
-            columns[[length(columns) + 1L]] <- c(list(name = cn,
-                kind = "categorical", levels = as.list(levels(f))),
-                if (numeric) list(numeric = TRUE))
+            arrays[[cn]]  <- .category_codes(f)
+            columns[[length(columns) + 1L]] <- list(name = cn,
+                kind = "categorical", levels = as.list(levels(f)))
         } else {
             arrays[[cn]]  <- as.double(v)
             columns[[length(columns) + 1L]] <- list(name = cn, kind = "continuous",
@@ -172,29 +184,93 @@ prep_meta <- function(
         }
     }
 
-    # A fresh file name per push, so a browser never reads a cached older table
-    unlink(list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE))
-    fname <- sprintf("cell_meta_%.0f.parquet", as.numeric(Sys.time()) * 1000)
-    arrow::write_parquet(as.data.frame(arrays, optional = TRUE), file.path(dir, fname))
-    list(
-        msg = list(url = paste0("session/metadata/", fname), n = length(cell_ids),
-            columns = columns),
-        # The same rows with their original types, for rule evaluation in R
-        table = table
-    )
+    path <- .new_meta_path(dir)
+    arrow::write_parquet(as.data.frame(arrays, optional = TRUE), path)
+    .prune_meta_files(dir, keep = path)
+    list(msg = .meta_msg(path, length(cell_ids), columns), file = path,
+        values = values, dropped = dropped)
 }
 
-# A numeric vector as a factor of its distinct values, in numeric order,
-# labelled without scientific notation
+# Rewrite the metadata file with one numeric column (`entry`, from the
+# payload) changed to `type`. The other columns pass through as Arrow arrays,
+# never as R vectors. `values`: the numbers behind the column's categories,
+# when it is categorical now. Returns what .write_metadata() returns, for
+# the new file.
+.retype_meta <- function(file, entry, type, values = NULL, columns, n) {
+    cn <- entry$name
+    tb <- arrow::read_parquet(file, as_data_frame = FALSE, mmap = FALSE)
+    v  <- as.vector(tb[[cn]])
+    if (type == "categorical") {
+        lv <- .numeric_levels(v)
+        if (length(lv) > .max_numeric_levels)
+            stop("[LensViewer] `", cn, "` has ", length(lv), " distinct values; ",
+                "at most ", .max_numeric_levels, " can be shown as categories", call. = FALSE)
+        enc <- .encode_numeric_categories(v, cn, lv)
+        arr <- arrow::Array$create(enc$codes, type = arrow::int32())
+        entry <- enc$entry
+        values <- lv
+    } else {
+        arr <- arrow::Array$create(as.double(values[ifelse(v < 0L, NA, v + 1L)]))
+        entry <- list(name = cn, kind = "continuous", numeric = TRUE)
+        values <- NULL
+    }
+    tb <- tb$SetColumn(match(cn, names(tb)) - 1L, arrow::field(cn, arr$type),
+        arrow::chunked_array(arr))
+    path <- .new_meta_path(dirname(file))
+    arrow::write_parquet(tb, path)
+    rm(tb)
+    .prune_meta_files(dirname(file), keep = path)
+    columns[[match(cn, vapply(columns, `[[`, "", "name"))]] <- entry
+    list(msg = .meta_msg(path, n, columns), file = path,
+        values = stats::setNames(list(values), cn))
+}
+
+# One column of the metadata file as R sees it: continuous as doubles,
+# categorical as a factor of its labels
+.read_meta_column <- function(file, entry) {
+    v <- arrow::read_parquet(file, col_select = entry$name, mmap = FALSE)[[1L]]
+    if (entry$kind != "categorical") return(as.double(v))
+    lv <- as.character(unlist(entry$levels))
+    factor(lv[ifelse(v < 0L, NA, v + 1L)], levels = lv)
+}
+
+.meta_msg <- function(path, n, columns)
+    list(url = paste0("session/metadata/", basename(path)), n = n, columns = columns)
+
+# A fresh file name per write, so a browser never reads a cached older table
+.new_meta_path <- function(dir) {
+    stamp <- floor(as.numeric(Sys.time()) * 1000)
+    repeat {
+        path <- file.path(dir, sprintf("cell_meta_%.0f.parquet", stamp))
+        if (!file.exists(path)) return(path)
+        stamp <- stamp + 1
+    }
+}
+
+# Older tables go once the new one is written
+.prune_meta_files <- function(dir, keep) {
+    old <- list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE)
+    unlink(old[basename(old) != basename(keep)])
+}
+
+.category_codes <- function(f) {
+    codes <- as.integer(f) - 1L
+    codes[is.na(codes)] <- -1L
+    codes
+}
+
+# Numeric columns shown as categories: one per distinct value, in numeric
+# order, labelled without scientific notation. Rules and the legend match on
+# these labels, so keep the format stable.
 .max_numeric_levels <- 1000L
-.numeric_factor <- function(v, name) {
-    lv <- sort(unique(v[!is.na(v)]))
-    if (length(lv) > .max_numeric_levels)
-        stop("[LensViewer] `", name, "` has ", length(lv), " distinct values; ",
-            "at most ", .max_numeric_levels, " can be shown as categories", call. = FALSE)
-    labels <- vapply(lv, function(z) format(z, scientific = FALSE, digits = 15,
-        drop0trailing = TRUE, trim = TRUE), "")
-    factor(v, levels = lv, labels = labels)
+.numeric_levels <- function(v) sort(unique(v[!is.na(v)]))
+.numeric_labels <- function(lv) vapply(lv, function(z) format(z, scientific = FALSE,
+    digits = 15, drop0trailing = TRUE, trim = TRUE), "")
+.encode_numeric_categories <- function(v, name, lv) {
+    codes <- match(v, lv) - 1L
+    codes[is.na(codes)] <- -1L
+    list(codes = codes, entry = list(name = name, kind = "categorical",
+        levels = as.list(.numeric_labels(lv)), numeric = TRUE))
 }
 
 # `cols` -> named character vector of column -> viewer type (NA = no cast)

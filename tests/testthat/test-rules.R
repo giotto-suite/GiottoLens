@@ -1,8 +1,9 @@
 ctx <- local({
     g <- expand.grid(x = 0:9 + 0.5, y = 0:9 + 0.5)
-    list(x = g$x, y = g$y, meta = data.frame(
+    meta <- data.frame(
         score = g$x, lab = factor(ifelse(seq_len(100) %% 2 == 0, "a", "b")),
-        name = paste0("n", seq_len(100))))
+        name = paste0("n", seq_len(100)))
+    list(x = g$x, y = g$y, meta = function(name) meta[[name]])
 })
 
 test_that("rules evaluate like the viewer does", {
