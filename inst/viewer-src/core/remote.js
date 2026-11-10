@@ -7,6 +7,7 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize, withZoom } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
+import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
 
@@ -61,6 +62,29 @@ export function initRemote() {
   onMessage('set_layer', ({ name, show, alpha }) => {
     if (!LAYERS.includes(name)) throw new Error(`layer must be one of ${LAYERS.join(', ')}`);
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
+  });
+
+  onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
+    const name = column ?? store.getState().colorBy;
+    if (name == null) throw new Error('no column given and cells are not colored by one');
+    const col = state.meta?.get(name);
+    if (!col) throw new Error(`no metadata column '${name}'`);
+    if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
+    if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))
+      throw new Error(`preset must be one of ${Object.keys(SCALE_PRESETS).join(', ')}`);
+    if (colors != null && !(Array.isArray(colors) && colors.length >= 2 && colors.length <= MAX_SCALE_COLORS &&
+        colors.every(c => Array.isArray(c) && c.length === 3 && c.every(v => Number.isInteger(v) && v >= 0 && v <= 255))))
+      throw new Error(`colors must be 2 to ${MAX_SCALE_COLORS} colors`);
+    if (reverse != null && typeof reverse !== 'boolean') throw new Error('reverse must be TRUE or FALSE');
+    if (reset) actions.resetColorScale(name);
+    const patch = {};
+    if (colors != null) { patch.preset = 'custom'; patch.colors = colors; }
+    else if (preset != null) patch.preset = preset;
+    if (reverse != null) patch.reverse = reverse;
+    if (patch.preset === 'custom' && !patch.colors && !store.getState().colorScales[name]?.colors)
+      throw new Error("preset 'custom' needs colors");
+    if (Object.keys(patch).length) actions.setColorScale(name, patch);
+    return { column: name };
   });
 
   onMessage('set_mark', ({ mark, reset }) => {

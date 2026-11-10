@@ -7,7 +7,7 @@
 # dropped. `on()` callbacks can be registered for the first two.
 .lens_inbound_types <- c("cell_selection", "annotations_update",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
-    "registration_update")
+    "registration_update", "set_column_type")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Parse and validate one WebSocket text frame.

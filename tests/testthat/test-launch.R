@@ -55,6 +55,40 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
 })
 
+test_that("set_column_type switches numeric columns and keeps the setting", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_column_type("score"), "no metadata pushed yet")
+    suppressMessages(v$push_metadata(fx$meta))
+    priv <- v$.__enclos_env__$private
+    kind <- function(name) Filter(function(cl) cl$name == name, priv$cached_meta$columns)[[1]]$kind
+    expect_identical(kind("score"), "continuous")
+    v$set_column_type("score", "categorical")
+    expect_identical(kind("score"), "categorical")
+    expect_true(is.factor(priv$meta_table$score))
+    suppressMessages(v$push_metadata(fx$meta))
+    expect_identical(kind("score"), "categorical")
+    v$set_column_type("score", "continuous")
+    expect_identical(kind("score"), "continuous")
+    expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
+    expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
+    expect_error(v$set_column_type("score", "other"), "should be one of")
+})
+
+test_that("set_color_scale checks its arguments before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_color_scale(column = c("a", "b")), "one column name")
+    expect_error(v$set_color_scale(preset = c("viridis", "magma")), "one preset name")
+    expect_error(v$set_color_scale(colors = "red"), "2 to 9 colors")
+    expect_error(v$set_color_scale(colors = rep("red", 10)), "2 to 9 colors")
+    expect_error(v$set_color_scale(colors = c("red", "notacolour")), "invalid color name")
+    expect_error(v$set_color_scale(reverse = NA), "TRUE or FALSE")
+    expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
+})
+
 test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs", {
     fx <- lens_fixture()
     skip_if_not_installed("websocket")

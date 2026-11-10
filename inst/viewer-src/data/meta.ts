@@ -6,6 +6,7 @@ export interface MetaColumn {
   name: string;
   kind: 'categorical' | 'continuous';
   levels?: string[];
+  numeric?: boolean;                   // a numeric column in R (type can change)
   values: Int32Array | Float64Array;   // codes or numbers (NaN = NA)
   min: number;
   max: number;
@@ -13,7 +14,7 @@ export interface MetaColumn {
 
 export type Meta = Map<string, MetaColumn>;
 
-export async function loadMeta(url: string, columns: { name: string; kind: string; levels?: string[] }[]): Promise<Meta> {
+export async function loadMeta(url: string, columns: { name: string; kind: string; levels?: string[]; numeric?: boolean }[]): Promise<Meta> {
   const file = await rangeBuffer(new URL(url, document.baseURI).href);
   const data = await readColumns(file, columns.map(c => c.name));
   const out: Meta = new Map();
@@ -29,7 +30,8 @@ export async function loadMeta(url: string, columns: { name: string; kind: strin
       values[i] = x;
       if (!cat && x === x) { if (x < min) min = x; if (x > max) max = x; }
     }
-    out.set(c.name, { name: c.name, kind: cat ? 'categorical' : 'continuous', levels: c.levels, values, min, max });
+    out.set(c.name, { name: c.name, kind: cat ? 'categorical' : 'continuous', levels: c.levels,
+      numeric: !!c.numeric, values, min, max });
   }
   return out;
 }
