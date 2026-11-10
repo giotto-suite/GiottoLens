@@ -366,13 +366,13 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_true(browser_wait(br,
         "Object.keys(window.__giottolens.store.getState().categoryStyles.leiden_clus ?? {}).length === 0"))
     expect_error(v$set_color_scale(), "is not continuous")
-    expect_identical(v$set_color_scale("score", preset = "viridis", reverse = TRUE), "score")
+    expect_identical(v$set_color_scale("score", preset = "magma", reverse = TRUE), "score")
     sc <- v$state()$config$colorScales$score
-    expect_identical(sc$preset, "viridis")
+    expect_identical(sc$preset, "magma")
     expect_true(sc$reverse)
     v$color_by("score")
     expect_true(browser_wait(br,
-        "document.querySelector('[data-panel=cells] .scale-preset')?.value === 'viridis'"))
+        "document.querySelector('[data-panel=cells] .scale-preset')?.value === 'magma'"))
     expect_true(browser_wait(br,
         "document.querySelector('[data-panel=cells] .cells-type')?.style.display === ''"))
     v$color_by("leiden_clus")

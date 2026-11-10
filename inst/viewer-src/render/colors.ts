@@ -20,9 +20,9 @@ export interface ColorScale {
 const h = (s: string): [number, number, number] =>
   [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
 export const SCALE_PRESETS: Record<string, [number, number, number][]> = {
-  'blue-red': [[0, 0, 255], [255, 0, 0]],
   viridis: ['#440154', '#482878', '#3e4989', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725'].map(h),
-  magma:   ['#000004', '#1c1044', '#4f127b', '#812581', '#b5367a', '#e55964', '#fb8761', '#fec287', '#fcfdbf'].map(h),
+  'blue-red': [[0, 0, 255], [255, 0, 0]],
+  magma:  ['#000004', '#1c1044', '#4f127b', '#812581', '#b5367a', '#e55964', '#fb8761', '#fec287', '#fcfdbf'].map(h),
   inferno: ['#000004', '#1f0c48', '#550f6d', '#88226a', '#ba3655', '#e35933', '#f98e09', '#f9cb35', '#fcffa4'].map(h),
   plasma:  ['#0d0887', '#46039f', '#7201a8', '#9c179e', '#bd3786', '#d8576b', '#ed7953', '#fb9f3a', '#fdca26', '#f0f921'].map(h),
   cividis: ['#00224e', '#123570', '#3b496c', '#575d6d', '#707173', '#8a8779', '#a69d75', '#c4b56c', '#e4cf5b', '#fee838'].map(h),
@@ -30,7 +30,7 @@ export const SCALE_PRESETS: Record<string, [number, number, number][]> = {
   gray:    [[48, 48, 48], [255, 255, 255]],
   'blue-white-red': ['#2166ac', '#67a9cf', '#d1e5f0', '#f7f7f7', '#fddbc7', '#ef8a62', '#b2182b'].map(h),
 };
-export const DEFAULT_SCALE = 'blue-red';
+export const DEFAULT_SCALE = 'viridis';
 export const MAX_SCALE_COLORS = 9;
 
 // The colors a scale draws with, low to high
