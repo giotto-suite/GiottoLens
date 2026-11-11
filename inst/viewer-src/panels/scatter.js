@@ -5,13 +5,14 @@ import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
 import { cellColorBuffer } from '../render/colors.ts';
+import { needColumns } from '../data/meta.ts';
 import { clientToWorld, worldToClient, fitZoom, dragPan, spaceHeld } from '../ui/dom.js';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
 import { Deck, OrthographicView, ScatterplotLayer } from 'deck.gl';
 
 export function createScatterPanel(body, ctx) {
   const source   = ctx.id === 'scatter' ? 'scatter' : `scatter:${ctx.id}`;
-  const cols     = [...state.meta.values()];
+  const cols     = [...state.metaInfo.values()];
   const numeric  = cols.filter(c => c.kind === 'continuous').map(c => c.name);
   const dims     = numeric.filter(c => /umap|tsne|pca/i.test(c));
   const xDef     = dims.find(c => /1$|_x$/i.test(c)) ?? dims[0] ?? numeric[0];
@@ -20,6 +21,7 @@ export function createScatterPanel(body, ctx) {
 
   let deck = null, pos = null, colors = null, selPos = null, homeVS = null, mode = 'pan';
   let pointData = null, selData = null;   // kept so deck.gl reuses its buffers
+  let destroyed = false;
   const listeners = new AbortController();
   const unsub = [];
 
@@ -44,8 +46,12 @@ export function createScatterPanel(body, ctx) {
 
   function recolor() {
     const name = ctrls.color.value;
+    if (name && !state.meta.has(name)) {
+      needColumns([name]).then(() => { if (deck && ctrls.color.value === name && state.meta.has(name)) recolor(); });
+      return;
+    }
     colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null,
-      store.getState().colorScales[name]).colors : state.cellColors;
+      store.getState().categoryStyles[name], store.getState().colorScales[name]).colors : state.cellColors;
     pointData = null;
     render();
   }
@@ -80,8 +86,15 @@ export function createScatterPanel(body, ctx) {
   }
 
   function load() {
-    const cx = state.meta.get(ctrls.x.value)?.values, cy = state.meta.get(ctrls.y.value)?.values;
-    if (!cx || !cy) return;
+    const xn = ctrls.x.value, yn = ctrls.y.value;
+    const cx = state.meta.get(xn)?.values, cy = state.meta.get(yn)?.values;
+    if (!cx || !cy) {
+      if (state.metaInfo.has(xn) && state.metaInfo.has(yn))
+        needColumns([xn, yn]).then(() => {
+          if (!destroyed && ctrls.x.value === xn && ctrls.y.value === yn && state.meta.has(xn) && state.meta.has(yn)) load();
+        });
+      return;
+    }
     const n = state.cells.n;
     pos = new Float32Array(n * 2);
     pointData = null;
@@ -165,15 +178,20 @@ export function createScatterPanel(body, ctx) {
   const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor);
   unsub.push(store.subscribe(s => s.selection.version, sel.update));
   unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));
-  unsub.push(store.subscribe(s => s.colorScales, () => { if (ctrls.color.value) col.update(); }));
+  unsub.push(store.subscribe(s => [s.categoryStyles, s.colorScales], () => { if (ctrls.color.value) col.update(); },
+    { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] }));
   load();
 
   return {
     show() { col.show(); sel.show(); },
     destroy() {
+      destroyed = true;
       unsub.forEach(u => u());
       listeners.abort();
+      const gl = deck?.device?.gl;
       deck?.finalize(); deck = null;
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+      canvas?.remove(); canvas = null;
     },
   };
 }

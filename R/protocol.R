@@ -1,7 +1,7 @@
 # ── Viewer → R messages ──────────────────────────────────────────────────────
 
 # Bump with PROTOCOL in inst/viewer-src/core/comms.js
-.lens_protocol <- 3L
+.lens_protocol <- 4L
 
 # Message types the viewer sends; anything else arriving on the socket is
 # dropped. `on()` callbacks can be registered for the first two.

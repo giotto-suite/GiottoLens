@@ -50,6 +50,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_layer}{\code{LensViewer$set_layer()}}
     \item \href{#method-LensViewer-set_mark}{\code{LensViewer$set_mark()}}
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
+    \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
+    \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
     \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
@@ -191,7 +193,8 @@ per distinct value, at most 1000) or as a continuous scale.
 Integer and double columns are continuous by default. The
 viewer's "treat as" menu in the cells panel sets the same. Rules
 on the column are dropped, and the metadata is sent again.
-The setting is kept for later \code{push_metadata()} calls.
+The setting is kept for later \code{push_metadata()} calls, unless
+one sets the column's type through \code{cols}.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_column_type(column, type = c("categorical", "continuous"))}
@@ -392,7 +395,7 @@ minimum to its maximum. The viewer's legend sets the same values.
     \describe{
       \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
 colored by}
-      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
+      \item{\code{preset}}{One of \code{"viridis"} (the default), \code{"blue-red"},
 \code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
 \code{"gray"}, \code{"blue-white-red"}}
       \item{\code{colors}}{2 to 9 colors (names or hex strings), low to high;
@@ -404,6 +407,74 @@ sets a custom scale}
   }
   \subsection{Returns}{
     The column styled, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-style_categories"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-style_categories}{}}}
+\subsection{\code{LensViewer$style_categories()}}{
+  Set the color, visibility and fill opacity of the
+categories of a categorical metadata column. The viewer's legend
+sets the same values. A category that is off is drawn like an
+uncolored cell. Each argument is a vector named by category;
+for \code{show} and \code{alpha} one unnamed value applies to every
+category and named values override it, so
+\code{alpha = c(0.2, Myeloid = 1)} draws Myeloid cells opaque and the
+others at 20\%. Centroids draw at twice the fill opacity, capped
+at 1; the cells layer opacity (\code{set_layer("poly", alpha = )})
+applies on top.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$style_categories(
+  column = NULL,
+  colors = NULL,
+  show = NULL,
+  alpha = NULL,
+  reset = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{column}}{Categorical column; \code{NULL} for the column cells are
+colored by}
+      \item{\code{colors}}{Named colors (names or hex strings)}
+      \item{\code{show}}{Named logicals: color on or off}
+      \item{\code{alpha}}{Named fill opacities in [0, 1]}
+      \item{\code{reset}}{\code{TRUE} to return the column to its default colors
+and opacity first}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The column styled, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_outline"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_outline}{}}}
+\subsection{\code{LensViewer$set_outline()}}{
+  Set the color, width and opacity of cell outlines;
+\code{NULL} arguments leave a setting as is. Selected cells draw in the
+selection color, 1 px wider. Outlines show once zoomed in far
+enough to draw polygons. The "outlines" section of the cells panel
+sets the same values.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_outline(color = NULL, width = NULL, alpha = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
+      \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
+      \item{\code{alpha}}{Opacity, in [0, 1]}
+    }
+    \if{html}{\out{</div>}}
   }
 }
 

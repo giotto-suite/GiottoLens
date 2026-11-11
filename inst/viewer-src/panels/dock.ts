@@ -146,7 +146,7 @@ class PanelView implements IContentRenderer {
         const h: PanelHandle = await createSpecPanel(this.element, p, this.ctx());
         if (my !== this.gen) { h.destroy(); return; }
         this.handle = h;
-      } else if (typeOf(this.kind)!.meta && !state.meta?.size) {
+      } else if (typeOf(this.kind)!.meta && !state.metaInfo?.size) {
         this.element.append(el('div', 'panel-note', 'Push metadata from R to fill this panel: viewer$push_metadata(g)'));
       } else {
         this.handle = typeOf(this.kind)!.create(this.element, this.ctx());

@@ -313,8 +313,18 @@ LensViewer <- R6::R6Class("LensViewer",
             } else {
                 as.data.frame(x)
             }
-            private$meta_raw <- meta
-            msg <- private$publish_meta()
+            # A type given here replaces one kept from set_column_type()
+            if (inherits(x, "giotto")) {
+                casts <- .parse_col_types(cols)
+                given <- gsub("[^A-Za-z0-9_]", "_", names(casts)[!is.na(casts)])
+                private$col_types[given] <- NULL
+            }
+            out <- .write_metadata(meta, file.path(private$session, "metadata"),
+                private$cell_ids, types = unlist(private$col_types))
+            rm(meta)
+            private$col_types[out$dropped] <- NULL
+            private$meta_values <- out$values
+            msg <- private$publish_meta(out)
             message("[LensViewer] metadata: ", length(msg$columns), " column(s): ",
                 paste(vapply(msg$columns, `[[`, "", "name"), collapse = ", "),
                 if (!self$connected()) " (sent when the viewer connects)")
@@ -326,26 +336,31 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   Integer and double columns are continuous by default. The
         #'   viewer's "treat as" menu in the cells panel sets the same. Rules
         #'   on the column are dropped, and the metadata is sent again.
-        #'   The setting is kept for later `push_metadata()` calls.
+        #'   The setting is kept for later `push_metadata()` calls, unless
+        #'   one sets the column's type through `cols`.
         #' @param column Column name, as pushed
         #' @param type `"categorical"` or `"continuous"`
         set_column_type = function(column, type = c("categorical", "continuous")) {
             type <- match.arg(type)
-            if (is.null(private$meta_raw))
+            if (is.null(private$cached_meta))
                 stop("[LensViewer] no metadata pushed yet", call. = FALSE)
             if (!is.character(column) || length(column) != 1L)
                 stop("[LensViewer] `column` must be one column name", call. = FALSE)
-            raw <- private$meta_raw
-            names(raw) <- make.unique(gsub("[^A-Za-z0-9_]", "_", names(raw)), sep = "_")
-            if (!column %in% setdiff(names(raw), "cell_ID"))
+            entry <- private$meta_entry(column)
+            if (is.null(entry))
                 stop("[LensViewer] no metadata column '", column, "'", call. = FALSE)
-            if (!is.numeric(raw[[column]]))
+            if (!isTRUE(entry$numeric))
                 stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
                     "change type", call. = FALSE)
-            old <- private$col_types
+            if (entry$kind != type) {
+                re <- .retype_meta(private$meta_dir(), entry, type,
+                    private$meta_values[[column]])
+                private$meta_values[column] <- list(re$values)
+                msg <- private$cached_meta
+                msg$columns[[match(column, private$meta_names())]] <- re$entry
+                private$publish_meta(list(msg = msg), drop_rules_on = column)
+            }
             private$col_types[[column]] <- type
-            msg <- tryCatch(private$publish_meta(drop_rules_on = column),
-                error = function(e) { private$col_types <- old; stop(e) })
             invisible(self)
         },
 
@@ -458,7 +473,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `NULL` arguments leave a setting as is.
         #' @param column Continuous column; `NULL` for the column cells are
         #'   colored by
-        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
+        #' @param preset One of `"viridis"` (the default), `"blue-red"`,
         #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
         #'   `"gray"`, `"blue-white-red"`
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
@@ -485,6 +500,97 @@ LensViewer <- R6::R6Class("LensViewer",
                 preset = preset, colors = colors, reverse = reverse,
                 reset = isTRUE(reset)))
             invisible(r$column)
+        },
+
+        #' @description Set the color, visibility and fill opacity of the
+        #'   categories of a categorical metadata column. The viewer's legend
+        #'   sets the same values. A category that is off is drawn like an
+        #'   uncolored cell. Each argument is a vector named by category;
+        #'   for `show` and `alpha` one unnamed value applies to every
+        #'   category and named values override it, so
+        #'   `alpha = c(0.2, Myeloid = 1)` draws Myeloid cells opaque and the
+        #'   others at 20%. Centroids draw at twice the fill opacity, capped
+        #'   at 1; the cells layer opacity (`set_layer("poly", alpha = )`)
+        #'   applies on top.
+        #' @param column Categorical column; `NULL` for the column cells are
+        #'   colored by
+        #' @param colors Named colors (names or hex strings)
+        #' @param show Named logicals: color on or off
+        #' @param alpha Named fill opacities in \[0, 1\]
+        #' @param reset `TRUE` to return the column to its default colors
+        #'   and opacity first
+        #' @returns The column styled, invisibly
+        style_categories = function(column = NULL, colors = NULL, show = NULL,
+                                    alpha = NULL, reset = FALSE) {
+            if (!is.null(column) && (!is.character(column) || length(column) != 1L))
+                stop("[LensViewer] `column` must be one column name", call. = FALSE)
+            split_all <- function(x, arg) {
+                if (is.null(x)) return(list(all = NULL, named = NULL))
+                nm <- names(x)
+                if (is.null(nm)) nm <- rep("", length(x))
+                if (sum(nm == "") > 1L)
+                    stop("[LensViewer] `", arg, "` takes at most one unnamed value",
+                        call. = FALSE)
+                list(all = if (any(nm == "")) x[[which(nm == "")]],
+                     named = x[nm != ""])
+            }
+            if (!is.null(show) && (!is.logical(show) || anyNA(show)))
+                stop("[LensViewer] `show` must be TRUE/FALSE values", call. = FALSE)
+            if (!is.null(alpha) && (!is.numeric(alpha) || anyNA(alpha) ||
+                    any(alpha < 0 | alpha > 1)))
+                stop("[LensViewer] `alpha` values must be in [0, 1]", call. = FALSE)
+            if (!is.null(colors) && (!is.character(colors) || is.null(names(colors)) ||
+                    any(names(colors) == "")))
+                stop("[LensViewer] `colors` must be a character vector named by category",
+                    call. = FALSE)
+            sh <- split_all(show, "show")
+            al <- split_all(alpha, "alpha")
+            styles <- list()
+            add <- function(labels, field, values) {
+                for (k in seq_along(labels))
+                    styles[[labels[[k]]]][[field]] <<- values[[k]]
+            }
+            if (length(colors)) add(names(colors), "color",
+                lapply(colors, function(cl) as.list(as.integer(grDevices::col2rgb(cl)[, 1L]))))
+            if (length(sh$named)) add(names(sh$named), "show", as.list(unname(sh$named)))
+            if (length(al$named)) add(names(al$named), "alpha", as.list(as.numeric(al$named)))
+            all <- list()
+            if (!is.null(sh$all)) all$show <- sh$all
+            if (!is.null(al$all)) all$alpha <- as.numeric(al$all)
+            r <- private$request("set_category_style", list(
+                column = column,
+                all = if (length(all)) all,
+                styles = if (length(styles)) styles else structure(list(), names = character()),
+                reset = isTRUE(reset)))
+            invisible(r$column)
+        },
+
+        #' @description Set the color, width and opacity of cell outlines;
+        #'   `NULL` arguments leave a setting as is. Selected cells draw in the
+        #'   selection color, 1 px wider. Outlines show once zoomed in far
+        #'   enough to draw polygons. The "outlines" section of the cells panel
+        #'   sets the same values.
+        #' @param color Colour, as a name or hex string (`"#3d7dff"`)
+        #' @param width Width in screen pixels, in \[0.01, 20\]
+        #' @param alpha Opacity, in \[0, 1\]
+        set_outline = function(color = NULL, width = NULL, alpha = NULL) {
+            if (!is.null(color)) {
+                if (!is.character(color) || length(color) != 1L)
+                    stop("[LensViewer] `color` must be one color name or hex string",
+                        call. = FALSE)
+                color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            }
+            if (!is.null(width) && (!is.numeric(width) || length(width) != 1L ||
+                    is.na(width) || width < 0.01 || width > 20))
+                stop("[LensViewer] `width` must be one number in [0.01, 20]", call. = FALSE)
+            if (!is.null(alpha) && (!is.numeric(alpha) || length(alpha) != 1L ||
+                    is.na(alpha) || alpha < 0 || alpha > 1))
+                stop("[LensViewer] `alpha` must be one number in [0, 1]", call. = FALSE)
+            private$request("set_outline", list(
+                color = if (!is.null(color)) as.list(color),
+                width = if (!is.null(width)) as.numeric(width),
+                alpha = if (!is.null(alpha)) as.numeric(alpha)))
+            invisible(self)
         },
 
         #' @description Show or hide an image, or set its colour or contrast;
@@ -633,7 +739,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 combine = private$combine,
                 rules = vapply(private$rule_set, function(r) r$kind %||% "", ""),
                 selected = length(self$selection),
-                metadata = names(private$meta_table)
+                metadata = private$meta_names()
             )
             if (n && !is.null(st$view$bounds)) {
                 b   <- unlist(st$view$bounds)
@@ -641,10 +747,10 @@ LensViewer <- R6::R6Class("LensViewer",
                 out$in_view <- sum(ctx$x >= b[1L] & ctx$x <= b[2L] & ctx$y >= b[3L] & ctx$y <= b[4L])
             }
             if (!is.null(by)) {
-                v <- private$meta_table[[by]]
+                v <- private$meta_column(by)
                 if (is.null(v))
                     stop("[LensViewer] no metadata column '", by, "'; pushed: ",
-                        paste(names(private$meta_table), collapse = ", "), call. = FALSE)
+                        paste(private$meta_names(), collapse = ", "), call. = FALSE)
                 v <- v[match(self$selection, private$cell_ids)]
                 out$by <- by
                 out$breakdown <- if (is.numeric(v) && !is.factor(v)) summary(v)
@@ -922,17 +1028,29 @@ LensViewer <- R6::R6Class("LensViewer",
         server      = NULL,
         conns       = NULL,
         cbs         = list(),
-        cached_meta = NULL,
-        meta_table  = NULL,
-        meta_raw    = NULL,
+        cached_meta = NULL,     # the load_metadata payload: columns, types, levels, files
+        meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
 
-        # Write private$meta_raw with the column types and send it to every
-        # tab; `drop_rules_on` drops rules on that column first
-        publish_meta = function(drop_rules_on = NULL) {
-            types <- unlist(private$col_types)
-            out <- .write_metadata(private$meta_raw, file.path(private$session, "metadata"),
-                private$cell_ids, types = types)
+        meta_entry = function(name) {
+            for (cl in private$cached_meta$columns) if (identical(cl$name, name)) return(cl)
+            NULL
+        },
+        meta_names = function() vapply(private$cached_meta$columns, `[[`, "", "name"),
+        # One column in cell order, read from the table; NULL if there is none
+        meta_column = function(name) {
+            entry <- private$meta_entry(name)
+            if (is.null(entry)) return(NULL)
+            .read_meta_column(private$meta_dir(), entry)
+        },
+
+        # The column files (one per column: the only copy of the metadata)
+        meta_dir = function() file.path(private$session, "metadata"),
+        # Adopt a payload (from .write_metadata(), or with a column rewritten
+        # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
+        # rules on that column first. Files neither it nor the previous
+        # payload points to are deleted.
+        publish_meta = function(out, drop_rules_on = NULL) {
             if (!is.null(drop_rules_on) && length(private$rule_set)) {
                 on_col <- vapply(private$rule_set, function(r)
                     identical(r$space, drop_rules_on), logical(1L))
@@ -943,7 +1061,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     private$rule_set <- private$rule_set[!on_col]
                 }
             }
-            private$meta_table  <- out$table
+            urls <- function(msg) vapply(msg$columns, `[[`, "", "url")
+            .prune_meta_files(private$meta_dir(), c(urls(out$msg), urls(private$cached_meta)))
             private$cached_meta <- out$msg
             if (self$connected())
                 private$broadcast(.encode_ws_message("load_metadata", out$msg))
@@ -969,7 +1088,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 # As float32, exactly what the browser tests against
                 private$cells_xy <- list(x = as.numeric(cells$x), y = as.numeric(cells$y))
             }
-            c(private$cells_xy, list(meta = private$meta_table))
+            c(private$cells_xy, list(meta = if (!is.null(private$cached_meta)) private$meta_column))
         },
 
         # Send a request to the first tab and wait for its reply

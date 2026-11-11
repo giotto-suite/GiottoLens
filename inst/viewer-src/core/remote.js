@@ -31,7 +31,7 @@ export function initRemote() {
     view: state.currentViewState && viewInfo(state.currentViewState),
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,
-    metadata: state.meta ? [...state.meta.keys()] : [],
+    metadata: state.metaInfo ? [...state.metaInfo.keys()] : [],
   }));
 
   onMessage('set_rule', ({ source, rule, replace, combine, seq }) => {
@@ -59,7 +59,7 @@ export function initRemote() {
   });
 
   onMessage('set_color_by', ({ column }) => {
-    if (column != null && !state.meta?.has(column)) throw new Error(`no metadata column '${column}'`);
+    if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
     actions.setColorBy(column ?? null);
   });
 
@@ -68,10 +68,41 @@ export function initRemote() {
     actions.setLayer(name, { ...(show != null && { show }), ...(alpha != null && { alpha }) });
   });
 
+  onMessage('set_category_style', ({ column, all, styles, reset }) => {
+    const name = column ?? store.getState().colorBy;
+    if (name == null) throw new Error('no column given and cells are not colored by one');
+    const col = state.metaInfo?.get(name);   // kind and levels: no need to load it
+    if (!col) throw new Error(`no metadata column '${name}'`);
+    if (col.kind !== 'categorical') throw new Error(`'${name}' is not categorical`);
+    const levels = col.levels ?? [];
+    const check = (st, where) => {
+      if (st.color != null && !(Array.isArray(st.color) && st.color.length === 3 &&
+          st.color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+        throw new Error(`${where}: color must be three integers 0-255`);
+      if (st.alpha != null && !(typeof st.alpha === 'number' && st.alpha >= 0 && st.alpha <= 1))
+        throw new Error(`${where}: alpha must be a number in [0, 1]`);
+      if (st.show != null && typeof st.show !== 'boolean')
+        throw new Error(`${where}: show must be TRUE or FALSE`);
+      const out = {};
+      if (st.color != null) out.color = st.color;
+      if (st.alpha != null) out.alpha = st.alpha;
+      if (st.show != null) out.show = st.show;
+      return out;
+    };
+    const unknown = Object.keys(styles ?? {}).filter(l => !levels.includes(l));
+    if (unknown.length) throw new Error(`not categories of '${name}': ${unknown.join(', ')}`);
+    if (reset) actions.resetCategoryStyles(name);
+    const patch = {};
+    if (all) { const a = check(all, 'all'); for (const l of levels) patch[l] = { ...a }; }
+    for (const [l, st] of Object.entries(styles ?? {})) patch[l] = { ...(patch[l] ?? {}), ...check(st, l) };
+    if (Object.keys(patch).length) actions.setCategoryStyles(name, patch);
+    return { column: name };
+  });
+
   onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
     const name = column ?? store.getState().colorBy;
     if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.meta?.get(name);
+    const col = state.metaInfo?.get(name);
     if (!col) throw new Error(`no metadata column '${name}'`);
     if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
     if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))
@@ -89,6 +120,18 @@ export function initRemote() {
       throw new Error("preset 'custom' needs colors");
     if (Object.keys(patch).length) actions.setColorScale(name, patch);
     return { column: name };
+  });
+
+  onMessage('set_outline', ({ color, width, alpha }) => {
+    if (color != null && !(Array.isArray(color) && color.length === 3 &&
+        color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+      throw new Error('color must be three integers 0-255');
+    if (width != null && !(typeof width === 'number' && width >= 0.01 && width <= 20))
+      throw new Error('width must be a number in [0.01, 20]');
+    if (alpha != null && !(typeof alpha === 'number' && alpha >= 0 && alpha <= 1))
+      throw new Error('alpha must be a number in [0, 1]');
+    actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
+      ...(alpha != null && { alpha }) });
   });
 
   onMessage('set_mark', ({ mark, reset }) => {

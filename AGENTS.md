@@ -143,6 +143,14 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `R/rules.R` and `selection/rules.ts` implement the same evaluation; change both together
   (the e2e tests compare them). `lens_cells()` is R-only and resolves to an `ids` rule.
 - Metadata is written in cell order; categorical columns as 0-based codes (-1 = NA) with levels.
+  One parquet file per column (`session/metadata/<column>-<md5>.parquet`, column `value`),
+  named by content; the payload gives each column its `url`. The files are the only copy: R
+  keeps the payload (`cached_meta`) and reads columns through `private$meta_column()`; never
+  hold the pushed data.frame. Files of the current and the previous payload are kept.
+- In the browser `state.metaInfo` lists every column and `state.meta` holds the loaded ones.
+  Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
+  `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
+  `state.metaInfo`. Rules wait for their columns before evaluating (`recompute()`).
 
 ### Data model (adr/0003)
 
@@ -166,7 +174,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 3)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 4)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.

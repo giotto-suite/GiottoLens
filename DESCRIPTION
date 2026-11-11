@@ -21,6 +21,7 @@ Imports:
     methods,
     R6,
     stats,
+    tools,
     utils
 Suggests:
     chromote,

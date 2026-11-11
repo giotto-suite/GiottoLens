@@ -9,6 +9,7 @@
 // scrubbed; a rule changed elsewhere redraws the chart to match. A drag of
 // the brush is live (adr/0013): the rule is set on release.
 import { state } from '../core/state.js';
+import { needColumns } from '../data/meta.ts';
 import { store, actions } from '../core/store.ts';
 import { maskExcept, setRangeRule } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
@@ -22,7 +23,7 @@ let _embed = null;   // vega-embed, loaded on first use (keeps it out of first p
 const loadEmbed = () => (_embed ??= import('vega-embed').then(m => m.default));
 
 export function createHistogramPanel(body, ctx) {
-  const cols = [...state.meta.values()];
+  const cols = [...state.metaInfo.values()];
   const def  = cols.find(c => c.kind === 'continuous' && !/umap|tsne|pca/i.test(c.name)) ?? cols[0];
   const ctrls = buildControlBar(body, [
     { key: 'col', label: 'column', options: cols.map(c => c.name), value: def?.name },
@@ -140,9 +141,13 @@ export function createHistogramPanel(body, ctx) {
     view?.finalize(); view = null;
     col = ctrls.col.value;
     source = `hist:${col}`;
+    ctx.setTitle(col);
+    if (!state.meta.has(col)) {
+      await needColumns([col]);
+      if (my !== gen) return;
+    }
     const c = state.meta.get(col);
     if (!c) return;
-    ctx.setTitle(col);
     const embed = await loadEmbed();
     if (my !== gen) return;
     own = ruleOf();

@@ -117,8 +117,23 @@ export async function readColumns(file: AsyncBuffer | ArrayBuffer, columns: stri
   const out: Record<string, ArrayLike<any>> = {};
   for (const c of cols) {
     const parts = chunks[c].sort((a, b) => a.start - b.start);
-    out[c] = parts.length === 1 ? parts[0].data : parts.flatMap(p => Array.from(p.data));
+    out[c] = parts.length === 1 ? parts[0].data : concatChunks(parts.map(p => p.data));
   }
+  return out;
+}
+
+// Row groups of one column joined: typed arrays of one kind into one typed
+// array (Array.from would box every value), anything else into a plain array
+function concatChunks(chunks: ArrayLike<any>[]): ArrayLike<any> {
+  const C = (chunks[0] as any)?.constructor;
+  if (ArrayBuffer.isView(chunks[0]) && chunks.every(c => c.constructor === C)) {
+    const out = new C(chunks.reduce((s, c) => s + c.length, 0));
+    let k = 0;
+    for (const c of chunks) { out.set(c, k); k += c.length; }
+    return out;
+  }
+  const out: any[] = [];
+  for (const c of chunks) for (let i = 0; i < c.length; i++) out.push(c[i]);
   return out;
 }
 
