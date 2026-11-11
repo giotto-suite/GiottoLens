@@ -247,10 +247,12 @@ prep_meta <- function(
     }
 }
 
-# Older tables go once the new one is written
+# Once the new table is written, older ones go but the two latest: a tab may
+# still be reading one
 .prune_meta_files <- function(dir, keep) {
     old <- list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE)
-    unlink(old[basename(old) != basename(keep)])
+    old <- sort(old[basename(old) != basename(keep)], decreasing = TRUE)
+    unlink(utils::tail(old, -2L))
 }
 
 .category_codes <- function(f) {

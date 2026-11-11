@@ -45,7 +45,7 @@ export function createScatterPanel(body, ctx) {
   function recolor() {
     const name = ctrls.color.value;
     colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null,
-      store.getState().colorScales[name]).colors : state.cellColors;
+      store.getState().categoryStyles[name], store.getState().colorScales[name]).colors : state.cellColors;
     pointData = null;
     render();
   }
@@ -165,7 +165,8 @@ export function createScatterPanel(body, ctx) {
   const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor);
   unsub.push(store.subscribe(s => s.selection.version, sel.update));
   unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));
-  unsub.push(store.subscribe(s => s.colorScales, () => { if (ctrls.color.value) col.update(); }));
+  unsub.push(store.subscribe(s => [s.categoryStyles, s.colorScales], () => { if (ctrls.color.value) col.update(); },
+    { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] }));
   load();
 
   return {
@@ -173,7 +174,10 @@ export function createScatterPanel(body, ctx) {
     destroy() {
       unsub.forEach(u => u());
       listeners.abort();
+      const gl = deck?.device?.gl;
       deck?.finalize(); deck = null;
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+      canvas?.remove(); canvas = null;
     },
   };
 }

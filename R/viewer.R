@@ -473,7 +473,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `NULL` arguments leave a setting as is.
         #' @param column Continuous column; `NULL` for the column cells are
         #'   colored by
-        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
+        #' @param preset One of `"viridis"` (the default), `"blue-red"`,
         #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
         #'   `"gray"`, `"blue-white-red"`
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
@@ -500,6 +500,97 @@ LensViewer <- R6::R6Class("LensViewer",
                 preset = preset, colors = colors, reverse = reverse,
                 reset = isTRUE(reset)))
             invisible(r$column)
+        },
+
+        #' @description Set the color, visibility and fill opacity of the
+        #'   categories of a categorical metadata column. The viewer's legend
+        #'   sets the same values. A category that is off is drawn like an
+        #'   uncolored cell. Each argument is a vector named by category;
+        #'   for `show` and `alpha` one unnamed value applies to every
+        #'   category and named values override it, so
+        #'   `alpha = c(0.2, Myeloid = 1)` draws Myeloid cells opaque and the
+        #'   others at 20%. Centroids draw at twice the fill opacity, capped
+        #'   at 1; the cells layer opacity (`set_layer("poly", alpha = )`)
+        #'   applies on top.
+        #' @param column Categorical column; `NULL` for the column cells are
+        #'   colored by
+        #' @param colors Named colors (names or hex strings)
+        #' @param show Named logicals: color on or off
+        #' @param alpha Named fill opacities in \[0, 1\]
+        #' @param reset `TRUE` to return the column to its default colors
+        #'   and opacity first
+        #' @returns The column styled, invisibly
+        style_categories = function(column = NULL, colors = NULL, show = NULL,
+                                    alpha = NULL, reset = FALSE) {
+            if (!is.null(column) && (!is.character(column) || length(column) != 1L))
+                stop("[LensViewer] `column` must be one column name", call. = FALSE)
+            split_all <- function(x, arg) {
+                if (is.null(x)) return(list(all = NULL, named = NULL))
+                nm <- names(x)
+                if (is.null(nm)) nm <- rep("", length(x))
+                if (sum(nm == "") > 1L)
+                    stop("[LensViewer] `", arg, "` takes at most one unnamed value",
+                        call. = FALSE)
+                list(all = if (any(nm == "")) x[[which(nm == "")]],
+                     named = x[nm != ""])
+            }
+            if (!is.null(show) && (!is.logical(show) || anyNA(show)))
+                stop("[LensViewer] `show` must be TRUE/FALSE values", call. = FALSE)
+            if (!is.null(alpha) && (!is.numeric(alpha) || anyNA(alpha) ||
+                    any(alpha < 0 | alpha > 1)))
+                stop("[LensViewer] `alpha` values must be in [0, 1]", call. = FALSE)
+            if (!is.null(colors) && (!is.character(colors) || is.null(names(colors)) ||
+                    any(names(colors) == "")))
+                stop("[LensViewer] `colors` must be a character vector named by category",
+                    call. = FALSE)
+            sh <- split_all(show, "show")
+            al <- split_all(alpha, "alpha")
+            styles <- list()
+            add <- function(labels, field, values) {
+                for (k in seq_along(labels))
+                    styles[[labels[[k]]]][[field]] <<- values[[k]]
+            }
+            if (length(colors)) add(names(colors), "color",
+                lapply(colors, function(cl) as.list(as.integer(grDevices::col2rgb(cl)[, 1L]))))
+            if (length(sh$named)) add(names(sh$named), "show", as.list(unname(sh$named)))
+            if (length(al$named)) add(names(al$named), "alpha", as.list(as.numeric(al$named)))
+            all <- list()
+            if (!is.null(sh$all)) all$show <- sh$all
+            if (!is.null(al$all)) all$alpha <- as.numeric(al$all)
+            r <- private$request("set_category_style", list(
+                column = column,
+                all = if (length(all)) all,
+                styles = if (length(styles)) styles else structure(list(), names = character()),
+                reset = isTRUE(reset)))
+            invisible(r$column)
+        },
+
+        #' @description Set the color, width and opacity of cell outlines;
+        #'   `NULL` arguments leave a setting as is. Selected cells draw in the
+        #'   selection color, 1 px wider. Outlines show once zoomed in far
+        #'   enough to draw polygons. The "outlines" section of the cells panel
+        #'   sets the same values.
+        #' @param color Colour, as a name or hex string (`"#3d7dff"`)
+        #' @param width Width in screen pixels, in \[0.01, 20\]
+        #' @param alpha Opacity, in \[0, 1\]
+        set_outline = function(color = NULL, width = NULL, alpha = NULL) {
+            if (!is.null(color)) {
+                if (!is.character(color) || length(color) != 1L)
+                    stop("[LensViewer] `color` must be one color name or hex string",
+                        call. = FALSE)
+                color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            }
+            if (!is.null(width) && (!is.numeric(width) || length(width) != 1L ||
+                    is.na(width) || width < 0.01 || width > 20))
+                stop("[LensViewer] `width` must be one number in [0.01, 20]", call. = FALSE)
+            if (!is.null(alpha) && (!is.numeric(alpha) || length(alpha) != 1L ||
+                    is.na(alpha) || alpha < 0 || alpha > 1))
+                stop("[LensViewer] `alpha` must be one number in [0, 1]", call. = FALSE)
+            private$request("set_outline", list(
+                color = if (!is.null(color)) as.list(color),
+                width = if (!is.null(width)) as.numeric(width),
+                alpha = if (!is.null(alpha)) as.numeric(alpha)))
+            invisible(self)
         },
 
         #' @description Show or hide an image, or set its colour or contrast;
