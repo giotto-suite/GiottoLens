@@ -15,6 +15,7 @@ export const state = {
   metaInfo: null,           // Map column → MetaInfo: every column pushed
   meta: null,               // Map column → MetaColumn: the columns loaded so far
   cellColors: null,         // Uint8Array RGBA per cell for the colour-by column
+  cellFill: null,           // Uint8Array polygon fill alpha per cell
   colorLegend: null,
   selPositions: null,       // Float32Array of selected cell centroids
 
