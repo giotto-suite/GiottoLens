@@ -173,7 +173,8 @@ prep_meta <- function(
     }
 
     # A fresh file name per push, so a browser never reads a cached older table
-    unlink(list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE))
+    old <- list.files(dir, pattern = "^cell_meta.*\\.parquet$", full.names = TRUE)
+    unlink(utils::tail(sort(old, decreasing = TRUE), -2L))
     fname <- sprintf("cell_meta_%.0f.parquet", as.numeric(Sys.time()) * 1000)
     arrow::write_parquet(as.data.frame(arrays, optional = TRUE), file.path(dir, fname))
     list(

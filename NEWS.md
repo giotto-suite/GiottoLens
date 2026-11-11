@@ -12,6 +12,8 @@
   `viewer$set_color_scale(column =, preset =, colors =, reverse =, reset =)` sets the same
   from R. Scales are kept per column and are part of the saved config
   (`state()$config$colorScales`).
+* The scatter panel releases its WebGL context when it is rebuilt.
+* `push_metadata()` keeps the two latest earlier metadata tables and deletes older ones.
 * The side panel is gone: its sections dock as panels in a column beside the charts (cells,
   transcripts, images, register, annotations and layers, the old opacity section). They can be
   moved, tabbed, closed and added back from the `+` menu, and `push_panel(ref = "cells")`
