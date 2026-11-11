@@ -10,6 +10,7 @@ launch_lens_analysis(
   cell_markers = NULL,
   settings = NULL,
   threads = 4L,
+  analyses = character(),
   spat_unit = "cell",
   feat_type = "rna",
   open = TRUE,
@@ -38,6 +39,9 @@ its saved settings are listed in the viewer, ready to restore.}
 
 \item{threads}{Threads for UMAP and data.table in the background session.}
 
+\item{analyses}{Ids of the analyses to include besides Preprocessing; see
+\link{LensAnalysis} \verb{$catalog()}.}
+
 \item{spat_unit, feat_type}{Spatial unit and feature type to analyze.}
 
 \item{open}{Open the viewer, see \code{\link[=launch_lens]{launch_lens()}}.}
@@ -46,7 +50,8 @@ its saved settings are listed in the viewer, ready to restore.}
 }
 \value{
 The \link{LensViewer}. Its \code{analysis} field is a \link{LensAnalysis} with
-\code{params()}, \code{set()}, \code{labels()}, \code{cell_markers()}, \code{save_settings()},
+\code{params()}, \code{set()}, \code{run()}, \code{add()}, \code{remove()}, \code{history()},
+\code{restore_run()}, \code{labels()}, \code{cell_markers()}, \code{save_settings()},
 \code{restore_settings()}, \code{code()}, \code{gobject()} and \code{wait()}.
 }
 \description{
@@ -67,6 +72,22 @@ pushed as cell metadata; QC histograms, the HVF plot and the PCA elbow plot
 are docked as panels.
 }
 \details{
+Further analyses are added from the Add analysis dialog, which shows each
+analysis's description, inputs, outputs and steps, or with \code{analyses} and
+\link{LensAnalysis} \verb{$add()}; a menu switches between the included analyses.
+For example, Spatial interactions links each cell to its neighbors
+(\code{\link[Giotto:createSpatialNetwork]{Giotto::createSpatialNetwork()}}, kNN with k = 20 by default) and tests
+which pairs of cell types are neighbors more or less often than in random
+relabelings (\code{\link[Giotto:cellProximityEnrichment]{Giotto::cellProximityEnrichment()}}). Cell types come from a
+categorical cell metadata column of \code{x} or of the Preprocessing tab, and
+expression from the Preprocessing tab or \code{x}. The steps of added analyses
+run only when asked: the Run button of a step runs it and the stale steps
+above it, Run all runs every stale step of the analysis, and \verb{$run()} does
+the same from R. A change marks the step and those below it stale and drops
+their pending runs. Each finished run of an analysis is kept for the session
+and listed under History, which brings back its parameters and results.
+Clicking a gene in a result table colors the cells by its expression.
+
 The steps run in a background R session that holds a copy of \code{x}, so the
 viewer stays responsive; a change made while a step runs cancels that step
 when its result would be stale. Stores the steps create are written to a

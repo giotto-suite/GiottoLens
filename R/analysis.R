@@ -18,6 +18,22 @@
 #' pushed as cell metadata; QC histograms, the HVF plot and the PCA elbow plot
 #' are docked as panels.
 #'
+#' Further analyses are added from the Add analysis dialog, which shows each
+#' analysis's description, inputs, outputs and steps, or with `analyses` and
+#' [LensAnalysis] `$add()`; a menu switches between the included analyses.
+#' For example, Spatial interactions links each cell to its neighbors
+#' ([Giotto::createSpatialNetwork()], kNN with k = 20 by default) and tests
+#' which pairs of cell types are neighbors more or less often than in random
+#' relabelings ([Giotto::cellProximityEnrichment()]). Cell types come from a
+#' categorical cell metadata column of `x` or of the Preprocessing tab, and
+#' expression from the Preprocessing tab or `x`. The steps of added analyses
+#' run only when asked: the Run button of a step runs it and the stale steps
+#' above it, Run all runs every stale step of the analysis, and `$run()` does
+#' the same from R. A change marks the step and those below it stale and drops
+#' their pending runs. Each finished run of an analysis is kept for the session
+#' and listed under History, which brings back its parameters and results.
+#' Clicking a gene in a result table colors the cells by its expression.
+#'
 #' The steps run in a background R session that holds a copy of `x`, so the
 #' viewer stays responsive; a change made while a step runs cancels that step
 #' when its result would be stale. Stores the steps create are written to a
@@ -39,15 +55,19 @@
 #' @param settings A JSON file written by [LensAnalysis] `$write_settings()`;
 #'   its saved settings are listed in the viewer, ready to restore.
 #' @param threads Threads for UMAP and data.table in the background session.
+#' @param analyses Ids of the analyses to include besides Preprocessing; see
+#'   [LensAnalysis] `$catalog()`.
 #' @param spat_unit,feat_type Spatial unit and feature type to analyze.
 #' @param open Open the viewer, see [launch_lens()].
 #' @param ... Passed to [launch_lens()].
 #' @return The [LensViewer]. Its `analysis` field is a [LensAnalysis] with
-#'   `params()`, `set()`, `labels()`, `cell_markers()`, `save_settings()`,
+#'   `params()`, `set()`, `run()`, `add()`, `remove()`, `history()`,
+#'   `restore_run()`, `labels()`, `cell_markers()`, `save_settings()`,
 #'   `restore_settings()`, `code()`, `gobject()` and `wait()`.
 #' @export
 launch_lens_analysis <- function(x, params = NULL, cell_markers = NULL, settings = NULL,
                                  threads = 4L,
+                                 analyses = character(),
                                  spat_unit = "cell", feat_type = "rna",
                                  open = TRUE, ...) {
     if (!inherits(x, "giotto"))
@@ -57,8 +77,8 @@ launch_lens_analysis <- function(x, params = NULL, cell_markers = NULL, settings
     viewer <- launch_lens(x, spat_unit = spat_unit, feat_type = feat_type,
         open = FALSE, ...)
     viewer$analysis <- LensAnalysis$new(viewer, x, params = params,
-        cell_markers = cell_markers, threads = threads, spat_unit = spat_unit,
-        feat_type = feat_type)
+        cell_markers = cell_markers, threads = threads, analyses = analyses,
+        spat_unit = spat_unit, feat_type = feat_type)
     if (!is.null(settings)) viewer$analysis$read_settings(settings)
     if (open) .open_viewer(viewer$url)
     invisible(viewer)
@@ -123,6 +143,22 @@ launch_lens_analysis <- function(x, params = NULL, cell_markers = NULL, settings
     file
 }
 
+# Expression of one feature: normalized values from the first object of
+# steps `keys` that has them, else raw values of the first object (the loaded
+# object when no step has a result)
+.aw_feature <- function(keys, feat) {
+    w <- get(".lens_w", envir = globalenv())
+    objs <- c(Filter(Negate(is.null), lapply(keys, function(k) w$cache[[k]])), list(w$base))
+    norm <- Filter(function(o) "normalized" %in%
+        as.data.frame(GiottoClass::list_expression(o))$name, objs)
+    g <- if (length(norm)) norm[[1L]] else objs[[1L]]
+    vals <- if (length(norm)) "normalized" else "raw"
+    if (!feat %in% GiottoClass::featIDs(g)) stop("'", feat, "' is not a feature of the object")
+    d <- as.data.frame(suppressMessages(GiottoClass::spatValues(g, feats = feat,
+        expression_values = vals)))
+    list(cell_ID = as.character(d$cell_ID), value = as.numeric(d[[feat]]), values = vals)
+}
+
 # ── LensAnalysis ─────────────────────────────────────────────────────────────
 
 #' Analysis state behind a viewer launched with [launch_lens_analysis()]
@@ -144,23 +180,32 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         #' @param params Starting values, see [launch_lens_analysis()]
         #' @param cell_markers Marker genes, see [launch_lens_analysis()]
         #' @param threads Threads in the background session
+        #' @param analyses Analyses besides Preprocessing, see [launch_lens_analysis()]
         #' @param spat_unit,feat_type Spatial unit and feature type
         initialize = function(viewer, x, params = NULL, cell_markers = NULL, threads = 4L,
+                              analyses = character(),
                               spat_unit = "cell", feat_type = "rna") {
             private$viewer <- viewer
-            private$steps  <- .analysis_steps()
+            private$catalog_ <- .analysis_catalog()
+            analyses <- as.character(unlist(analyses))
+            bad <- setdiff(analyses, names(private$catalog_))
+            if (length(bad))
+                stop("[LensAnalysis] no analysis ", paste0("'", bad, "'", collapse = ", "),
+                    "; analyses: ", paste(names(private$catalog_), collapse = ", "),
+                    call. = FALSE)
             private$dir    <- file.path(tempdir(), "giottolens-analysis", .rand_id(8L))
             dir.create(private$dir, recursive = TRUE, showWarnings = FALSE)
             raw <- GiottoClass::getExpression(x, values = "raw", spat_unit = spat_unit,
                 feat_type = feat_type, output = "exprObj")[]
             private$disk <- inherits(raw, "parquetExprStore")
-            private$values <- .default_values(private$steps, private$disk)
+            for (id in unique(c("preprocess", analyses))) private$include(id)
             private$markers_in <- .parse_markers(cell_markers)
             private$meta <- data.frame(cell_ID = as.character(GiottoClass::spatIDs(x,
                 spat_unit = spat_unit)))
+            private$obj_meta <- .categorical_columns(as.data.frame(GiottoClass::pDataDT(x,
+                spat_unit = spat_unit, feat_type = feat_type)))
             if (length(params)) for (s in names(params)) for (k in names(params[[s]]))
                 private$check_set(s, k, params[[s]][[k]])
-            self$status <- lapply(private$steps, function(st) list(status = "stale"))
             private$update_keys()
             f <- file.path(private$dir, "input.rds")
             saveRDS(x, f)
@@ -177,7 +222,8 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 private$r_values(s))
         },
 
-        #' @description Set parameters; affected steps rerun
+        #' @description Set parameters; affected steps of the Preprocessing
+        #'   tab rerun, those of the other tabs wait for `run()`
         #' @param step Step id (`names(viewer$analysis$params())`)
         #' @param ... `parameter = value` pairs: a menu choice, or for a number
         #'   parameter any number in its range
@@ -187,6 +233,143 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             private$changed()
             if (private$viewer$connected())
                 private$viewer$send("analysis_schema", private$schema())
+            invisible(self)
+        },
+
+        #' @description Run the stale steps of an analysis, or one step and the
+        #'   stale steps above it
+        #' @param pipeline Analysis id (`names(viewer$analysis$analyses())`);
+        #'   ignored when `step` is given
+        #' @param step Step id; `NULL` for every step of the analysis
+        run = function(pipeline = "interactions", step = NULL) {
+            if (!is.null(step)) {
+                st <- private$steps[[step]]
+                if (is.null(st)) stop("[LensAnalysis] no step '", step, "'", call. = FALSE)
+                todo <- character()
+                a <- step
+                while (!is.null(a) && identical(private$steps[[a]]$pipeline, st$pipeline)) {
+                    todo <- c(a, todo)
+                    a <- private$input_of(a)
+                }
+            } else {
+                private$check_pipeline(pipeline)
+                todo <- private$pipelines[[pipeline]]$steps
+            }
+            for (s in todo) if (private$stale(s) && !private$auto(s) &&
+                                !identical(self$status[[s]]$status, "running")) {
+                private$requested[[s]] <- private$keys[[s]]
+                self$status[[s]] <- list(status = "queued")
+            }
+            private$send_status()
+            private$tick()
+            invisible(self)
+        },
+
+        #' @description The analyses that can be added: id, label, brief and
+        #'   whether it is included
+        catalog = function() {
+            data.frame(id = names(private$catalog_),
+                label = vapply(private$catalog_, `[[`, "", "label"),
+                brief = vapply(private$catalog_, function(e) e$brief %||% "", ""),
+                included = names(private$catalog_) %in% names(private$pipelines),
+                row.names = NULL)
+        },
+
+        #' @description The included analyses: id -> step ids
+        analyses = function() lapply(private$pipelines, `[[`, "steps"),
+
+        #' @description Add an analysis; its steps wait for `run()`
+        #' @param id An id from `catalog()`
+        #' @param params Starting values for its steps, as in
+        #'   [launch_lens_analysis()]
+        add = function(id, params = NULL) {
+            if (!is.character(id) || length(id) != 1L || is.null(private$catalog_[[id]]))
+                stop("[LensAnalysis] no analysis '", paste(id, collapse = ", "), "'; analyses: ",
+                    paste(names(private$catalog_), collapse = ", "), call. = FALSE)
+            private$include(id)
+            for (s in intersect(names(params), private$pipelines[[id]]$steps))
+                for (k in names(params[[s]])) private$check_set(s, k, params[[s]][[k]])
+            private$changed()
+            private$send_schema()
+            invisible(self)
+        },
+
+        #' @description Remove an analysis; its history is kept and comes back
+        #'   when it is added again
+        #' @param id An included analysis other than `"preprocess"`
+        remove = function(id) {
+            private$check_pipeline(id)
+            if (identical(id, "preprocess"))
+                stop("[LensAnalysis] Preprocessing cannot be removed", call. = FALSE)
+            steps <- private$pipelines[[id]]$steps
+            r <- private$running
+            if (!is.null(r$step) && r$step %in% steps) private$interrupt()
+            private$drop_cols(steps)
+            for (pn in unlist(lapply(steps, function(s) private$panels_of[[s]])))
+                try(private$viewer$remove_panel(pn), silent = TRUE)
+            private$panels_of[steps] <- NULL
+            private$tables[steps] <- NULL
+            private$results[steps] <- NULL
+            private$requested[steps] <- NULL
+            private$done[steps] <- NULL
+            private$steps[steps] <- NULL
+            self$status[steps] <- NULL
+            private$pipelines[[id]] <- NULL
+            private$update_keys()
+            private$send_status()
+            private$send_schema()
+            private$send_tables()
+            invisible(self)
+        },
+
+        #' @description Finished runs kept for the session
+        #' @param id An analysis id; `NULL` for all
+        history = function(id = NULL) {
+            ids <- if (is.null(id)) names(private$runs) else id
+            rows <- lapply(ids, function(k) {
+                runs <- private$runs[[k]]
+                if (!length(runs)) return(NULL)
+                data.frame(analysis = k, run = vapply(runs, `[[`, 0L, "n"),
+                    time = vapply(runs, `[[`, "", "time"),
+                    summary = vapply(runs, `[[`, "", "label"),
+                    current = vapply(runs, function(r) private$is_current(k, r), NA))
+            })
+            out <- do.call(rbind, rows)
+            if (is.null(out)) data.frame(analysis = character(), run = integer(),
+                time = character(), summary = character(), current = logical()) else out
+        },
+
+        #' @description Bring back a run from `history()`: its parameters and
+        #'   results, without running the steps
+        #' @param id Analysis id
+        #' @param run Run number from `history()`
+        restore_run = function(id, run) {
+            private$check_pipeline(id)
+            rec <- Find(function(r) identical(r$n, as.integer(run)), private$runs[[id]])
+            if (is.null(rec))
+                stop("[LensAnalysis] no run ", run, " of '", id, "'", call. = FALSE)
+            for (s in names(rec$values)) private$values[[s]] <- rec$values[[s]]
+            if (identical(id, "preprocess")) {
+                private$region_ids <- rec$region
+                private$cluster_labels <- rec$labels
+                private$inherited <- rec$inherited
+                private$suggested <- rec$suggested
+                private$suggestions <- rec$suggestions
+            }
+            private$update_keys()
+            if (identical(id, "preprocess")) private$save_labels()
+            for (s in private$pipelines[[id]]$steps) {
+                if (!identical(private$keys[[s]], rec$keys[[s]]) || is.null(rec$results[[s]]))
+                    next
+                private$done[[s]] <- rec$keys[[s]]
+                private$requested[[s]] <- NULL
+                self$status[[s]] <- rec$status[[s]]
+                private$results[[s]] <- rec$results[[s]]
+                private$show(s, rec$results[[s]]$res)
+            }
+            private$changed()
+            private$send_schema()
+            private$send_markers()
             invisible(self)
         },
 
@@ -224,6 +407,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 stop("[LensAnalysis] `name` must be one non-empty string", call. = FALSE)
             private$saved[[trimws(name)]] <- list(time = format(Sys.time(), "%Y-%m-%d %H:%M"),
                 values = private$values, cell_markers = private$markers_in,
+                analyses = names(private$pipelines),
                 region = private$region_ids,
                 labels = private$cluster_labels, inherited = private$inherited,
                 suggested = private$suggested, suggestions = private$suggestions)
@@ -239,6 +423,8 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             if (is.null(set))
                 stop("[LensAnalysis] no saved settings '", name, "'; saved: ",
                     paste(names(private$saved), collapse = ", "), call. = FALSE)
+            for (id in intersect(as.character(unlist(set$analyses)), names(private$catalog_)))
+                private$include(id)
             for (s in intersect(names(set$values), names(private$steps)))
                 for (k in names(set$values[[s]]))
                     tryCatch(private$check_set(s, k, set$values[[s]][[k]]),
@@ -314,7 +500,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             invisible(self)
         },
 
-        #' @description Wait until no step is stale or running
+        #' @description Wait until no step is running or waiting to run
         #' @param timeout Seconds
         wait = function(timeout = 300) {
             t0 <- Sys.time()
@@ -331,7 +517,9 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         #' @param timeout Seconds to wait for running steps
         gobject = function(timeout = 300) {
             self$wait(timeout)
-            last <- utils::tail(names(private$steps), 1L)
+            if (is.null(private$pipelines$preprocess))
+                stop("[LensAnalysis] the Preprocessing tab is not open", call. = FALSE)
+            last <- utils::tail(private$pipelines$preprocess$steps, 1L)
             f <- file.path(private$dir, "result.rds")
             private$worker$run(.aw_gobject, list(private$keys[[last]],
                 private$keys[["umap"]], f))
@@ -339,20 +527,30 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         },
 
         #' @description R code that reproduces the current parameters
-        code = function() {
+        #' @param pipeline Analysis id
+        code = function(pipeline = "preprocess") {
+            private$check_pipeline(pipeline)
+            steps <- private$pipelines[[pipeline]]$steps
             out <- character()
-            for (s in setdiff(names(private$steps), if (!length(private$markers_in)) "auto_type"))
-                out <- c(out, .step_code(s, private$r_values(s, up = FALSE),
+            for (s in setdiff(steps, if (!length(private$markers_in)) "auto_type")) {
+                st <- private$steps[[s]]
+                out <- c(out, if (is.function(st$code))
+                    st$code(private$r_values(s, up = FALSE), private$r_values(s)$up)
+                else .step_code(s, private$r_values(s, up = FALSE),
                     private$r_values(s)$up, unlist(private$cluster_labels), private$region_ids))
+            }
             paste(out[nzchar(out)], collapse = "\n")
         },
 
-        #' @description Stop the running step; stale steps wait for the next change
+        #' @description Stop the running step and drop pending runs; stale
+        #'   steps wait for the next change or `run()`
         cancel = function() {
-            if (!is.null(private$running$key)) {
-                private$worker$interrupt()
-                private$cancelled <- TRUE
-            }
+            private$requested <- list()
+            for (s in names(private$steps))
+                if (identical(self$status[[s]]$status, "queued"))
+                    self$status[[s]] <- list(status = "stale")
+            private$interrupt()
+            private$send_status()
             invisible(self)
         },
 
@@ -386,6 +584,26 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                     private$changed()
                 },
                 analysis_cancel = self$cancel(),
+                analysis_run = self$run(pipeline = as.character(data$pipeline %||% ""),
+                    step = if (length(data$step)) as.character(data$step)),
+                analysis_add = {
+                    id <- as.character(data$id %||% "")
+                    params <- lapply(data$params %||% list(), function(x) lapply(x, unlist))
+                    private$include(id = id, check = TRUE)
+                    errs <- character()
+                    for (s in intersect(names(params), private$pipelines[[id]]$steps))
+                        for (k in names(params[[s]])) tryCatch(
+                            private$check_set(s, k, as.character(params[[s]][[k]])),
+                            error = function(e) errs <<- c(errs, conditionMessage(e)))
+                    private$changed()
+                    private$send_schema()
+                    if (length(errs)) stop(paste(errs, collapse = "; "), call. = FALSE)
+                },
+                analysis_remove = self$remove(as.character(data$id %||% "")),
+                analysis_history = self$restore_run(as.character(data$id %||% ""),
+                    as.integer(data$run %||% NA)),
+                analysis_feature = private$want_feature(as.character(data$step %||% ""),
+                    as.character(data$feat %||% "")),
                 analysis_region = switch(as.character(data$action %||% ""),
                     selection = {
                         sel <- private$viewer$selection
@@ -413,6 +631,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 ws$send(.encode_ws_message("analysis_markers", private$markers_msg()))
             if (!is.null(private$color))
                 ws$send(.encode_ws_message("analysis_color", list(column = private$color)))
+            ws$send(.encode_ws_message("analysis_tables", private$tables_msg()))
         },
 
         #' @description Print a summary
@@ -421,7 +640,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             cat("LensAnalysis\n")
             for (s in names(private$steps)) {
                 st <- self$status[[s]]
-                cat(sprintf("  %-10s %-8s %s\n", s, st$status,
+                cat(sprintf("  %-18s %-8s %s\n", s, st$status,
                     st$summary %||% st$message %||% ""))
             }
             invisible(self)
@@ -437,6 +656,197 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         label_store = list(), inherited = list(), snap = NULL, n_pcs = NULL, saved = list(),
         region_ids = character(),
         markers_in = list(), suggested = list(), suggestions = NULL,
+        pipelines = list(), requested = list(), obj_meta = NULL, group_cache = list(),
+        group_cols = NULL, catalog_ = NULL, tables = list(), results = list(), runs = list(),
+        run_seq = 0L, active = FALSE, panels_of = list(), feature = NULL, feature_col = NULL,
+
+        check_pipeline = function(id) {
+            if (!is.character(id) || length(id) != 1L || is.null(private$pipelines[[id]]))
+                stop("[LensAnalysis] no analysis '", paste(id, collapse = ", "),
+                    "'; included: ", paste(names(private$pipelines), collapse = ", "),
+                    call. = FALSE)
+        },
+
+        # Add a catalog entry's steps; values set before are kept
+        include = function(id, check = FALSE) {
+            ent <- private$catalog_[[id]]
+            if (is.null(ent)) stop("[LensAnalysis] no analysis '", id, "'", call. = FALSE)
+            if (!is.null(private$pipelines[[id]])) return(invisible())
+            private$pipelines[[id]] <- list(label = ent$label, auto = isTRUE(ent$auto),
+                steps = names(ent$steps))
+            defaults <- .default_values(ent$steps, private$disk)
+            for (s in names(ent$steps)) {
+                private$steps[[s]] <- ent$steps[[s]]
+                if (is.null(private$values[[s]])) private$values[[s]] <- defaults[[s]]
+                self$status[[s]] <- list(status = "stale")
+            }
+            if (!is.null(private$meta)) private$update_keys()
+        },
+
+        # The step a step reads: for a source step, the Preprocessing tab's
+        # Cell types step or the loaded object
+        input_of = function(s) {
+            st <- private$steps[[s]]
+            if (identical(st$kind, "source")) {
+                if (identical(private$values[[s]]$from %||% "preprocess", "preprocess") &&
+                    !is.null(private$steps$labels)) return("labels")
+                return(NULL)
+            }
+            st$input
+        },
+
+        # A finished run: when no step of the analysis is stale or running
+        record_run = function(id) {
+            steps <- private$pipelines[[id]]$steps
+            st <- vapply(steps, function(s) self$status[[s]]$status, "")
+            if (any(st %in% c("stale", "queued", "running")) || !any(st == "done")) return()
+            keys <- private$keys[steps]
+            runs <- private$runs[[id]]
+            same <- vapply(runs, function(r) identical(r$keys, keys), NA)
+            if (any(same)) return()
+            private$run_seq <- private$run_seq + 1L
+            n <- private$run_seq
+            sums <- unlist(lapply(steps, function(s) self$status[[s]]$summary))
+            rec <- list(n = n, time = format(Sys.time(), "%H:%M:%S"), keys = keys,
+                values = private$values[steps], status = self$status[steps],
+                results = private$results[steps],
+                label = paste(utils::tail(sums[nzchar(sums)], 2L), collapse = "; "),
+                params = .param_lines(private$steps[steps], private$values[steps]))
+            if (identical(id, "preprocess")) {
+                rec$region <- private$region_ids; rec$labels <- private$cluster_labels
+                rec$inherited <- private$inherited; rec$suggested <- private$suggested
+                rec$suggestions <- private$suggestions
+            }
+            runs <- c(runs, list(rec))
+            cap <- getOption("GiottoLens.analysis_history", 10L)
+            private$runs[[id]] <- utils::tail(runs, cap)
+            private$send_schema()
+        },
+
+        is_current = function(id, rec) identical(rec$keys, private$keys[names(rec$keys)]) &&
+            all(vapply(names(rec$keys), function(s) !private$stale(s), NA)),
+
+        # A gene from a table row: its expression as a metadata column, once the
+        # worker is free
+        want_feature = function(step, feat) {
+            if (!nzchar(feat)) stop("no feature", call. = FALSE)
+            private$feature <- list(step = step, feat = feat)
+            private$tick()
+        },
+
+        tables_msg = function() list(tables = if (length(private$tables)) private$tables
+            else structure(list(), names = character())),
+
+        send_tables = function() {
+            if (private$viewer$connected())
+                private$viewer$send("analysis_tables", private$tables_msg())
+        },
+
+        interrupt = function() {
+            if (!is.null(private$running$key)) {
+                private$worker$interrupt()
+                private$cancelled <- TRUE
+            }
+        },
+
+        auto = function(s) isTRUE(private$pipelines[[private$steps[[s]]$pipeline]]$auto),
+
+        # Whether a stale step may run now: always in an auto tab, else when
+        # run() asked for its current parameters
+        wanted = function(s) private$auto(s) ||
+            identical(private$requested[[s]], private$keys[[s]]),
+
+        idle_status = function(s)
+            if (!private$auto(s) && private$wanted(s)) "queued" else "stale",
+
+        # Cell type columns as menu keys: "analysis:<col>" for columns of the
+        # Preprocessing tab, "object:<col>" for those of the loaded object
+        group_columns = function() {
+            ac <- intersect(c("cell_type", "leiden_clus", "cell_type_auto"), names(private$meta))
+            ac <- ac[vapply(ac, function(k) any(!is.na(private$meta[[k]])), NA)]
+            c(if (length(ac)) paste0("analysis:", ac),
+              if (length(private$obj_meta)) paste0("object:", setdiff(names(private$obj_meta),
+                  "cell_ID")))
+        },
+
+        # The column of a groups step; a bare name or no value takes the
+        # Preprocessing tab's column first, or the object's when the analysis
+        # reads the loaded object
+        resolve_column = function(s) {
+            v <- private$values[[s]]$column %||% ""
+            cols <- private$group_columns()
+            if (v %in% cols) return(v)
+            src <- c("analysis:", "object:")
+            a <- if (!is.null(private$steps[[s]])) private$input_of(s)
+            while (!is.null(a)) {
+                if (identical(private$steps[[a]]$kind, "source") &&
+                    identical(private$values[[a]]$from, "object")) src <- rev(src)
+                a <- private$input_of(a)
+            }
+            if (nzchar(v)) {
+                hit <- intersect(paste0(src, v), cols)
+                return(if (length(hit)) hit[[1L]] else v)
+            }
+            pick <- intersect(c(paste0(src, "cell_type"), paste0(src, "leiden_clus")), cols)
+            if (length(pick)) pick[[1L]] else if (length(cols)) cols[[1L]] else ""
+        },
+
+        group_values = function(key) {
+            col <- sub("^(analysis|object):", "", key)
+            if (startsWith(key, "analysis:") && col %in% names(private$meta))
+                return(data.frame(cell_ID = private$meta$cell_ID,
+                    group = as.character(private$meta[[col]])))
+            if (startsWith(key, "object:") && col %in% names(private$obj_meta))
+                return(data.frame(cell_ID = private$obj_meta$cell_ID,
+                    group = private$obj_meta[[col]]))
+            NULL
+        },
+
+        group_data = function(s) {
+            d <- private$group_values(private$resolve_column(s))
+            if (is.null(d)) return(NULL)
+            d[!is.na(d$group) & nzchar(d$group), , drop = FALSE]
+        },
+
+        # A key for the values of the chosen column, cached on the values
+        group_sig = function(s) {
+            key <- private$resolve_column(s)
+            d <- private$group_values(key)
+            if (is.null(d)) return("")
+            gc <- private$group_cache[[key]]
+            if (!is.null(gc) && identical(gc$group, d$group)) return(gc$sig)
+            sig <- .ids_key(paste(d$cell_ID, d$group, sep = "\t"))
+            private$group_cache[[key]] <- list(group = d$group, sig = sig)
+            sig
+        },
+
+        group_steps = function() names(private$steps)[vapply(private$steps, function(st)
+            identical(st$kind, "groups"), NA)],
+
+        # After the analysis metadata changes: new column choices and new
+        # cell types mark the Spatial interactions steps stale
+        refresh_groups = function() {
+            gs <- private$group_steps()
+            if (!length(gs)) return(invisible())
+            cols <- private$group_columns()
+            if (!identical(cols, private$group_cols)) {
+                private$group_cols <- cols
+                private$send_schema()
+            }
+            old <- private$keys[gs]
+            private$update_keys()
+            if (identical(old, private$keys[gs])) return(invisible())
+            private$requested <- Filter(Negate(is.null), lapply(
+                stats::setNames(names(private$requested), names(private$requested)),
+                function(k) if (identical(private$requested[[k]], private$keys[[k]]))
+                    private$requested[[k]]))
+            for (s in unique(unlist(lapply(gs, private$below))))
+                if (private$stale(s) && !identical(self$status[[s]]$status, "running"))
+                    self$status[[s]] <- list(status = private$idle_status(s))
+            r <- private$running
+            if (!is.null(r$key) && !identical(private$keys[[r$step]], r$key)) private$interrupt()
+            private$send_status()
+        },
 
         check_set = function(step, param, value) {
             st <- private$steps[[step]]
@@ -450,7 +860,12 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 error = function(e)
                 stop("[LensAnalysis] ", step, "$", param, " ", conditionMessage(e),
                     call. = FALSE))
+            old <- private$values[[step]][[param]]
             private$values[[step]][[param]] <- key
+            r <- private$results[[step]]
+            if (isTRUE(par$view) && !identical(old, key) && !is.null(r) &&
+                identical(r$key, private$keys[[step]]) && !private$stale(step))
+                private$show(step, r$res)
         },
 
         # The last PC a range may use: the components PCA returned, else ncp
@@ -534,14 +949,19 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 p[par$id] <- list(.param_r(par, key))
             }
             if (step == "labels") p$labels <- private$cluster_labels
-            if (step == "auto_type") p$cell_markers <- private$markers_in
+            if (step == "auto_type" || isTRUE(st$markers)) p$cell_markers <- private$markers_in
             if (step == "region") p$cells <- private$region_ids
+            if (identical(st$kind, "groups")) {
+                p$column <- private$resolve_column(step)
+                p$column_name <- sub("^(analysis|object):", "", p$column)
+                p$cells <- private$region_ids
+            }
             if (up) {
                 p$up <- list()
-                a <- st$input
+                a <- private$input_of(step)
                 while (!is.null(a)) {
                     p$up[[a]] <- private$r_values(a, up = FALSE)
-                    a <- private$steps[[a]]$input
+                    a <- private$input_of(a)
                 }
             }
             p
@@ -550,11 +970,19 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         update_keys = function() {
             keys <- list()
             for (s in names(private$steps)) {
-                parent <- private$steps[[s]]$input
+                parent <- private$input_of(s)
                 own <- private$values[[s]]
+                vp <- vapply(private$steps[[s]]$params, function(q) isTRUE(q$view), NA)
+                if (any(vp)) own[vapply(private$steps[[s]]$params[vp], `[[`, "", "id")] <- NULL
                 if (s == "labels") own$labels <- private$cluster_labels
-                if (s == "auto_type") own$cell_markers <- private$markers_in
+                if (s == "auto_type" || isTRUE(private$steps[[s]]$markers))
+                    own$cell_markers <- private$markers_in
                 if (s == "region") own$cells <- .ids_key(private$region_ids)
+                if (identical(private$steps[[s]]$kind, "groups")) {
+                    own$column <- private$resolve_column(s)
+                    own$data <- private$group_sig(s)
+                    own$cells <- .ids_key(private$region_ids)
+                }
                 keys[[s]] <- paste0(s, "{", jsonlite::toJSON(own, auto_unbox = TRUE),
                     "}<", if (!is.null(parent)) keys[[parent]])
             }
@@ -563,7 +991,9 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
 
         stale = function(s) !identical(private$done[[s]], private$keys[[s]]),
         busy  = function() !is.null(private$running) || !is.null(private$meta_timer) ||
+            !is.null(private$feature) ||
             any(vapply(names(private$steps), function(s) private$stale(s) &&
+                private$wanted(s) &&
                 !identical(self$status[[s]]$status, "error") &&
                 !identical(self$status[[s]]$status, "blocked"), NA)),
 
@@ -579,10 +1009,12 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 private$update_keys()
                 private$send_markers()
             }
+            private$requested <- private$requested[vapply(names(private$requested),
+                function(k) identical(private$requested[[k]], private$keys[[k]]), NA)]
             for (s in names(private$steps)) if (private$stale(s))
-                self$status[[s]] <- list(status = "stale")
+                self$status[[s]] <- list(status = private$idle_status(s))
             r <- private$running
-            if (!is.null(r$key) && !identical(private$keys[[r$step]], r$key)) self$cancel()
+            if (!is.null(r$key) && !identical(private$keys[[r$step]], r$key)) private$interrupt()
             private$send_status()
             if (!is.null(private$debounce)) private$debounce()
             private$debounce <- later::later(function() {
@@ -593,9 +1025,9 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
 
         next_step = function() {
             for (s in names(private$steps)) {
-                if (!private$stale(s)) next
+                if (!private$stale(s) || !private$wanted(s)) next
                 if (self$status[[s]]$status %in% c("error", "blocked")) next
-                parent <- private$steps[[s]]$input
+                parent <- private$input_of(s)
                 if (!is.null(parent) && private$stale(parent)) next
                 if (s == "auto_type" && !length(private$markers_in)) {
                     self$status[[s]] <- list(status = "blocked", message = paste(
@@ -603,6 +1035,19 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                         "viewer$analysis$cell_markers()"))
                     private$drop_cols(s)
                     private$set_suggestions(NULL)
+                    private$send_status()
+                    next
+                }
+                if (identical(private$steps[[s]]$kind, "groups") &&
+                    is.null(private$group_data(s))) {
+                    self$status[[s]] <- list(status = "blocked", message = paste(
+                        "no cell type column: run the Preprocessing tab or load an",
+                        "object with a categorical cell metadata column"))
+                    private$requested[[s]] <- NULL
+                    for (d in setdiff(private$below(s), s)) {
+                        private$requested[[d]] <- NULL
+                        self$status[[d]] <- list(status = "stale")
+                    }
                     private$send_status()
                     next
                 }
@@ -615,7 +1060,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             st <- private$steps[[s]]
             run <- st$run; result <- st$result
             environment(run) <- globalenv(); environment(result) <- globalenv()
-            parent <- st$input
+            parent <- private$input_of(s)
             for (d in private$below(s)) private$done[[d]] <- NULL
             private$recent <- utils::tail(unique(c(private$recent,
                 unname(unlist(private$keys)))), 40L)
@@ -623,8 +1068,10 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             private$cancelled <- FALSE
             self$status[[s]] <- list(status = "running")
             private$send_status()
+            p <- private$r_values(s)
+            if (identical(st$kind, "groups")) p$groups <- private$group_data(s)
             private$worker$call(.aw_step, list(run, result, private$keys[[s]],
-                if (!is.null(parent)) private$keys[[parent]], private$r_values(s),
+                if (!is.null(parent)) private$keys[[parent]], p,
                 unique(c(unname(unlist(private$keys)), private$recent))))
         },
 
@@ -650,10 +1097,27 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                         return(invisible())
                     }
                     private$info <- out$result
+                } else if (identical(r$step, ".feature")) {
+                    private$show_feature(r, out)
                 } else private$finish(r, out)
+            }
+            if (is.null(private$running) && !is.null(private$feature)) {
+                f <- private$feature
+                private$feature <- NULL
+                cand <- intersect(c(f$step, "labels", "normalize"), names(private$steps))
+                keys <- unname(unlist(private$keys[cand[!vapply(cand, private$stale, NA)]]))
+                private$running <- list(step = ".feature", feat = f$feat)
+                private$worker$call(.aw_feature, list(as.list(keys), f$feat))
+                private$timer <- later::later(private$tick, 0.1)
+                return(invisible())
             }
             s <- private$next_step()
             if (!is.null(s)) private$start(s)
+            if (is.null(private$running)) {
+                if (isTRUE(private$active)) for (pl in names(private$pipelines))
+                    private$record_run(pl)
+                private$active <- FALSE
+            } else private$active <- TRUE
             if (!is.null(private$running)) private$timer <- later::later(private$tick, 0.1)
             invisible()
         },
@@ -663,18 +1127,21 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             if (!is.null(out$error)) {
                 if (private$cancelled || !identical(private$keys[[s]], r$key)) {
                     if (identical(self$status[[s]]$status, "running"))
-                        self$status[[s]] <- list(status = "stale")
+                        self$status[[s]] <- list(status = private$idle_status(s))
                     private$send_status()
                     return(invisible())
                 }
                 msg <- conditionMessage(out$error)
                 if (!is.null(out$error$parent)) msg <- conditionMessage(out$error$parent)
                 if (grepl("lens_missing_input", msg, fixed = TRUE)) {
-                    private$done[[private$steps[[s]]$input]] <- NULL
-                    self$status[[s]] <- list(status = "stale")
+                    a <- private$input_of(s)
+                    private$done[[a]] <- NULL
+                    if (!private$auto(a)) private$requested[[a]] <- private$keys[[a]]
+                    self$status[[s]] <- list(status = private$idle_status(s))
                     return(invisible())
                 }
                 self$status[[s]] <- list(status = "error", message = msg)
+                private$requested[private$below(s)] <- NULL
                 if (s == "auto_type") private$set_suggestions(NULL)
                 private$block_below(s)
                 private$drop_cols(setdiff(private$below(s), s))
@@ -683,26 +1150,53 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             }
             if (!identical(private$keys[[s]], r$key)) return(invisible())
             private$done[[s]] <- r$key
+            private$requested[[s]] <- NULL
             res <- out$result$result
+            private$results[[s]] <- list(key = r$key, res = res)
             self$status[[s]] <- list(status = "done", secs = round(out$result$secs, 2),
                 summary = res$summary)
             for (d in names(private$steps))
-                if (self$status[[d]]$status == "blocked") self$status[[d]] <- list(status = "stale")
+                if (self$status[[d]]$status == "blocked")
+                    self$status[[d]] <- list(status = private$idle_status(d))
             private$show(s, res)
             if (!is.null(res$stop_below)) {
-                for (d in setdiff(private$below(s), s))
+                for (d in setdiff(private$below(s), s)) {
                     self$status[[d]] <- list(status = "blocked", message = res$stop_below)
+                    private$requested[[d]] <- NULL
+                }
                 private$drop_cols(setdiff(private$below(s), s))
             }
             private$send_status()
+        },
+
+        show_feature = function(r, out) {
+            if (!is.null(out$error)) {
+                msg <- conditionMessage(out$error$parent %||% out$error)
+                private$viewer$send("analysis_feature", list(feat = r$feat, error = msg))
+                return(invisible())
+            }
+            d <- out$result
+            col <- paste0("expr_", r$feat)
+            m <- data.frame(cell_ID = d$cell_ID)
+            m[[col]] <- d$value
+            if (!is.null(private$feature_col) && !identical(private$feature_col, col) &&
+                private$feature_col %in% names(private$meta))
+                private$meta[[private$feature_col]] <- NULL
+            private$feature_col <- col
+            private$merge_meta(m, ".feature")
+            private$set_color(col)
+            private$viewer$send("analysis_feature", list(feat = r$feat, column = col,
+                values = d$values))
         },
 
         # The step and every step below it
         below = function(s) {
             out <- s
             repeat {
-                more <- setdiff(names(private$steps)[vapply(private$steps, function(st)
-                    !is.null(st$input) && st$input %in% out, NA)], out)
+                more <- setdiff(names(private$steps)[vapply(names(private$steps), function(k) {
+                    a <- private$input_of(k)
+                    !is.null(a) && a %in% out
+                }, NA)], out)
                 if (!length(more)) return(out)
                 out <- c(out, more)
             }
@@ -715,14 +1209,15 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 return(invisible())
             private$meta <- private$meta[setdiff(names(private$meta), drop)]
             private$push_meta()
+            private$refresh_groups()
         },
 
         block_below = function(s) {
             for (d in names(private$steps)) {
-                a <- private$steps[[d]]$input
+                a <- private$input_of(d)
                 while (!is.null(a)) {
                     if (a == s) { self$status[[d]] <- list(status = "blocked"); break }
-                    a <- private$steps[[a]]$input
+                    a <- private$input_of(a)
                 }
             }
         },
@@ -769,10 +1264,24 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 },
                 auto_type = private$set_suggestions(res$suggest)
             )
+            st <- private$steps[[s]]
+            if (is.function(st$view)) {
+                out <- st$view(res, p)
+                for (pn in out$panels) {
+                    v$push_panel(pn$spec, id = pn$id, title = pn$title)
+                    private$panels_of[[s]] <- unique(c(private$panels_of[[s]], pn$id))
+                }
+                if (!is.null(out$tables)) {
+                    private$tables[[s]] <- unname(out$tables)
+                    private$send_tables()
+                }
+            }
         },
 
         merge_meta = function(m, s) {
             m$cell_ID <- as.character(m$cell_ID)
+            gone <- setdiff(private$cols[[s]], names(m))
+            if (length(gone)) private$meta <- private$meta[setdiff(names(private$meta), gone)]
             private$cols[[s]] <- setdiff(names(m), "cell_ID")
             if (is.null(private$meta)) {
                 if (s != "filter") return(invisible())
@@ -783,6 +1292,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                     all.x = TRUE, sort = FALSE)
             }
             private$push_meta()
+            private$refresh_groups()
         },
 
         # One metadata push for results that arrive close together
@@ -800,22 +1310,58 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 region = length(private$region_ids),
                 settings = unname(lapply(names(private$saved), function(n)
                     list(name = n, time = private$saved[[n]]$time))),
-                steps = unname(lapply(names(private$steps), function(s) {
-                st <- private$steps[[s]]
-                list(id = s, label = st$label, fun = st$fun, input = st$input,
-                    params = lapply(st$params, function(par) list(id = par$id,
-                        label = par$label, type = par$type,
-                        value = private$values[[s]][[par$id]],
-                        min = par$min,
-                        max = if (identical(par$type, "range")) private$max_pcs() else par$max,
-                        integer = isTRUE(par$integer),
-                        slider = if (identical(par$type, "range"))
-                            utils::modifyList(par$slider, list(max = private$max_pcs()))
-                            else par$slider,
-                        auto = isTRUE(par$auto),
-                        choices = lapply(.offered(par$choices, private$disk), function(c)
-                            list(value = c$value, label = c$label)))))
-            })))
+                pipelines = unname(lapply(names(private$pipelines), function(pl) list(
+                    id = pl, label = private$pipelines[[pl]]$label,
+                    auto = isTRUE(private$pipelines[[pl]]$auto),
+                    removable = !identical(pl, "preprocess"),
+                    steps = as.list(private$pipelines[[pl]]$steps),
+                    history = unname(lapply(rev(private$runs[[pl]]), function(r) list(
+                        run = r$n, time = r$time, label = r$label, params = as.list(r$params),
+                        current = private$is_current(pl, r))))))),
+                catalog = unname(lapply(private$catalog_, function(e) list(
+                    id = e$id, label = e$label, brief = e$brief %||% "",
+                    description = e$description %||% "", inputs = as.list(e$inputs),
+                    outputs = as.list(e$outputs),
+                    included = e$id %in% names(private$pipelines),
+                    steps = unname(lapply(names(e$steps), function(s)
+                        private$step_schema(s, e$steps[[s]],
+                            private$values[[s]] %||% .default_values(e$steps[s],
+                                private$disk)[[s]])))))),
+                steps = unname(lapply(names(private$steps), function(s)
+                    private$step_schema(s, private$steps[[s]], private$values[[s]])))
+            )
+        },
+
+        step_schema = function(s, st, vals) {
+            par_schema <- function(par) {
+                if (identical(par$type, "column")) return(private$column_schema(s, par))
+                range <- identical(par$type, "range")
+                list(id = par$id, label = par$label, type = par$type,
+                    value = vals[[par$id]], min = par$min,
+                    max = if (range) private$max_pcs() else par$max,
+                    integer = isTRUE(par$integer),
+                    slider = if (range) utils::modifyList(par$slider,
+                        list(max = private$max_pcs())) else par$slider,
+                    auto = isTRUE(par$auto), placeholder = par$placeholder,
+                    view = isTRUE(par$view),
+                    choices = lapply(.offered(par$choices, private$disk), function(c)
+                        list(value = c$value, label = c$label)))
+            }
+            list(id = s, label = st$label, fun = st$fun,
+                input = if (!is.null(private$steps[[s]])) private$input_of(s) else st$input,
+                pipeline = st$pipeline, params = lapply(st$params, par_schema))
+        },
+
+        column_schema = function(s, par) {
+            cols <- private$group_columns()
+            lab <- vapply(cols, function(k) {
+                col <- sub("^(analysis|object):", "", k)
+                if (startsWith(k, "analysis:")) paste0(col, " (Preprocessing)") else col
+            }, "")
+            list(id = par$id, label = par$label, type = "choice",
+                value = private$resolve_column(s),
+                choices = unname(Map(function(v, l) list(value = v, label = l),
+                    cols, lab)))
         },
 
         send_schema = function() {
@@ -942,6 +1488,24 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
     )
 }
 
+# Columns of a cell metadata table that hold 2 to 200 cell types, as
+# character; NULL when there are none
+.categorical_columns <- function(m, max_levels = 200L) {
+    if (is.null(m) || !nrow(m) || !"cell_ID" %in% names(m)) return(NULL)
+    out <- list(cell_ID = as.character(m$cell_ID))
+    for (k in setdiff(names(m), "cell_ID")) {
+        x <- m[[k]]
+        if (is.numeric(x)) {
+            if (any(x[!is.na(x)] != round(x[!is.na(x)]))) next
+        } else if (!is.character(x) && !is.factor(x) && !is.logical(x)) next
+        x <- as.character(x)
+        n <- length(unique(x[!is.na(x)]))
+        if (n >= 2L && n <= max_levels) out[[k]] <- x
+    }
+    if (length(out) < 2L) return(NULL)
+    as.data.frame(out, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
 .qc_hist_spec <- function(d, field, title, threshold) {
     d <- d[c(field, intersect(names(d), c("qc_pass", "kept")))]
     list(
@@ -988,4 +1552,51 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             y = list(field = "variance", type = "quantitative", title = "fraction of variance",
                 axis = list(format = ".1%")))
     )
+}
+
+# log2 enrichment for each pair of cell types, both ways round, in `order`
+.proximity_spec <- function(d, order) {
+    flip <- d[d$type_a != d$type_b, , drop = FALSE]
+    flip[c("type_a", "type_b")] <- flip[c("type_b", "type_a")]
+    d <- rbind(d, flip)
+    lim <- max(abs(d$enrichm[is.finite(d$enrichm)]), 0.1)
+    list(
+        `$schema` = "https://vega.github.io/schema/vega-lite/v5.json",
+        title = "log2 enrichment of neighbors", width = "container", height = "container",
+        data = list(values = d),
+        mark = list(type = "rect", tooltip = TRUE),
+        encoding = list(
+            x = list(field = "type_a", type = "nominal", sort = as.list(order), title = NULL),
+            y = list(field = "type_b", type = "nominal", sort = as.list(order), title = NULL),
+            color = list(field = "enrichm", type = "quantitative", title = "log2 enrichment",
+                scale = list(scheme = "redblue", reverse = TRUE, domain = list(-lim, lim))),
+            tooltip = list(
+                list(field = "pair", type = "nominal"),
+                list(field = "enrichm", type = "quantitative", format = ".2f",
+                    title = "log2 enrichment"),
+                list(field = "original", type = "quantitative", title = "links"),
+                list(field = "simulations", type = "quantitative", format = ".1f",
+                    title = "links, random"),
+                list(field = "p_adj_higher", type = "quantitative", format = ".3g",
+                    title = "p.adj higher"),
+                list(field = "p_adj_lower", type = "quantitative", format = ".3g",
+                    title = "p.adj lower")))
+    )
+}
+
+# "label: value" for each parameter of `steps`, for the History menu
+.param_lines <- function(steps, values) {
+    out <- character()
+    for (s in names(steps)) for (par in steps[[s]]$params) {
+        v <- values[[s]][[par$id]]
+        if (is.null(v)) next
+        if (identical(par$type, "choice")) {
+            ch <- Find(function(c) identical(c$value, v), par$choices)
+            if (!is.null(ch)) v <- ch$label
+        }
+        if (identical(par$type, "column")) v <- sub("^(analysis|object):", "", v)
+        out <- c(out, paste0(steps[[s]]$label, " / ", par$label, ": ",
+            if (nzchar(v)) v else "default"))
+    }
+    out
 }
