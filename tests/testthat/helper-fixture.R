@@ -159,7 +159,7 @@ ws_client <- function(url, origin = NULL) {
     ws$onOpen(function(e) {
         state$open <- TRUE
         # A real tab announces itself once its handlers are registered
-        ws$send('{"type":"ready","data":{"protocol":3}}')
+        ws$send(sprintf('{"type":"ready","data":{"protocol":%d}}', .lens_protocol))
     })
     ws$onClose(function(e) state$closed <- TRUE)
     ws$onMessage(function(e) state$msgs[[length(state$msgs) + 1L]] <-
