@@ -1,5 +1,32 @@
 # GiottoLens (development version)
 
+* Analysis mode: an Add analysis dialog lists the analyses with a description, inputs,
+  outputs and their steps, whose parameters can be set before adding; a menu switches between
+  the included analyses. Preprocessing holds the existing steps and reruns on each change.
+  The other analyses run when asked (a Run button per step, Run all, or
+  `viewer$analysis$run()`): Spatial interactions (`cellProximityEnrichment()`), Spatial genes
+  (`binSpect()`, `silhouetteRank()`, `spatialAutoCor()`), Spatial co-expression modules
+  (`spatialCoexpression()`), Niches (neighborhood composition and k-means), Interaction-changed
+  genes (`findInteractionChangedFeats()`), Markers between groups (`findMarkers()`,
+  `findMarkers_one_vs_all()`), Subclustering, Cluster tree (`calculateClusterTree()`),
+  Integration (`runGiottoHarmony()`) and Cell type enrichment (PAGE, hypergeometric). Each reads
+  expression from the Preprocessing tab or the loaded object, and cell types from a categorical
+  column of either. Result tables can be filtered and sorted; clicking a gene colors the cells
+  by its expression (`expr_<gene>`). Each finished run is kept for the session and listed under
+  History, which brings back its parameters and results without rerunning;
+  `viewer$analysis$history()` and `restore_run()` do the same from R.
+  `launch_lens_analysis(analyses =)`, `$add()`, `$remove()`, `$catalog()` and
+  `code(pipeline =)` choose and describe the analyses. Protocol 7.
+* Images can be added after launch. The images panel has an "add image" button that opens a
+  choice of image type (10x Xenium image, IF, H&E), then a file dialog on the machine R runs
+  on (macOS, Windows, RStudio or Positron, or Tk). The chosen TIFF is shown and listed in the
+  register panel, where it can be registered by landmarks. IF and H&E images are drawn inside
+  the data's extent. A 10x Xenium image is read with Giotto's Xenium reader
+  (`Giotto::importXenium()$load_image()`) and drawn in microns by the pixel size in its Xenium
+  output folder's `experiment.xenium`. `viewer$add_image(file, name =, type =)` does the same
+  from R; option `GiottoLens.choose_file` (a function returning a path) replaces the dialog.
+  Added images open again in new tabs and after a reload. The images panel is shown in every
+  launch, with "no images" until one is added. Protocol 5.
 * `launch_lens_analysis()` opens the viewer with an Analysis panel that runs the first steps
   of a Giotto analysis: QC filter, normalization, highly variable features, PCA, UMAP,
   nearest network, Leiden clusters, markers and cell-type labels. Each parameter has a

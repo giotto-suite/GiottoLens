@@ -1,20 +1,40 @@
-// State of the Analysis panel (launch_lens_analysis()): the step tree and
-// parameter menus R sent, the status of each step, and the marker table with
+// State of the Analysis panel (launch_lens_analysis()): the tabs (pipelines),
+// the step tree and parameter menus R sent, the status of each step, and the marker table with
 // the cluster labels. R owns all of it; the panel shows it and sends changes.
 
 export interface Choice { value: string; label: string }
 export interface Slider { min: number; max: number; step?: number | null; log?: boolean }
 export interface Param {
   id: string; label: string; value: string; choices: Choice[];
-  type?: 'choice' | 'number' | 'range'; min?: number | null; max?: number | null;
-  integer?: boolean; auto?: boolean; slider?: Slider | null;
+  type?: 'choice' | 'number' | 'range' | 'text'; min?: number | null; max?: number | null;
+  integer?: boolean; auto?: boolean; slider?: Slider | null; placeholder?: string | null;
+  view?: boolean;
 }
-export interface Step { id: string; label: string; fun: string; input: string | null; params: Param[] }
+export interface Step {
+  id: string; label: string; fun: string; input: string | null; params: Param[]; pipeline?: string;
+}
+// A finished run of an analysis, kept by R for the session
+export interface HistoryRun { run: number; time: string; label: string; params: string[]; current: boolean }
+// An included analysis: its steps run when stale (`auto`) or when Run asks for them
+export interface Pipeline {
+  id: string; label: string; auto: boolean; steps: string[]; removable?: boolean; history?: HistoryRun[];
+}
+// An analysis of the Add analysis dialog
+export interface CatalogEntry {
+  id: string; label: string; brief: string; description: string; inputs: string[];
+  outputs: string[]; included: boolean; steps: Step[];
+}
+// A result table of a step; `data` holds one array per column
+export interface ResultTable {
+  id: string; title: string; columns: string[]; data: (string | number | boolean | null)[][];
+  feat?: string | null; n: number; shown: number; note?: string | null;
+}
 export interface SavedSettings { name: string; time: string }
 export interface Schema {
   disk: boolean; steps: Step[]; cell_markers?: number; settings?: SavedSettings[]; region?: number;
+  pipelines?: Pipeline[]; catalog?: CatalogEntry[];
 }
-export type StatusName = 'stale' | 'running' | 'done' | 'error' | 'blocked';
+export type StatusName = 'stale' | 'queued' | 'running' | 'done' | 'error' | 'blocked';
 export interface StepStatus { status: StatusName; secs?: number; summary?: string; message?: string }
 export interface Marker { cluster: string; feat: string; score: number }
 export interface Inherited { from: string; share: number }
@@ -32,10 +52,12 @@ export interface AnalysisModel {
   inherited: Record<string, Inherited>;
   suggested: Record<string, { type: string; share: number }>;
   suggestions: Suggestion[];
+  tables: Record<string, ResultTable[]>;
 }
 
 export const emptyModel = (): AnalysisModel => ({
   schema: null, status: {}, markers: [], labels: {}, inherited: {}, suggested: {}, suggestions: [],
+  tables: {},
 });
 
 // The step and every step below it
@@ -59,9 +81,12 @@ export function applyParam(m: AnalysisModel, step: string, param: string, value:
     const key = p.type === 'range' ? rangeKey(p, value) : numberKey(p, value);
     if (key == null) return false;
     value = key;
+  } else if (p.type === 'text') {
+    value = value.split(',').map(x => x.trim()).filter(Boolean).join(', ');
   } else if (!p.choices.some(c => c.value === value)) return false;
   if (p.value === value) return false;
   p.value = value;
+  if (p.view) return true;
   for (const d of descendants(m.schema!.steps, step)) m.status[d] = { status: 'stale' };
   return true;
 }
@@ -140,13 +165,39 @@ export function statusText(s: StepStatus | undefined): string {
   return s.status;
 }
 
-// One line for the panel header: what is running or waiting
-export function overall(m: AnalysisModel): string {
-  const st = Object.values(m.status);
+// The tabs; one tab with every step when R sent none
+export function pipelines(m: AnalysisModel): Pipeline[] {
+  const steps = m.schema?.steps ?? [];
+  if (m.schema?.pipelines?.length) return m.schema.pipelines;
+  return steps.length ? [{ id: 'preprocess', label: 'Preprocessing', auto: true, steps: steps.map(s => s.id) }] : [];
+}
+
+export function pipelineSteps(m: AnalysisModel, id: string): Step[] {
+  const ids = pipelines(m).find(p => p.id === id)?.steps ?? [];
+  return (m.schema?.steps ?? []).filter(s => ids.includes(s.id));
+}
+
+// Whether a step runs as soon as it is stale
+export function isAuto(m: AnalysisModel, step: string): boolean {
+  const p = pipelines(m).find(q => q.steps.includes(step));
+  return p ? p.auto : true;
+}
+
+// A Run button: for stale or failed steps of a tab that waits for Run
+export function canRun(m: AnalysisModel, step: string): boolean {
+  const s = m.status[step]?.status ?? 'stale';
+  return !isAuto(m, step) && (s === 'stale' || s === 'error');
+}
+
+// What is running or waiting, for the panel header (all tabs) or one tab
+export function overall(m: AnalysisModel, pipeline?: string): string {
   if (!m.schema) return 'waiting for R…';
-  if (st.some(s => s.status === 'running')) return 'running…';
-  if (st.some(s => s.status === 'error')) return 'error';
-  if (st.some(s => s.status === 'stale')) return 'queued';
+  const ids = pipeline ? pipelineSteps(m, pipeline).map(s => s.id) : m.schema.steps.map(s => s.id);
+  const st = ids.map(id => ({ id, s: m.status[id]?.status ?? 'stale' }));
+  if (st.some(x => x.s === 'running')) return 'running…';
+  if (st.some(x => x.s === 'error')) return 'error';
+  if (st.some(x => x.s === 'queued' || (x.s === 'stale' && isAuto(m, x.id)))) return 'queued';
+  if (st.some(x => x.s === 'stale')) return 'ready to run';
   return 'up to date';
 }
 
@@ -184,4 +235,35 @@ export function clusterColorPatch(
     }
   }
   return { patch, auto: next };
+}
+
+// Table rows, filtered by a text (any cell containing it, case-insensitive)
+// and sorted by a column; each row is the column values in order
+export function tableRows(t: ResultTable, filter = '', sortCol: number | null = null, desc = true) {
+  const n = t.data[0]?.length ?? 0;
+  let idx = Array.from({ length: n }, (_, i) => i);
+  const q = filter.trim().toLowerCase();
+  if (q) idx = idx.filter(i => t.data.some(col => String(col[i] ?? '').toLowerCase().includes(q)));
+  if (sortCol != null && t.data[sortCol]) {
+    const col = t.data[sortCol];
+    idx.sort((a, b) => {
+      const x = col[a], y = col[b];
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+      return desc ? -c : c;
+    });
+  }
+  return idx.map(i => t.data.map(col => col[i]));
+}
+
+// Parameter values chosen in the Add analysis dialog, as R takes them
+export function draftParams(entry: CatalogEntry, draft: Record<string, Record<string, string>>) {
+  const out: Record<string, Record<string, string>> = {};
+  for (const st of entry.steps) for (const p of st.params) {
+    const v = draft[st.id]?.[p.id];
+    if (v != null && v !== p.value) (out[st.id] ??= {})[p.id] = v;
+  }
+  return out;
 }

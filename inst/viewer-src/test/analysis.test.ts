@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   emptyModel, descendants, applyParam, clusterRows, labelPayload, statusText, overall,
-  numberKey, rangeKey, sliderPos, sliderValue, clusterColorPatch,
+  numberKey, rangeKey, sliderPos, sliderValue, clusterColorPatch, pipelines, pipelineSteps, isAuto, canRun, tableRows, draftParams,
+  type ResultTable, type CatalogEntry,
   type Step, type AnalysisModel, type Param,
 } from '../panels/analysis-model.ts';
 
@@ -195,5 +196,87 @@ describe('cluster colors follow labels', () => {
       pal, { '1': [2, 2, 2] });
     expect(patch['1']).toEqual({ color: undefined });
     expect(auto).toEqual({});
+  });
+});
+
+describe('pipelines', () => {
+  const two = (): AnalysisModel => {
+    const m = emptyModel();
+    const step = (id: string, input: string | null): Step =>
+      ({ id, label: id, fun: id, input, params: [] });
+    m.schema = {
+      disk: false,
+      steps: [step('filter', null), step('pca', 'filter'), step('groups', null),
+        step('spatial_network', 'groups'), step('proximity', 'spatial_network')],
+      pipelines: [
+        { id: 'preprocess', label: 'Preprocessing', auto: true, steps: ['filter', 'pca'] },
+        { id: 'interactions', label: 'Spatial interactions', auto: false,
+          steps: ['groups', 'spatial_network', 'proximity'] }],
+    };
+    for (const s of m.schema.steps) m.status[s.id] = { status: 'done' };
+    return m;
+  };
+
+  it('splits the steps by tab', () => {
+    const m = two();
+    expect(pipelines(m).map(p => p.id)).toEqual(['preprocess', 'interactions']);
+    expect(pipelineSteps(m, 'interactions').map(s => s.id)).toEqual(['groups', 'spatial_network', 'proximity']);
+    expect(isAuto(m, 'pca')).toBe(true);
+    expect(isAuto(m, 'groups')).toBe(false);
+  });
+
+  it('puts every step in one tab when R sends none', () => {
+    const m = two();
+    delete m.schema!.pipelines;
+    expect(pipelines(m)).toHaveLength(1);
+    expect(isAuto(m, 'proximity')).toBe(true);
+  });
+
+  it('stale steps of a Run tab are ready to run, not queued', () => {
+    const m = two();
+    m.status.proximity = { status: 'stale' };
+    expect(overall(m, 'interactions')).toBe('ready to run');
+    expect(overall(m, 'preprocess')).toBe('up to date');
+    expect(canRun(m, 'proximity')).toBe(true);
+    expect(canRun(m, 'spatial_network')).toBe(false);
+    m.status.proximity = { status: 'queued' };
+    expect(overall(m, 'interactions')).toBe('queued');
+    expect(canRun(m, 'proximity')).toBe(false);
+    m.status.pca = { status: 'stale' };
+    expect(overall(m, 'preprocess')).toBe('queued');
+    expect(canRun(m, 'pca')).toBe(false);
+    m.status.groups = { status: 'error', message: 'x' };
+    expect(canRun(m, 'groups')).toBe(true);
+    expect(overall(m)).toBe('error');
+  });
+});
+
+describe('result tables', () => {
+  const t: ResultTable = {
+    id: 'genes', title: 'genes', columns: ['feats', 'score'], feat: 'feats', n: 3, shown: 3,
+    data: [['MYC', 'SOX9', 'CDX2'], [0.36, null, 0.5]],
+  };
+  it('sorts with empty values last', () => {
+    expect(tableRows(t, '', 1, true).map(r => r[0])).toEqual(['CDX2', 'MYC', 'SOX9']);
+    expect(tableRows(t, '', 1, false).map(r => r[0])).toEqual(['MYC', 'CDX2', 'SOX9']);
+  });
+  it('filters on any cell', () => {
+    expect(tableRows(t, 'so').map(r => r[0])).toEqual(['SOX9']);
+    expect(tableRows(t, '0.5')).toHaveLength(1);
+  });
+});
+
+describe('Add analysis dialog', () => {
+  it('sends only the values that differ from the shown ones', () => {
+    const e: CatalogEntry = {
+      id: 'interactions', label: 'Spatial interactions', brief: '', description: '', inputs: [],
+      outputs: [], included: false,
+      steps: [{ id: 'spatial_network', label: 'net', fun: '', input: null, params: [
+        { id: 'k', label: 'k', value: '20', choices: [], type: 'number' },
+        { id: 'method', label: 'm', value: 'kNN', choices: [] }] }],
+    };
+    expect(draftParams(e, { spatial_network: { k: '10', method: 'kNN' } }))
+      .toEqual({ spatial_network: { k: '10' } });
+    expect(draftParams(e, {})).toEqual({});
   });
 });

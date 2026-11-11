@@ -10,12 +10,52 @@ test_that("step schema defaults are choices and the tree is ordered", {
                 keys <- vapply(p$choices, `[[`, "", "value")
                 expect_false(anyDuplicated(keys) > 0, info = paste(s, p$id))
                 expect_true(p$default %in% keys, info = paste(s, p$id))
+            } else if (p$type %in% c("column", "text")) {
+                expect_identical(.param_key(p, p$default), p$default)
             } else {
                 expect_identical(.param_key(p, p$default), p$default, info = paste(s, p$id))
                 expect_lt(p$slider$min, p$slider$max)
             }
         }
     }
+})
+
+test_that("catalog entries are complete and their steps form trees", {
+    cat <- .analysis_catalog()
+    expect_identical(names(cat)[[1L]], "preprocess")
+    expect_true(cat$preprocess$auto)
+    ids <- unlist(lapply(cat, function(e) names(e$steps)), use.names = FALSE)
+    expect_false(anyDuplicated(ids) > 0, info = paste(ids[duplicated(ids)], collapse = ", "))
+    for (k in names(cat)) {
+        e <- cat[[k]]
+        expect_identical(e$id, k)
+        expect_match(k, "^[a-z][a-z0-9_]*$")
+        for (f in c("label", "brief", "description"))
+            expect_true(is.character(e[[f]]) && length(e[[f]]) == 1L && nzchar(e[[f]]),
+                info = paste(k, f))
+        expect_true(length(e$inputs) > 0L && length(e$outputs) > 0L, info = k)
+        if (k != "preprocess") expect_false(isTRUE(e$auto), info = k)
+        seen <- character()
+        for (s in names(e$steps)) {
+            st <- e$steps[[s]]
+            expect_true(is.function(st$run) && is.function(st$result), info = s)
+            expect_true(is.character(st$label) && nzchar(st$label), info = s)
+            if (!is.null(st$input)) expect_true(st$input %in% seen, info = s)
+            if (k != "preprocess" && is.null(st$input))
+                expect_true(st$kind %in% c("source", "groups"), info = s)
+            if (k != "preprocess") expect_true(is.function(st$code), info = s)
+            seen <- c(seen, s)
+        }
+    }
+})
+
+test_that("categorical columns hold 2 to 200 cell types", {
+    m <- data.frame(cell_ID = paste0("c", 1:300), type = rep(c("A", "B", NA), 100),
+        clus = rep(1:3, 100), area = seq(0.5, 150, by = 0.5), id = 1:300, one = "x")
+    out <- .categorical_columns(m)
+    expect_identical(names(out), c("cell_ID", "type", "clus"))
+    expect_identical(out$clus[1:3], c("1", "2", "3"))
+    expect_null(.categorical_columns(m[c("cell_ID", "area")]))
 })
 
 test_that("disk expression drops scaling and non-standard normalization", {
@@ -79,7 +119,8 @@ test_that("marker lists are read from lists, tables and CSV files", {
 
 test_that("analysis messages from the viewer are accepted", {
     for (type in c("analysis_param", "analysis_labels", "analysis_cancel", "analysis_settings",
-                   "analysis_region")) {
+                   "analysis_region", "analysis_run", "analysis_add", "analysis_remove",
+                   "analysis_history", "analysis_feature")) {
         msg <- .parse_ws_message(sprintf('{"type":"%s","data":{}}', type))
         expect_identical(msg$type, type)
     }
@@ -93,10 +134,21 @@ test_that("generated code follows the parameters", {
     expect_identical(.step_code("labels", list(), list(), NULL), "")
     expect_match(.step_code("labels", list(), list(), c(`1` = "T cell")),
         'c("1" = "T cell")', fixed = TRUE)
+    steps <- .analysis_steps()
+    expect_identical(steps$spatial_network$code(list(method = "kNN", k = 20L,
+        maximum_distance_knn = NULL), list()),
+        'g <- createSpatialNetwork(g, method = "kNN", k = 20, name = "lens_spatial")')
+    expect_match(steps$spatial_network$code(list(method = "Delaunay", k = 20L), list()),
+        'method = "Delaunay", name', fixed = TRUE)
+    code <- steps$proximity$code(list(number_of_simulations = 1000L, adjust_method = "fdr"),
+        list(groups = list(column_name = "cell_type")))
+    expect_match(code, 'cluster_column = "cell_type", number_of_simulations = 1000, adjust_method = "fdr"',
+        fixed = TRUE)
+    expect_match(code, "cellProximityHeatmap(g, CPscore = cpe", fixed = TRUE)
 })
 
 # The steps on the 400 um MERSCOPE vault, against a stand-in viewer
-mini_vault <- "/Users/jeffreysheridan/Documents/Projects/GiottoDev/vaults/render_mini_20261020/giotto_project"
+mini_vault <- "/Users/jeffreysheridan/Documents/Projects/GiottoDev/vaults/render_mini_20261103/giotto_project"
 
 test_that("a change reruns only the steps below it", {
     skip_on_cran()
@@ -309,6 +361,24 @@ test_that("the Analysis panel drives the steps from the page", {
         i.value = 'epithelial'; i.dispatchEvent(new Event('input')); })()")
     expect_true(pump_until(function() identical(unname(v$analysis$labels()["1"]), "epithelial"), 10))
     v$analysis$wait(60)
+
+    # Spatial interactions, added from the dialog, runs when Run all is clicked
+    br$js("document.querySelector('[data-panel=analysis] .an-add').click()")
+    expect_true(browser_wait(br, "!!document.querySelector('.an-modal [data-entry=interactions]')", 10))
+    br$js("document.querySelector('.an-modal [data-entry=interactions]').click()")
+    expect_true(browser_wait(br,
+        "document.querySelector('.an-modal .an-cat-title').textContent === 'Spatial interactions'", 10))
+    br$js("document.querySelector('.an-modal .an-primary').click()")
+    expect_true(pump_until(function() "interactions" %in% names(v$analysis$analyses()), 10))
+    expect_true(browser_wait(br, "!!document.querySelector('[data-step=proximity]')", 10))
+    expect_identical(v$analysis$status$proximity$status, "stale")
+    v$analysis$set("proximity", number_of_simulations = 50)
+    br$js("document.querySelector('[data-panel=analysis] .an-run[data-run=interactions]').click()")
+    expect_true(pump_until(function()
+        v$analysis$status$proximity$status %in% c("queued", "running", "done"), 10))
+    v$analysis$wait(300)
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-step=proximity]').classList.contains('an-done')", 30))
     expect_length(br$errors(), 0L)
 })
 
@@ -339,4 +409,184 @@ test_that("Automatic types waits for a marker list", {
     a$wait(120)
     expect_identical(a$status$auto_type$status, "done")
     expect_true(all(stats::na.omit(v$meta$cell_type_auto) %in% c("Epithelial", "Fibroblast")))
+})
+
+# A stand-in viewer that records what the analysis sends
+.fake_viewer <- function() {
+    v <- new.env()
+    v$sent <- list(); v$panels <- list(); v$meta <- NULL
+    v$connected <- function() TRUE
+    v$send <- function(type, data = NULL)
+        v$sent[[length(v$sent) + 1L]] <- list(type = type, data = data)
+    v$push_panel <- function(spec, data = NULL, id = NULL, title = NULL,
+                             where = "tab", ref = NULL) v$panels[[id]] <- spec
+    v$push_metadata <- function(x, ...) v$meta <- x
+    v$removed <- character()
+    v$remove_panel <- function(id) v$removed <- c(v$removed, id)
+    v
+}
+
+test_that("Spatial interactions run only when asked", {
+    skip_on_cran()
+    skip_if_not_installed("callr")
+    skip_if_not_installed("Giotto")
+    skip_if_not_installed("GiottoDisk")
+    skip_if_not(dir.exists(mini_vault), "mini vault not found")
+    g <- GiottoDisk::snapshotLoad(mini_vault, name = "clustered")
+    v <- .fake_viewer()
+    a <- LensAnalysis$new(v, g, analyses = "interactions", params = list(
+        filter = list(feat_det_in_min_cells = 10, min_det_feats_per_cell = 20),
+        groups = list(column = "object:cell_type"),
+        proximity = list(number_of_simulations = 50)))
+    on.exit(a$close(), add = TRUE)
+    ist <- c("groups", "spatial_network", "proximity")
+    st <- function() vapply(a$status[ist], `[[`, "", "status")
+    a$wait(300)
+    expect_true(all(st() == "stale"))
+    priv <- a$.__enclos_env__$private
+    expect_identical(priv$resolve_column("groups"), "object:cell_type")
+    sch <- priv$schema()
+    expect_identical(vapply(sch$pipelines, `[[`, "", "id"), c("preprocess", "interactions"))
+    col <- Find(function(x) x$id == "groups", sch$steps)$params[[1L]]
+    expect_identical(col$type, "choice")
+    expect_true(all(c("object:cell_type", "object:leiden_clus", "analysis:cell_type") %in%
+        vapply(col$choices, `[[`, "", "value")))
+
+    a$run(step = "spatial_network")
+    a$wait(120)
+    expect_identical(unname(st()), c("done", "done", "stale"))
+    expect_match(a$status$groups$summary, "cell_type")
+    expect_null(v$panels$proximity)
+
+    a$run("interactions")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    expect_match(a$status$proximity$summary, "pairs")
+    spec <- v$panels$proximity
+    expect_identical(spec$mark$type, "rect")
+    n_types <- length(unique(stats::na.omit(GiottoClass::pDataDT(g)$cell_type)))
+    expect_identical(nrow(spec$data$values), as.integer(n_types^2))
+    fields <- c(spec$encoding$x$field, spec$encoding$y$field, spec$encoding$color$field,
+        vapply(spec$encoding$tooltip, `[[`, "", "field"))
+    expect_true(all(fields %in% names(spec$data$values)))
+    expect_false(any(grepl(".", fields, fixed = TRUE)))
+    expect_false(anyNA(spec$data$values$p_adj_higher))
+    expect_match(a$code("interactions"), 'cluster_column = "cell_type", number_of_simulations = 50',
+        fixed = TRUE)
+
+    secs <- a$status$groups$secs
+    a$set("spatial_network", k = 10)
+    a$wait(30)
+    expect_identical(unname(st()), c("done", "stale", "stale"))
+    expect_identical(a$status$groups$secs, secs)
+    a$handle("analysis_run", list(pipeline = "interactions"))
+    expect_true(all(st()[-1L] %in% c("queued", "running")))
+    a$cancel()
+    a$wait(30)
+    expect_true(all(st()[-1L] == "stale"))
+
+    a$set("groups", column = "object:leiden_clus")
+    expect_identical(priv$resolve_column("groups"), "object:leiden_clus")
+    a$run(step = "proximity")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    expect_match(a$status$groups$summary, "leiden_clus")
+    expect_error(a$run("nope"), "no analysis")
+})
+
+test_that("History brings back runs; genes color cells; analyses are added and removed", {
+    skip_on_cran()
+    skip_if_not_installed("callr")
+    skip_if_not_installed("Giotto")
+    skip_if_not_installed("GiottoDisk")
+    skip_if_not(dir.exists(mini_vault), "mini vault not found")
+    g <- GiottoDisk::snapshotLoad(mini_vault, name = "aggregated")
+    v <- .fake_viewer()
+    a <- LensAnalysis$new(v, g, params = list(
+        filter = list(feat_det_in_min_cells = 10, min_det_feats_per_cell = 20)))
+    on.exit(a$close(), add = TRUE)
+    a$wait(300)
+    expect_identical(names(a$analyses()), "preprocess")
+    expect_true("interactions" %in% a$catalog()$id)
+    expect_identical(nrow(a$history("preprocess")), 1L)
+    expect_error(a$remove("preprocess"), "cannot be removed")
+
+    a$handle("analysis_add", list(id = "interactions",
+        params = list(proximity = list(number_of_simulations = "20"))))
+    expect_identical(names(a$analyses()), c("preprocess", "interactions"))
+    expect_identical(a$params()$proximity$number_of_simulations, 20L)
+    a$run("interactions")
+    a$wait(300)
+    a$set("spatial_network", k = 10)
+    a$run("interactions")
+    a$wait(300)
+    h <- a$history("interactions")
+    expect_identical(nrow(h), 2L)
+    expect_identical(h$current, c(FALSE, TRUE))
+    first <- h$run[[1L]]
+    secs <- a$status$proximity$secs
+    v$panels$proximity <- NULL
+    a$restore_run("interactions", first)
+    expect_identical(a$params()$spatial_network$k, 20L)
+    expect_true(all(vapply(a$status[c("groups", "spatial_network", "proximity")], `[[`, "",
+        "status") == "done"))
+    expect_false(is.null(v$panels$proximity))
+    a$wait(30)
+    expect_identical(a$history("interactions")$current, c(TRUE, FALSE))
+
+    a$handle("analysis_feature", list(step = "proximity", feat = "MYC"))
+    a$wait(60)
+    expect_true("expr_MYC" %in% names(v$meta))
+    fb <- Filter(function(m) m$type == "analysis_feature", v$sent)
+    expect_identical(fb[[length(fb)]]$data$values, "normalized")
+    a$handle("analysis_feature", list(step = "proximity", feat = "CDX2"))
+    a$wait(60)
+    expect_true("expr_CDX2" %in% names(v$meta))
+    expect_false("expr_MYC" %in% names(v$meta))
+
+    a$remove("interactions")
+    expect_identical(names(a$analyses()), "preprocess")
+    expect_null(a$status$proximity)
+    expect_true("proximity" %in% v$removed)
+    a$add("interactions")
+    expect_identical(nrow(a$history("interactions")), 2L)
+    a$save_settings("both")
+    a$remove("interactions")
+    a$restore_settings("both")
+    expect_true("interactions" %in% names(a$analyses()))
+})
+
+test_that("Spatial interactions follow the cell types of the Preprocessing tab", {
+    skip_on_cran()
+    skip_if_not_installed("callr")
+    skip_if_not_installed("Giotto")
+    skip_if_not_installed("GiottoDisk")
+    skip_if_not(dir.exists(mini_vault), "mini vault not found")
+    g <- GiottoDisk::snapshotLoad(mini_vault, name = "aggregated")
+    v <- .fake_viewer()
+    a <- LensAnalysis$new(v, g, analyses = "interactions", params = list(
+        filter = list(feat_det_in_min_cells = 10, min_det_feats_per_cell = 20),
+        proximity = list(number_of_simulations = 50)))
+    on.exit(a$close(), add = TRUE)
+    a$wait(300)
+    priv <- a$.__enclos_env__$private
+    pre <- vapply(a$status[priv$pipelines$preprocess$steps], `[[`, "", "status")
+    expect_true(all(pre[names(pre) != "auto_type"] == "done"))
+    st <- function() vapply(a$status[c("groups", "spatial_network", "proximity")], `[[`, "", "status")
+    expect_true(all(st() == "stale"))
+    expect_identical(priv$resolve_column("groups"), "analysis:cell_type")
+    a$run("interactions")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    n_typed <- sum(!is.na(v$meta$cell_type))
+    expect_match(a$status$groups$summary, paste0("^", n_typed, " cells"))
+
+    a$labels(c(`1` = "epithelial"))
+    a$wait(60)
+    expect_true("epithelial" %in% v$meta$cell_type)
+    expect_true(all(st() == "stale"))
+    a$run("interactions")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    expect_true(any(grepl("epithelial", v$panels$proximity$data$values$pair)))
 })

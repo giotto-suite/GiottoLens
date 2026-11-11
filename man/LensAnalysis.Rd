@@ -21,6 +21,13 @@ and pushes their results to the viewer. Use it through \code{viewer$analysis}.
     \item \href{#method-LensAnalysis-initialize}{\code{LensAnalysis$new()}}
     \item \href{#method-LensAnalysis-params}{\code{LensAnalysis$params()}}
     \item \href{#method-LensAnalysis-set}{\code{LensAnalysis$set()}}
+    \item \href{#method-LensAnalysis-run}{\code{LensAnalysis$run()}}
+    \item \href{#method-LensAnalysis-catalog}{\code{LensAnalysis$catalog()}}
+    \item \href{#method-LensAnalysis-analyses}{\code{LensAnalysis$analyses()}}
+    \item \href{#method-LensAnalysis-add}{\code{LensAnalysis$add()}}
+    \item \href{#method-LensAnalysis-remove}{\code{LensAnalysis$remove()}}
+    \item \href{#method-LensAnalysis-history}{\code{LensAnalysis$history()}}
+    \item \href{#method-LensAnalysis-restore_run}{\code{LensAnalysis$restore_run()}}
     \item \href{#method-LensAnalysis-labels}{\code{LensAnalysis$labels()}}
     \item \href{#method-LensAnalysis-cell_markers}{\code{LensAnalysis$cell_markers()}}
     \item \href{#method-LensAnalysis-save_settings}{\code{LensAnalysis$save_settings()}}
@@ -55,6 +62,7 @@ and pushes their results to the viewer. Use it through \code{viewer$analysis}.
   params = NULL,
   cell_markers = NULL,
   threads = 4L,
+  analyses = character(),
   spat_unit = "cell",
   feat_type = "rna"
 )}
@@ -68,6 +76,7 @@ and pushes their results to the viewer. Use it through \code{viewer$analysis}.
       \item{\code{params}}{Starting values, see \code{\link[=launch_lens_analysis]{launch_lens_analysis()}}}
       \item{\code{cell_markers}}{Marker genes, see \code{\link[=launch_lens_analysis]{launch_lens_analysis()}}}
       \item{\code{threads}}{Threads in the background session}
+      \item{\code{analyses}}{Analyses besides Preprocessing, see \code{\link[=launch_lens_analysis]{launch_lens_analysis()}}}
       \item{\code{spat_unit, feat_type}}{Spatial unit and feature type}
     }
     \if{html}{\out{</div>}}
@@ -90,7 +99,8 @@ and pushes their results to the viewer. Use it through \code{viewer$analysis}.
 \if{html}{\out{<a id="method-LensAnalysis-set"></a>}}
 \if{latex}{\out{\hypertarget{method-LensAnalysis-set}{}}}
 \subsection{\code{LensAnalysis$set()}}{
-  Set parameters; affected steps rerun
+  Set parameters; affected steps of the Preprocessing
+tab rerun, those of the other tabs wait for \code{run()}
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensAnalysis$set(step, ...)}
@@ -102,6 +112,134 @@ and pushes their results to the viewer. Use it through \code{viewer$analysis}.
       \item{\code{step}}{Step id (\code{names(viewer$analysis$params())})}
       \item{\code{...}}{\code{parameter = value} pairs: a menu choice, or for a number
 parameter any number in its range}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-run"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-run}{}}}
+\subsection{\code{LensAnalysis$run()}}{
+  Run the stale steps of an analysis, or one step and the
+stale steps above it
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$run(pipeline = "interactions", step = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{pipeline}}{Analysis id (\code{names(viewer$analysis$analyses())});
+ignored when \code{step} is given}
+      \item{\code{step}}{Step id; \code{NULL} for every step of the analysis}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-catalog"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-catalog}{}}}
+\subsection{\code{LensAnalysis$catalog()}}{
+  The analyses that can be added: id, label, brief and
+whether it is included
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$catalog()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-analyses"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-analyses}{}}}
+\subsection{\code{LensAnalysis$analyses()}}{
+  The included analyses: id -> step ids
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$analyses()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-add"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-add}{}}}
+\subsection{\code{LensAnalysis$add()}}{
+  Add an analysis; its steps wait for \code{run()}
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$add(id, params = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{An id from \code{catalog()}}
+      \item{\code{params}}{Starting values for its steps, as in
+\code{\link[=launch_lens_analysis]{launch_lens_analysis()}}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-remove"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-remove}{}}}
+\subsection{\code{LensAnalysis$remove()}}{
+  Remove an analysis; its history is kept and comes back
+when it is added again
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$remove(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{An included analysis other than \code{"preprocess"}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-history"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-history}{}}}
+\subsection{\code{LensAnalysis$history()}}{
+  Finished runs kept for the session
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$history(id = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{An analysis id; \code{NULL} for all}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensAnalysis-restore_run"></a>}}
+\if{latex}{\out{\hypertarget{method-LensAnalysis-restore_run}{}}}
+\subsection{\code{LensAnalysis$restore_run()}}{
+  Bring back a run from \code{history()}: its parameters and
+results, without running the steps
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensAnalysis$restore_run(id, run)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Analysis id}
+      \item{\code{run}}{Run number from \code{history()}}
     }
     \if{html}{\out{</div>}}
   }
@@ -279,7 +417,7 @@ the whole tissue)}
 \if{html}{\out{<a id="method-LensAnalysis-wait"></a>}}
 \if{latex}{\out{\hypertarget{method-LensAnalysis-wait}{}}}
 \subsection{\code{LensAnalysis$wait()}}{
-  Wait until no step is stale or running
+  Wait until no step is running or waiting to run
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensAnalysis$wait(timeout = 300)}
@@ -320,7 +458,14 @@ the whole tissue)}
   R code that reproduces the current parameters
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensAnalysis$code()}
+    \preformatted{LensAnalysis$code(pipeline = "preprocess")}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{pipeline}}{Analysis id}
+    }
     \if{html}{\out{</div>}}
   }
 }
@@ -329,7 +474,8 @@ the whole tissue)}
 \if{html}{\out{<a id="method-LensAnalysis-cancel"></a>}}
 \if{latex}{\out{\hypertarget{method-LensAnalysis-cancel}{}}}
 \subsection{\code{LensAnalysis$cancel()}}{
-  Stop the running step; stale steps wait for the next change
+  Stop the running step and drop pending runs; stale
+steps wait for the next change or \code{run()}
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensAnalysis$cancel()}
