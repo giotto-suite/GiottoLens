@@ -41,10 +41,12 @@ export function createHistogramPanel(body, ctx) {
     return { bins: BINS, bin: i => { const x = v[i]; return x === x ? Math.min(BINS - 1, ((x - lo) / w) | 0) : -1; } };
   }
   // Counts over all cells, kept per column: only the foreground changes.
-  // `live`: foreground counts from a drag (adr/0013).
+  // `live`: foreground counts from a drag (adr/0013). Null while the column
+  // loads (new metadata gave it a new file): draw() runs again once it has.
   let allFor = null;
   function counts(live) {
     const c = state.meta.get(col);
+    if (!c) return null;
     const { bins, bin } = binsOf(c);
     if (allFor?.c !== c) {
       const all = new Uint32Array(bins);
@@ -173,8 +175,8 @@ export function createHistogramPanel(body, ctx) {
   }
 
   function refresh() {
-    if (!view) return;
-    view.data('bins', counts()).runAsync();
+    const rows = view && counts();
+    if (rows) view.data('bins', rows).runAsync();
   }
 
   ctrls.col.addEventListener('change', () => {
@@ -194,7 +196,7 @@ export function createHistogramPanel(body, ctx) {
   unsub.push(addLiveConsumer({
     source: () => source,
     bins: () => (view && ctx.visible() && state.meta.get(col) ? binsOf(state.meta.get(col)) : null),
-    show: sel => { if (view) view.data('bins', counts(sel)).runAsync(); },
+    show: sel => { const rows = view && counts(sel); if (rows) view.data('bins', rows).runAsync(); },
   }));
   const counted = whenVisible(ctx, refresh);
   unsub.push(store.subscribe(s => s.selection.version, counted.update));
