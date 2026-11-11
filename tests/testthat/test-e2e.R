@@ -1210,3 +1210,21 @@ test_that("set_view sets the zoom after the view was zoomed by hand", {
     expect_equal(min(b[["xmax"]] - b[["xmin"]], b[["ymax"]] - b[["ymin"]]), 50 * 2^0.2, tolerance = 0.01)
     expect_identical(br$errors(), character())
 })
+
+test_that("a type change redraws a histogram of the column once it loads", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    suppressMessages(v$push_metadata(fx$meta))
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
+    expect_identical(br$js("document.querySelector('[data-panel=histogram] select')?.value"), "score")
+    # The column gets a new file and is not loaded for a moment; the selection
+    # update that follows must not read it
+    v$set_column_type("score", "categorical")
+    expect_true(browser_wait(br, "window.__giottolens.state.meta.get('score')?.kind === 'categorical'"))
+    v$set_column_type("score", "continuous")
+    expect_true(browser_wait(br, "window.__giottolens.state.meta.get('score')?.kind === 'continuous'"))
+    expect_identical(br$errors(), character())
+})
