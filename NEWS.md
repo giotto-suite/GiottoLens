@@ -1,5 +1,8 @@
 # GiottoLens (development version)
 
+* After `select()`, a selection the page sent before it had R's rules no longer replaces
+  them in R for a moment: `rules()` and `selection` right after `select()` are R's. New
+  fields `seq` (`set_rule`) and `r_seq` (`cell_selection`), and outbound type `rule_seq`.
 * Cell outline color, width and opacity can be set: `viewer$set_outline(color =, width =,
   alpha =)` from R, or the "outlines" section of the cells panel (color picker, hex field,
   preset colors, width slider and number box, opacity slider, reset). Selected cells draw in
@@ -21,7 +24,15 @@
   shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the
   cells panel or `viewer$set_column_type(column, "categorical")`, and back with
   `"continuous"`. Rules on the column are dropped when its type changes; the setting is kept
-  for later `push_metadata()` calls. New inbound message type `set_column_type`.
+  for later `push_metadata()` calls unless `cols` sets the column's type. A kept setting on a
+  column with more than 1000 distinct values is dropped with a warning. New inbound message
+  type `set_column_type`.
+* `push_metadata()` keeps no copy of the metadata in R: R reads columns from the viewer's
+  metadata files when it needs them.
+* Metadata is one file per column. The viewer loads a column when it is used, and the rest
+  in the background while all columns fit 256 MB; above that the tooltip shows the loaded
+  columns. A type change rewrites one column, and columns that did not change stay loaded
+  after a new push. The message format changed (protocol 4).
 * Continuous color-by columns can use other color scales: presets (viridis, now the default;
   blue-red, the scale before; magma, inferno, plasma, cividis, turbo, gray, blue-white-red),
   reversed, or a custom scale of 2 to 9 colors edited in the cells panel legend.
@@ -29,7 +40,7 @@
   from R. Scales are kept per column and are part of the saved config
   (`state()$config$colorScales`).
 * The scatter panel releases its WebGL context when it is rebuilt.
-* `push_metadata()` keeps the two latest earlier metadata tables and deletes older ones.
+* `push_metadata()` keeps the previous push's metadata files and deletes older ones.
 * The side panel is gone: its sections dock as panels in a column beside the charts (cells,
   transcripts, images, register, annotations and layers, the old opacity section). They can be
   moved, tabbed, closed and added back from the `+` menu, and `push_panel(ref = "cells")`

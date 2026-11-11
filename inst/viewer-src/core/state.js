@@ -12,7 +12,8 @@ export const state = {
   // Cells (data/cells.ts) and metadata (data/meta.ts)
   cells: null,              // { n, x, y, tiles, url }
   cellPositions: null,      // Float32Array x0,y0,x1,y1,… for deck.gl
-  meta: null,               // Map column → MetaColumn
+  metaInfo: null,           // Map column → MetaInfo: every column pushed
+  meta: null,               // Map column → MetaColumn: the columns loaded so far
   cellColors: null,         // Uint8Array RGBA per cell for the colour-by column
   cellFill: null,           // Uint8Array polygon fill alpha per cell
   colorLegend: null,

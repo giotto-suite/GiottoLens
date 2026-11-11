@@ -77,11 +77,12 @@
     (a[1L] + t * dx - x)^2 + (a[2L] + t * dy - y)^2
 }
 
-# ctx: list(x, y, meta) with meta a data.frame in cell order (or NULL)
+# ctx: list(x, y, meta) with meta a function of a column name returning that
+# column in cell order, or NULL (no metadata)
 .eval_rule <- function(rule, ctx) {
     n <- length(ctx$x)
     col <- function(name) {
-        v <- ctx$meta[[name]]
+        v <- if (!is.null(ctx$meta)) ctx$meta(name)
         if (is.null(v)) stop("[select] no metadata column '", name, "'", call. = FALSE)
         v
     }

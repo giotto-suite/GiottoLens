@@ -365,6 +365,13 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     br$js("document.querySelector('[data-panel=cells] .legend-actions [data-act=reset]').click()")
     expect_true(browser_wait(br,
         "Object.keys(window.__giottolens.store.getState().categoryStyles.leiden_clus ?? {}).length === 0"))
+    # A column not loaded (over the prefetch budget) is styled from its kind and
+    # levels, and loads again to be drawn
+    br$js("window.__giottolens.state.meta.delete('leiden_clus'); true")
+    expect_identical(v$style_categories(alpha = c(b = 0.5)), "leiden_clus")
+    expect_equal(v$state()$config$categoryStyles$leiden_clus$b$alpha, 0.5)
+    expect_true(browser_wait(br, "window.__giottolens.state.meta.has('leiden_clus')"))
+    v$style_categories(reset = TRUE)
     expect_error(v$set_color_scale(), "is not continuous")
     expect_identical(v$set_color_scale("score", preset = "magma", reverse = TRUE), "score")
     sc <- v$state()$config$colorScales$score

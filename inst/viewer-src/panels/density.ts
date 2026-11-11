@@ -17,7 +17,7 @@ import { store, actions } from '../core/store.ts';
 import { maskExcept } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
 import type { Rule } from '../selection/rules.ts';
-import type { MetaColumn } from '../data/meta.ts';
+import { needColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 // @ts-ignore: plain JS module
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
@@ -144,7 +144,7 @@ const AXIS = { labelColor: '#9ca3af', titleColor: '#6b7280', domainColor: '#3741
   gridColor: '#1f2937', labelFontSize: 10, titleFontSize: 10, titleFontWeight: 'normal' };
 
 export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandle {
-  const cols = [...(state.meta as Map<string, MetaColumn>).values()].filter(c => c.kind === 'continuous');
+  const cols = [...(state.metaInfo as Map<string, MetaInfo>).values()].filter(c => c.kind === 'continuous');
   const names = cols.map(c => c.name);
   const dims = names.filter(c => /umap|tsne|pca/i.test(c));
   const xDef = dims.find(c => /1$|_x$/i.test(c)) ?? dims[0] ?? names[0];
@@ -290,7 +290,12 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
       ? { x: view.scale('x').domain(), y: view.scale('y').domain() } : null;
     const my = ++gen;
     view?.finalize(); view = null;
-    const x = state.meta.get(ctrls.x.value), y = state.meta.get(ctrls.y.value);
+    const xn = ctrls.x.value, yn = ctrls.y.value;
+    if (!state.meta.has(xn) || !state.meta.has(yn)) {
+      await needColumns([xn, yn]);
+      if (my !== gen) return;
+    }
+    const x = state.meta.get(xn), y = state.meta.get(yn);
     if (!x || !y) return;
     xc = x; yc = y;
     ctx.setTitle(`${x.name} × ${y.name}`);

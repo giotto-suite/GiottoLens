@@ -5,7 +5,7 @@ import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
-import { loadMeta } from './data/meta.ts';
+import { setMetaInfo, needColumns, prefetchColumns } from './data/meta.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
@@ -47,6 +47,11 @@ function recolorCells() {
   if (!state.cells) return;
   const s = store.getState();
   const col = s.colorBy;
+  // Keep the current colours while the column loads
+  if (col && !state.meta?.has(col) && state.metaInfo?.has(col)) {
+    needColumns([col]).then(() => { if (store.getState().colorBy === col && state.meta?.has(col)) recolorCells(); });
+    return;
+  }
   const { colors, fill, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
     col ? s.categoryStyles[col] : undefined, col ? s.colorScales[col] : undefined);
   state.cellColors  = colors;
@@ -176,18 +181,17 @@ async function main() {
   document.getElementById('btn-stats-toggle')?.classList.add('active');
 
   // ── R → viewer messages ───────────────────────────────────────────────────
-  let metaUrl = null;
-  onMessage('load_metadata', async ({ url, columns }) => {
+  onMessage('load_metadata', ({ columns }) => {
     // A reconnect re-sends the current metadata; keep the panels as they are
-    if (!state.cells || url === metaUrl) return;
-    metaUrl = url;
-    state.meta = await loadMeta(url, columns ?? []);
+    if (!state.cells || !setMetaInfo(columns ?? [])) return;
     const colorBy = store.getState().colorBy;
-    if (colorBy && !state.meta.has(colorBy)) actions.setColorBy(null);
+    if (colorBy && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
     else recolorCells();
-    // Rules on metadata columns re-evaluate against the new table
+    // Rules on metadata columns re-evaluate against the new columns
     recompute({ reset: true });
     refreshBuiltins();
+    // Whatever the view and panels asked for loads first
+    prefetchColumns();
   });
 
   onMessage('push_panel', pushPanel);
