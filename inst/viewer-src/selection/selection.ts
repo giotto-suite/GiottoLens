@@ -11,10 +11,20 @@ export function ctx(): Ctx | null {
   return state.cells ? { cells: state.cells, meta: state.meta } : null;
 }
 
+// R numbers the rule changes it sends (set_rule `seq`). A selection reports
+// the latest one it reflects (`r_seq`), so R can drop one made before its
+// rules arrived instead of letting it undo them.
+let seqPending = 0, seqApplied = 0;
+export function noteRuleSeq(seq: number): void { seqPending = seq; }
+// R's count with no rules to apply (a tab connecting): the selection already
+// reflects R's rules as far as they go
+export function syncRuleSeq(seq: number): void { seqPending = seqApplied = seq; }
+
 export function recompute({ reset = false } = {}): void {
   if (reset) resetMaskCache();
   const c = ctx();
   const s = store.getState();
+  seqApplied = seqPending;
   if (!c) { actions.setSelection(null, 0); return; }
   let res: { mask: Uint8Array | null; count: number };
   try {
@@ -61,6 +71,7 @@ export function sendSelection(): void {
     mask: encodeMask(s.selection.mask, state.cells.n),
     combine: s.combine,
     rules: Object.values(s.rules),
+    r_seq: seqApplied,
   });
 }
 

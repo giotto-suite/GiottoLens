@@ -393,9 +393,8 @@ LensViewer <- R6::R6Class("LensViewer",
                 self$selection <- private$cell_ids[hit]
             }
             self$selection_rules <- unname(rules)
-            if (self$connected())
-                self$send("set_rule", list(source = source, rule = rule,
-                    replace = replace, combine = private$combine))
+            private$broadcast(private$rule_message(list(source = source, rule = rule,
+                replace = replace, combine = private$combine)))
             invisible(self$selection)
         },
 
@@ -939,9 +938,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     identical(r$space, drop_rules_on), logical(1L))
                 if (any(on_col)) {
                     for (src in names(private$rule_set)[on_col])
-                        if (self$connected())
-                            private$broadcast(.encode_ws_message("set_rule",
-                                list(source = src, rule = NULL, replace = FALSE)))
+                        private$broadcast(private$rule_message(
+                            list(source = src, rule = NULL, replace = FALSE)))
                     private$rule_set <- private$rule_set[!on_col]
                 }
             }
@@ -952,6 +950,7 @@ LensViewer <- R6::R6Class("LensViewer",
             out$msg
         },
         rule_set    = list(),
+        rule_seq    = 0L,       # rule changes sent to the page (set_rule `seq`)
         combine     = "or",
         config_json = NULL,     # the page's saved config, as it sent it (JSON text)
         pushed      = list(),   # push_panel() payloads by id, in push order
@@ -1005,6 +1004,13 @@ LensViewer <- R6::R6Class("LensViewer",
             private$log_entries <- utils::tail(c(private$log_entries, list(entry)), 200L)
         },
 
+        # A set_rule message numbered so the page can say which rules its
+        # selections reflect (`r_seq`); `bump`: a new change, not a re-send
+        rule_message = function(data, bump = TRUE) {
+            if (bump) private$rule_seq <- private$rule_seq + 1L
+            .encode_ws_message("set_rule", c(data, list(seq = private$rule_seq)))
+        },
+
         broadcast = function(json) {
             for (ws in as.list(private$conns)) try(ws$send(json), silent = TRUE)
         },
@@ -1036,11 +1042,15 @@ LensViewer <- R6::R6Class("LensViewer",
                                 config = priv$config_json, panels = as.list(names(priv$pushed)))))
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
+                            # The rules carry R's rule count (`seq`); with
+                            # none, the count alone, never a clear: the page
+                            # may hold rules R has not heard of yet
                             if (length(priv$rule_set))
                                 for (src in names(priv$rule_set))
-                                    ws$send(.encode_ws_message("set_rule", list(source = src,
+                                    ws$send(priv$rule_message(list(source = src,
                                         rule = priv$rule_set[[src]], replace = FALSE,
-                                        combine = priv$combine)))
+                                        combine = priv$combine), bump = FALSE))
+                            else ws$send(.encode_ws_message("rule_seq", list(seq = priv$rule_seq)))
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
                         },
@@ -1072,6 +1082,12 @@ LensViewer <- R6::R6Class("LensViewer",
                                 call. = FALSE)
                         }),
                         {
+                            # A selection the page made before it had R's
+                            # latest rules: dropped, or it would undo them. The
+                            # page sends another once it has them.
+                            if (parsed$type == "cell_selection" && is.numeric(dat$r_seq) &&
+                                    dat$r_seq < priv$rule_seq)
+                                return(invisible())
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
                                 error = function(e) warning("[LensViewer] message error: ",
                                     .console_text(conditionMessage(e)), call. = FALSE))

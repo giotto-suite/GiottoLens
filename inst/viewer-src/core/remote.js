@@ -7,6 +7,7 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize, withZoom } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
+import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
@@ -33,13 +34,16 @@ export function initRemote() {
     metadata: state.meta ? [...state.meta.keys()] : [],
   }));
 
-  onMessage('set_rule', ({ source, rule, replace, combine }) => {
+  onMessage('set_rule', ({ source, rule, replace, combine, seq }) => {
+    if (seq != null) noteRuleSeq(seq);   // applied with the recompute these changes start
     if (combine) actions.setCombine(combine);
     if (rule?.kind === 'ids' && state.cells) primeMask(rule, decodeMask(rule.params.mask, state.cells.n));
     if (replace) actions.setRules(rule ? { [source]: rule } : {});
     else actions.setRule(source, rule ?? null);
     return { selected: store.getState().selection.count };
   });
+
+  onMessage('rule_seq', ({ seq }) => { if (seq != null) syncRuleSeq(seq); });
 
   onMessage('set_view', ({ target, zoom, bounds }) => {
     let vs = { ...state.currentViewState };

@@ -174,6 +174,11 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
+- R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
+  the number), and a connecting tab with no rules to re-send gets `rule_seq`. A
+  `cell_selection` reports the latest `seq` its selection was computed with (`r_seq`); R
+  drops one older than its count, which would otherwise undo `select()`. Never send a
+  clearing `set_rule` on connect: the page may hold rules R has not heard of yet.
 
 ### Tiles (adr/0004, adr/0005)
 

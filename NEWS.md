@@ -1,5 +1,8 @@
 # GiottoLens (development version)
 
+* After `select()`, a selection the page sent before it had R's rules no longer replaces
+  them in R for a moment: `rules()` and `selection` right after `select()` are R's. New
+  fields `seq` (`set_rule`) and `r_seq` (`cell_selection`), and outbound type `rule_seq`.
 * Integer metadata columns are continuous by default (before, categorical), like double
   columns; factor, character and logical columns stay categorical. Any numeric column can be
   shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the

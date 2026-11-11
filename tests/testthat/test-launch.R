@@ -109,6 +109,10 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_identical(a$state$msgs[[1]]$type, "restore")
     expect_null(a$state$msgs[[1]]$data$config)
     expect_identical(a$state$msgs[[2]]$type, "load_metadata")
+    expect_true(pump_until(function() length(a$state$msgs) > 2))
+    # No rules to re-send: R's rule count alone, so the tab can report it
+    expect_identical(a$state$msgs[[3]]$type, "rule_seq")
+    expect_identical(a$state$msgs[[3]]$data$seq, 0L)
     expect_true(v$connected())
 
     ids <- get("private", v$.__enclos_env__)$cell_ids
@@ -136,6 +140,19 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_identical(sent$rule$kind, "ids")
     expect_identical(sent$combine, "or")
     expect_identical(ids[.decode_mask(sent$rule$params$mask, length(ids))], "cell_010")
+
+    # A selection the page made before R's latest rules reached it is dropped;
+    # one that reflects them (or one without r_seq) is taken
+    sel_msg <- function(id, seq) sprintf('{"type":"cell_selection","data":{"mask":"%s","rules":[]%s}}',
+        .encode_mask(match(id, ids), length(ids)), if (is.null(seq)) "" else sprintf(',"r_seq":%d', seq))
+    a$ws$send(sel_msg("cell_001", sent$seq - 1L))
+    pump_until(function() FALSE, timeout = 0.3)
+    expect_identical(v$selection, "cell_010")
+    expect_identical(v$rules()$source, "r")
+    a$ws$send(sel_msg("cell_001", sent$seq))
+    expect_true(pump_until(function() identical(v$selection, "cell_001")))
+    a$ws$send(sel_msg("cell_002", NULL))
+    expect_true(pump_until(function() identical(v$selection, "cell_002")))
 
     a$ws$close(); b$ws$close()
     expect_true(pump_until(function() !v$connected()))
