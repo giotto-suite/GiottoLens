@@ -44,7 +44,8 @@ export function createScatterPanel(body, ctx) {
 
   function recolor() {
     const name = ctrls.color.value;
-    colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null).colors : state.cellColors;
+    colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null,
+      store.getState().colorScales[name]).colors : state.cellColors;
     pointData = null;
     render();
   }
@@ -164,6 +165,7 @@ export function createScatterPanel(body, ctx) {
   const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor);
   unsub.push(store.subscribe(s => s.selection.version, sel.update));
   unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));
+  unsub.push(store.subscribe(s => s.colorScales, () => { if (ctrls.color.value) col.update(); }));
   load();
 
   return {

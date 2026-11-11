@@ -8,6 +8,7 @@ import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
 import type { Registration, Landmark, Affine } from '../data/registration.ts';
+import type { ColorScale } from '../render/colors.ts';
 
 export type LayerName = 'poly' | 'tx' | 'annotations' | 'img';
 export interface LayerVis { show: boolean; alpha: number }
@@ -42,6 +43,7 @@ export interface Config {
   colorAll: boolean;
   genes: number[];              // selected gene indices into manifest genes
   colorBy: string | null;       // metadata column colouring the cells
+  colorScales: Record<string, ColorScale>;   // per continuous column
   cellMark: CellMark;           // how cells are drawn zoomed in, over the launch mark
   rules: Record<string, Rule>;  // selection rule per source
   combine: Combine;             // 'and' = crossfilter
@@ -75,6 +77,7 @@ export const initialConfig = (): Config => ({
   colorAll: false,
   genes: [],
   colorBy: null,
+  colorScales: {},
   cellMark: {},
   rules: {},
   combine: 'or',
@@ -156,6 +159,15 @@ export const actions = {
   addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
   clearGenes() { set({ genes: [] }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  setColorScale(column: string, patch: Partial<ColorScale>) {
+    set(s => ({ colorScales: { ...s.colorScales, [column]: { ...(s.colorScales[column] ?? {}), ...patch } } }));
+  },
+  resetColorScale(column: string) {
+    set(s => {
+      const { [column]: _, ...rest } = s.colorScales;
+      return { colorScales: rest };
+    });
+  },
   // Fields in `patch` replace the mark's; null goes back to the launch mark
   setCellMark(patch: CellMark | null) {
     set({ cellMark: patch ? { ...get().cellMark, ...patch } : {} });

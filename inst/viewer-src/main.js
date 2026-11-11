@@ -45,8 +45,10 @@ function onViewStateChange({ viewState }) {
 // ── Cell colours ──────────────────────────────────────────────────────────────
 function recolorCells() {
   if (!state.cells) return;
-  const col = store.getState().colorBy;
-  const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null);
+  const s = store.getState();
+  const col = s.colorBy;
+  const { colors, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
+    col ? s.colorScales[col] : undefined);
   state.cellColors  = colors;
   state.colorLegend = legend;
   actions.bumpMeta();
@@ -144,6 +146,7 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
+  store.subscribe(s => s.colorScales, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });

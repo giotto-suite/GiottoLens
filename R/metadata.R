@@ -121,7 +121,10 @@ prep_meta <- function(
 # table), so the browser reads each column straight into a typed array indexed
 # by cell. Categorical columns are written as 0-based integer codes (NA = -1)
 # with their levels in the payload; continuous columns as doubles.
-.write_metadata <- function(meta, dir, cell_ids) {
+# Factor, character and logical columns are categorical; integer and double
+# columns are continuous unless `types` (column -> "categorical") names them.
+# Numeric columns carry `numeric = TRUE` in the payload.
+.write_metadata <- function(meta, dir, cell_ids, types = NULL) {
     if (!"cell_ID" %in% names(meta))
         stop("[push_metadata] metadata needs a `cell_ID` column matching the ",
             "cell IDs", call. = FALSE)
@@ -149,16 +152,23 @@ prep_meta <- function(
     arrays  <- list()
     for (cn in data_cols) {
         v <- meta[[cn]][row]
-        if (is.factor(v) || is.character(v) || is.logical(v) || is.integer(v)) {
+        numeric <- is.numeric(v)
+        if (numeric && identical(unname(types[cn]), "categorical")) {
+            v <- .numeric_factor(v, cn)
+            table[[cn]] <- v
+        }
+        if (is.factor(v) || is.character(v) || is.logical(v)) {
             f <- if (is.factor(v)) droplevels(v) else factor(v)
             codes <- as.integer(f) - 1L
             codes[is.na(codes)] <- -1L
             arrays[[cn]]  <- codes
-            columns[[length(columns) + 1L]] <- list(name = cn,
-                kind = "categorical", levels = as.list(levels(f)))
+            columns[[length(columns) + 1L]] <- c(list(name = cn,
+                kind = "categorical", levels = as.list(levels(f))),
+                if (numeric) list(numeric = TRUE))
         } else {
             arrays[[cn]]  <- as.double(v)
-            columns[[length(columns) + 1L]] <- list(name = cn, kind = "continuous")
+            columns[[length(columns) + 1L]] <- list(name = cn, kind = "continuous",
+                numeric = TRUE)
         }
     }
 
@@ -173,6 +183,19 @@ prep_meta <- function(
         # The same rows with their original types, for rule evaluation in R
         table = table
     )
+}
+
+# A numeric vector as a factor of its distinct values, in numeric order,
+# labelled without scientific notation
+.max_numeric_levels <- 1000L
+.numeric_factor <- function(v, name) {
+    lv <- sort(unique(v[!is.na(v)]))
+    if (length(lv) > .max_numeric_levels)
+        stop("[LensViewer] `", name, "` has ", length(lv), " distinct values; ",
+            "at most ", .max_numeric_levels, " can be shown as categories", call. = FALSE)
+    labels <- vapply(lv, function(z) format(z, scientific = FALSE, digits = 15,
+        drop0trailing = TRUE, trim = TRUE), "")
+    factor(v, levels = lv, labels = labels)
 }
 
 # `cols` -> named character vector of column -> viewer type (NA = no cast)

@@ -1,5 +1,17 @@
 # GiottoLens (development version)
 
+* Integer metadata columns are continuous by default (before, categorical), like double
+  columns; factor, character and logical columns stay categorical. Any numeric column can be
+  shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the
+  cells panel or `viewer$set_column_type(column, "categorical")`, and back with
+  `"continuous"`. Rules on the column are dropped when its type changes; the setting is kept
+  for later `push_metadata()` calls. New inbound message type `set_column_type`.
+* Continuous color-by columns can use other color scales: presets (blue-red, the default;
+  viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red), reversed, or a
+  custom scale of 2 to 9 colors edited in the cells panel legend.
+  `viewer$set_color_scale(column =, preset =, colors =, reverse =, reset =)` sets the same
+  from R. Scales are kept per column and are part of the saved config
+  (`state()$config$colorScales`).
 * The scatter panel releases its WebGL context when it is rebuilt.
 * `push_metadata()` keeps the two latest earlier metadata tables and deletes older ones.
 * The side panel is gone: its sections dock as panels in a column beside the charts (cells,
