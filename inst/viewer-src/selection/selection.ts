@@ -24,8 +24,8 @@ export function recompute({ reset = false } = {}): void {
   if (reset) resetMaskCache();
   const c = ctx();
   const s = store.getState();
-  seqApplied = seqPending;
-  if (!c) { actions.setSelection(null, 0); return; }
+  if (!c) { seqApplied = seqPending; actions.setSelection(null, 0); return; }
+  seqApplied = seqPending;   // the selection below reflects R's rules up to here
   let res: { mask: Uint8Array | null; count: number };
   try {
     res = combine(s.rules, c, s.combine);
