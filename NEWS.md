@@ -1,14 +1,30 @@
 # GiottoLens (development version)
 
+* Cell outline color, width and opacity can be set: `viewer$set_outline(color =, width =,
+  alpha =)` from R, or the "outlines" section of the cells panel (color picker, hex field,
+  preset colors, width slider and number box, opacity slider, reset). Selected cells draw in
+  the selection color, 1 px wider than the outline width. The width ranges from 0.01 to
+  20 px; the width slider is on a log scale. The settings are part of the saved config
+  (`state()$config$outline`).
+* Cells colored by a categorical column fill at 90% opacity by default (was 43%), and cell
+  outlines are black at 80% opacity by default (was white at 78%).
+* The legend of a categorical color-by column in the cells panel is editable: per category,
+  a checkbox turns its color on or off, the swatch opens a color picker, and a slider sets its
+  fill opacity. Double-clicking a label draws that category at full opacity and the others at
+  20%; "all on", "all off" and "reset" act on every category.
+  `viewer$style_categories(column =, colors =, show =, alpha =, reset =)` sets the same from
+  R; `alpha = c(0.2, Myeloid = 1)` sets every category to 0.2 and Myeloid to 1. Centroids
+  draw at twice the fill opacity, capped at 1. Styles are kept per column and are part of the
+  saved config (`state()$config$categoryStyles`).
 * Integer metadata columns are continuous by default (before, categorical), like double
   columns; factor, character and logical columns stay categorical. Any numeric column can be
   shown as categories, one per distinct value (at most 1000), with the "treat as" menu in the
   cells panel or `viewer$set_column_type(column, "categorical")`, and back with
   `"continuous"`. Rules on the column are dropped when its type changes; the setting is kept
   for later `push_metadata()` calls. New inbound message type `set_column_type`.
-* Continuous color-by columns can use other color scales: presets (blue-red, the default;
-  viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red), reversed, or a
-  custom scale of 2 to 9 colors edited in the cells panel legend.
+* Continuous color-by columns can use other color scales: presets (viridis, now the default;
+  blue-red, the scale before; magma, inferno, plasma, cividis, turbo, gray, blue-white-red),
+  reversed, or a custom scale of 2 to 9 colors edited in the cells panel legend.
   `viewer$set_color_scale(column =, preset =, colors =, reverse =, reset =)` sets the same
   from R. Scales are kept per column and are part of the saved config
   (`state()$config$colorScales`).
