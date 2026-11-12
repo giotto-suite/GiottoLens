@@ -39,6 +39,8 @@ complete pairs on, the placement before). See
   \itemize{
     \item \href{#method-LensViewer-initialize}{\code{LensViewer$new()}}
     \item \href{#method-LensViewer-set_object}{\code{LensViewer$set_object()}}
+    \item \href{#method-LensViewer-gobject}{\code{LensViewer$gobject()}}
+    \item \href{#method-LensViewer-checkout}{\code{LensViewer$checkout()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
@@ -108,6 +110,16 @@ complete pairs on, the placement before). See
 URL stay; open tabs reload. Nothing of the current object is kept:
 its settings, rules, annotations, pushed panels and metadata are
 dropped. Returns before the tabs have reloaded.
+
+The viewer shows a snapshot of the object, in the object's project:
+the snapshot it was loaded from or saved as, or another of the same
+object, when nothing has changed since (\code{\link[GiottoClass:manifestDiff]{GiottoClass::manifestDiff()}});
+otherwise a new snapshot, \verb{lens_<date>_<time>}, saved with
+\code{creator = "GiottoLens"} and \code{keep = FALSE}. That save never moves
+the object's data: an object with stores outside its project (disk
+results not saved yet) is refused until saved with
+\code{g <- saveGiotto(g)}. An object written into \code{project} is saved
+with \code{keep = TRUE}.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_object(
@@ -118,6 +130,7 @@ dropped. Returns before the tabs have reloaded.
   images = NULL,
   image_files = NULL,
   mark = NULL,
+  project = NULL,
   discard = FALSE
 )}
     \if{html}{\out{</div>}}
@@ -125,12 +138,52 @@ dropped. Returns before the tabs have reloaded.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark}}{As in
-\code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark, project}}{As in \code{\link[=launch_lens]{launch_lens()}}}
       \item{\code{discard}}{Whether to drop the current object's rules,
 annotations, pushed panels and image registration. With any of
 them and \code{discard = FALSE} (default), nothing changes and an error
 names them.}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-gobject"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-gobject}{}}}
+\subsection{\code{LensViewer$gobject()}}{
+  The object shown, loaded from its snapshot. Changes
+made to it do not reach the viewer until passed to \code{set_object()}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$gobject()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-checkout"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-checkout}{}}}
+\subsection{\code{LensViewer$checkout()}}{
+  Show a snapshot of the current project, as
+\code{set_object()} would show the object it holds; its spatial unit
+and feature type are the current ones unless given.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$checkout(
+  name,
+  spat_unit = private$spat_unit \%||\% "cell",
+  feat_type = private$feat_type,
+  discard = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Snapshot name, as listed by \code{\link[GiottoDisk:snapshotInfo]{GiottoDisk::snapshotInfo()}}}
+      \item{\code{spat_unit, feat_type}}{As in \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{discard}}{As in \code{set_object()}}
     }
     \if{html}{\out{</div>}}
   }

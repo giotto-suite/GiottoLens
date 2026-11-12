@@ -17,15 +17,19 @@ launch_lens(
   transfer = c("auto", "whole", "columns"),
   images = NULL,
   mark = NULL,
-  image_files = NULL
+  image_files = NULL,
+  project = NULL
 )
 
 serve_lens(...)
 }
 \arguments{
-\item{x}{A giotto object, or \code{NULL} (default) to start without
-one and load it later with \code{viewer$set_object()}. A giottoPoints backed
-by a GiottoDisk tile store still works but is deprecated: pass a giotto
+\item{x}{A giotto object in a GiottoDisk project, or \code{NULL}
+(default) to start without one and load it later with
+\code{viewer$set_object()}. An object not in a project needs \code{project}. What
+the viewer shows is a snapshot of the object: the one it matches, or a new
+one saved for it (see \code{LensViewer$set_object()}). A giottoPoints backed by
+a GiottoDisk tile store still works but is deprecated: pass a giotto
 object.}
 
 \item{gpolygons}{giottoPolygon backed by a GiottoDisk tile store, with a
@@ -81,6 +85,13 @@ until their outlines load, or as this mark when one is given.}
 as an H&E to register: a character vector of paths, named by image
 (default: the file name). They are drawn inside the data's extent until
 registered with \code{viewer$register_image()}.}
+
+\item{project}{For an \code{x} not in a GiottoDisk project: the directory of
+the project to write it into (created if needed). Its points and polygons
+are written untiled and read as one tile, which the browser loads whole:
+up to 50,000 polygons and 2,000,000 points, or as set with
+\code{options(GiottoLens.untiled_max = c(polygons = , points = ))}. This is
+for small objects. Not allowed for an object already in a project.}
 
 \item{...}{Passed to \code{\link[=launch_lens]{launch_lens()}}.}
 }

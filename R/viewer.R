@@ -8,10 +8,19 @@
 #' Tile data goes through a Range-aware handler so the viewer reads only the
 #' columns it draws.
 #'
-#' @param x          A giotto object, or `NULL` (default) to start without
-#'   one and load it later with `viewer$set_object()`. A giottoPoints backed
-#'   by a GiottoDisk tile store still works but is deprecated: pass a giotto
+#' @param x          A giotto object in a GiottoDisk project, or `NULL`
+#'   (default) to start without one and load it later with
+#'   `viewer$set_object()`. An object not in a project needs `project`. What
+#'   the viewer shows is a snapshot of the object: the one it matches, or a new
+#'   one saved for it (see `LensViewer$set_object()`). A giottoPoints backed by
+#'   a GiottoDisk tile store still works but is deprecated: pass a giotto
 #'   object.
+#' @param project    For an `x` not in a GiottoDisk project: the directory of
+#'   the project to write it into (created if needed). Its points and polygons
+#'   are written untiled and read as one tile, which the browser loads whole:
+#'   up to 50,000 polygons and 2,000,000 points, or as set with
+#'   `options(GiottoLens.untiled_max = c(polygons = , points = ))`. This is
+#'   for small objects. Not allowed for an object already in a project.
 #' @param gpolygons  giottoPolygon backed by a GiottoDisk tile store, with a
 #'   giottoPoints `x` (deprecated). Ignored when `x` is a giotto object.
 #' @param feat_type  Feature type key when `x` is a giotto object (default
@@ -69,13 +78,14 @@ launch_lens <- function(
     transfer   = c("auto", "whole", "columns"),
     images     = NULL,
     mark       = NULL,
-    image_files = NULL
+    image_files = NULL,
+    project    = NULL
 ) {
     transfer <- match.arg(transfer)
     # Checked before the server starts, so a bad argument leaves none running
     object <- if (!is.null(x) || !is.null(gpolygons)) .resolve_object(x,
         gpolygons = gpolygons, feat_type = feat_type, spat_unit = spat_unit,
-        images = images, image_files = image_files, mark = mark)
+        images = images, image_files = image_files, mark = mark, project = project)
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -128,22 +138,56 @@ serve_lens <- function(...) {
     for (v in as.list(.lens_registry)) try(v$close(), silent = TRUE)
 }
 
-# What launch_lens() and set_object() load: the layers, images and mark,
-# checked.
+# What launch_lens() and set_object() load, checked: the layers, images and
+# mark, and for a giotto object `x` itself and the `project` to write it into
+# (.check_project()). The load works out the layers and images again from the
+# object as it is after the hand-over (adr/0018), since writing it into a
+# project changes where its data is.
 .resolve_object <- function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
-                            images = NULL, image_files = NULL, mark = NULL) {
+                            images = NULL, image_files = NULL, mark = NULL,
+                            project = NULL) {
     giotto <- inherits(x, "giotto")
     if (!giotto) .warn_layer_launch()
-    mark   <- .check_mark(mark)
-    layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
+    mark <- .check_mark(mark)
+    if (giotto) .check_project(x, project)
+    # An object still in memory has no stores to check until it is written
+    layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit,
+        stores = !giotto || !is.null(x@source))
     imgs   <- .pick_images(x, images)
     list(
+        x           = if (giotto) x,
+        project     = project,
         layers      = layers,
         images      = imgs,
+        pick_images = images,
         image_files = .check_image_files(image_files, taken = names(imgs)),
         mark        = mark,
-        spat_unit   = if (giotto) spat_unit
+        spat_unit   = if (giotto) spat_unit,
+        feat_type   = if (giotto) feat_type
     )
+}
+
+# A giotto object is shown from a GiottoDisk project: its own, or `project`
+# (a directory) when it is not in one yet. The project follows the object, so
+# an object already in one cannot be given another.
+.check_project <- function(x, project) {
+    if (!is.null(x@source) && !is.null(project))
+        stop("[launch_lens] x is already in a project (", x@source@path,
+            "); `project` is for an object not in one", call. = FALSE)
+    if (is.null(x@source) && is.null(project))
+        stop("[launch_lens] x is not in a GiottoDisk project; pass `project`, ",
+            "a directory, to write it into one", call. = FALSE)
+    if (!is.null(project)) {
+        if (!is.character(project) || length(project) != 1L || !nzchar(project))
+            stop("[launch_lens] `project` must be a directory path", call. = FALSE)
+        if (dir.exists(project) && !file.exists(file.path(project, "giottodir.json")) &&
+                length(list.files(project, all.files = TRUE, no.. = TRUE)))
+            stop("[launch_lens] `project` is a directory with other files and not a ",
+                "GiottoDisk project: ", project, call. = FALSE)
+    }
+    if (!requireNamespace("GiottoDisk", quietly = TRUE))
+        stop("[launch_lens] showing a giotto object needs GiottoDisk", call. = FALSE)
+    invisible()
 }
 
 # Once per session: the tests and scripts that still do it see it once
@@ -155,7 +199,50 @@ serve_lens <- function(...) {
 }
 .lens_warned <- new.env(parent = emptyenv())
 
-.resolve_layers <- function(x, gpolygons, feat_type, spat_unit) {
+# Tags of the snapshots the object was last loaded from or saved as
+# (GiottoClass's `@versions$snapshot`)
+.snapshot_pointer <- function(x) {
+    v <- x@versions
+    if (is.list(v)) unlist(v$snapshot)
+}
+
+# A snapshot in `src` that holds `x` as it is: the ones it was loaded from or
+# saved as first, then the latest others of the same object (objUID()). Equal
+# means no change in their manifests, and nothing unfingerprinted that could
+# have changed unseen. NULL if none.
+.matching_snapshot <- function(src, x, tries = 5L) {
+    info <- GiottoDisk::snapshotInfo(src)
+    if (!nrow(info)) return(NULL)
+    ptr  <- intersect(.snapshot_pointer(x), info$tag)
+    same <- rev(info$tag[!is.na(info$object) & info$object %in% GiottoClass::objUID(x)])
+    cand <- utils::head(unique(c(ptr, same)), tries)
+    if (!length(cand)) return(NULL)
+    m <- GiottoClass::objManifest(x)
+    for (tag in cand) {
+        f <- file.path(src@path, "giottosave", tag, "manifest.json")
+        if (!file.exists(f)) next
+        d <- GiottoClass::manifestDiff(GiottoClass::objManifest(f), m)
+        if (!d$changed && !length(d$detail$unfingerprinted)) return(tag)
+    }
+    NULL
+}
+
+# A new name for a snapshot the viewer saves: lens_<date>_<time>, with _2, _3,
+# ... if taken
+.lens_snapshot_name <- function(src) {
+    base  <- paste0("lens_", format(Sys.time(), "%Y%m%d_%H%M%S"))
+    taken <- GiottoDisk::snapshotInfo(src, deleted = TRUE)$name
+    name  <- base
+    k <- 1L
+    while (name %in% taken) {
+        k <- k + 1L
+        name <- sprintf("%s_%d", base, k)
+    }
+    name
+}
+
+# `stores`: whether to check that the layers are GiottoDisk stores
+.resolve_layers <- function(x, gpolygons, feat_type, spat_unit, stores = TRUE) {
     locations <- NULL
     if (inherits(x, "giotto")) {
         gpoints <- .pick_layer(x@feat_info, feat_type, "feat_type")
@@ -175,8 +262,10 @@ serve_lens <- function(...) {
     if (is.null(gpoints) && is.null(gpolygons) && is.null(locations))
         stop("[launch_lens] nothing to show: provide points and/or cells",
             call. = FALSE)
-    .check_tile_store(gpoints, "giottoPoints", "points")
-    .check_tile_store(gpolygons, "giottoPolygon", "polygons")
+    if (stores) {
+        .check_tile_store(gpoints, "giottoPoints", "points")
+        .check_tile_store(gpolygons, "giottoPolygon", "polygons")
+    }
     list(gpoints = gpoints, gpolygons = gpolygons, locations = locations)
 }
 
@@ -218,17 +307,39 @@ serve_lens <- function(...) {
     slot_list[[key]]
 }
 
+# The most geometries the viewer reads from an untiled store, which it loads
+# whole as one tile. Measured in headless Chrome (2026-11-12): 24-vertex
+# polygons cost about 7 KB of JS heap each once drawn, held whatever the view
+# (100k: 0.5 s, 700 MB; 250k: 1.2 s, 1.7 GB); points are thinned by zoom when
+# decoded, so the file is the cost (46 MB per million points).
+.lens_untiled_max <- c(polygons = 50000, points = 2000000)
+
+# A layer the viewer can read: a GiottoDisk tile store, or an untiled
+# geometry store, read as one tile (.store_tiles()) up to
+# getOption("GiottoLens.untiled_max") geometries: a number, or named
+# `polygons` and `points`
 .check_tile_store <- function(obj, cls, what) {
     if (is.null(obj)) return(invisible())
     if (!inherits(obj, cls))
         stop(sprintf("[launch_lens] %s must be a %s, not %s",
             what, cls, class(obj)[[1L]]), call. = FALSE)
     sv <- obj@spatVector
-    if (!all(vapply(c("path", "tiles", "uid"), methods::.hasSlot, logical(1L), object = sv))) {
+    if (!inherits(sv, "parquetGeomStore")) {
         stop(sprintf(paste0("[launch_lens] %s are in memory (%s); GiottoLens ",
-            "reads GiottoDisk tile stores. Save the object with saveGiotto() ",
-            "and load it with loadGiotto() first"), what, class(sv)[[1L]]),
+            "reads GiottoDisk stores. Pass `project` to write the object into ",
+            "a project"), what, class(sv)[[1L]]),
             call. = FALSE)
+    }
+    if (!methods::.hasSlot(sv, "tiles")) {
+        n <- .store_tiles(sv)$n
+        max <- getOption("GiottoLens.untiled_max", .lens_untiled_max)
+        if (!is.null(names(max)))
+            max <- if (what %in% names(max)) max[[what]] else .lens_untiled_max[[what]]
+        if (n > max)
+            stop(sprintf(paste0("[launch_lens] %s are an untiled store of %s geometries; ",
+                "GiottoLens reads untiled stores of up to %s (option GiottoLens.untiled_max). ",
+                "Write them as a parquetGeomTileStore"), what, format(n, big.mark = ","),
+                format(max, big.mark = ",")), call. = FALSE)
     }
     invisible()
 }
@@ -277,6 +388,8 @@ LensViewer <- R6::R6Class("LensViewer",
         initialize = function(port, host, url_prefix, transfer = "auto", object = NULL) {
             self$port         <- port
             private$transfer  <- transfer
+            # Which viewer saved a snapshot; never the token, which grants access
+            private$session_id <- .rand_id(16L)
             private$token     <- .rand_id(24L)
             private$conns     <- new.env(parent = emptyenv())
             private$conn_load <- new.env(parent = emptyenv())
@@ -301,15 +414,25 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   URL stay; open tabs reload. Nothing of the current object is kept:
         #'   its settings, rules, annotations, pushed panels and metadata are
         #'   dropped. Returns before the tabs have reloaded.
-        #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark As in
-        #'   [launch_lens()]
+        #'
+        #'   The viewer shows a snapshot of the object, in the object's project:
+        #'   the snapshot it was loaded from or saved as, or another of the same
+        #'   object, when nothing has changed since ([GiottoClass::manifestDiff()]);
+        #'   otherwise a new snapshot, `lens_<date>_<time>`, saved with
+        #'   `creator = "GiottoLens"` and `keep = FALSE`. That save never moves
+        #'   the object's data: an object with stores outside its project (disk
+        #'   results not saved yet) is refused until saved with
+        #'   `g <- saveGiotto(g)`. An object written into `project` is saved
+        #'   with `keep = TRUE`.
+        #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark,project
+        #'   As in [launch_lens()]
         #' @param discard Whether to drop the current object's rules,
         #'   annotations, pushed panels and image registration. With any of
         #'   them and `discard = FALSE` (default), nothing changes and an error
         #'   names them.
         set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
                               images = NULL, image_files = NULL, mark = NULL,
-                              discard = FALSE) {
+                              project = NULL, discard = FALSE) {
             if (!isTRUE(discard) && !isFALSE(discard))
                 stop("[LensViewer$set_object] `discard` must be TRUE or FALSE", call. = FALSE)
             work <- if (private$loaded && !discard) private$lens_work()
@@ -318,8 +441,35 @@ LensViewer <- R6::R6Class("LensViewer",
                     "; pass `discard = TRUE` to drop them", call. = FALSE)
             private$load(.resolve_object(x, gpolygons = gpolygons, feat_type = feat_type,
                 spat_unit = spat_unit, images = images, image_files = image_files,
-                mark = mark))
+                mark = mark, project = project))
             invisible(self)
+        },
+
+        #' @description The object shown, loaded from its snapshot. Changes
+        #'   made to it do not reach the viewer until passed to `set_object()`.
+        gobject = function() {
+            private$need_object("LensViewer$gobject")
+            if (is.null(private$snapshot))
+                stop("[LensViewer$gobject] the viewer shows layers, not a giotto object",
+                    call. = FALSE)
+            suppressMessages(GiottoDisk::snapshotLoad(private$project,
+                name = private$snapshot_name()))
+        },
+
+        #' @description Show a snapshot of the current project, as
+        #'   `set_object()` would show the object it holds; its spatial unit
+        #'   and feature type are the current ones unless given.
+        #' @param name Snapshot name, as listed by [GiottoDisk::snapshotInfo()]
+        #' @param spat_unit,feat_type As in [launch_lens()]
+        #' @param discard As in `set_object()`
+        checkout = function(name, spat_unit = private$spat_unit %||% "cell",
+                            feat_type = private$feat_type, discard = FALSE) {
+            if (is.null(private$project))
+                stop("[LensViewer$checkout] no project open; call set_object(g) first",
+                    call. = FALSE)
+            x <- suppressMessages(GiottoDisk::snapshotLoad(private$project, name = name))
+            self$set_object(x, spat_unit = spat_unit, feat_type = feat_type,
+                discard = discard)
         },
 
         #' @description Send a typed message to every connected tab
@@ -1063,6 +1213,10 @@ LensViewer <- R6::R6Class("LensViewer",
             cat("  running:     ", !is.null(private$server), "\n")
             cat("  object:      ", if (!private$loaded) "none" else
                 sprintf("%s cells", format(length(private$cell_ids), big.mark = ",")), "\n")
+            if (!is.null(private$project)) {
+                cat("  project:     ", private$project@path, "\n")
+                cat("  snapshot:    ", private$snapshot, "\n")
+            }
             cat("  connected:   ", length(private$conns), "tab(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
@@ -1076,6 +1230,10 @@ LensViewer <- R6::R6Class("LensViewer",
         transfer    = "auto",
         routes      = NULL,     # env: mounts (layer -> store dir), images (k -> file)
         loaded      = FALSE,    # whether an object is shown
+        session_id  = NULL,     # recorded on the snapshots this viewer saves
+        project     = NULL,     # gDirSource of the object shown
+        snapshot    = NULL,     # tag of the snapshot shown
+        feat_type   = NULL,
         cells_file  = NULL,     # its cell table in the session dir (.export_session())
         load_seq    = 0L,       # loads so far; the manifest and each tab's ready carry it
         conn_load   = NULL,     # env: connection id -> the load its page came from
@@ -1200,6 +1358,7 @@ LensViewer <- R6::R6Class("LensViewer",
         # open tabs reload. A tab still on the previous object is ignored until
         # it has (adr/0017).
         load = function(object) {
+            if (!is.null(object$x)) object <- private$handover(object)
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
             cl <- .export_session(object$layers$gpoints, object$layers$gpolygons,
@@ -1218,6 +1377,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cell_ids    <- cl$cell_ids
             private$cells       <- if (!is.null(cl$source)) cl[c("source", "mark", "marks")]
             private$spat_unit   <- object$spat_unit
+            private$feat_type   <- object$feat_type
             private$loaded      <- TRUE
             private$reload_tabs()
         },
@@ -1231,8 +1391,55 @@ LensViewer <- R6::R6Class("LensViewer",
             private$image_names <- character()
             private$image_files <- character()
             private$cell_ids <- private$cells <- private$spat_unit <- private$cells_file <- NULL
+            private$feat_type <- private$project <- private$snapshot <- NULL
             private$loaded <- FALSE
             private$reload_tabs()
+        },
+
+        # The snapshot to show for giotto object `object$x` (adr/0018): one it
+        # matches, or a new one. Stops before saving anything when the save
+        # would move the object's data. Returns `object` with the layers and
+        # images of the object as saved.
+        handover = function(object) {
+            x <- object$x
+            if (is.null(x@source)) {
+                src <- suppressMessages(GiottoDisk::gDirSource(object$project))
+                x <- suppressMessages(GiottoDisk::sourceWrite(src, x))
+                x <- private$save_snapshot(src, x, keep = TRUE)
+                tag <- .snapshot_pointer(x)
+            } else {
+                src <- x@source
+                tag <- .matching_snapshot(src, x)
+                if (is.null(tag)) {
+                    inside <- GiottoDisk::sourceContains(src, x)
+                    if (!isTRUE(inside))
+                        stop("[LensViewer] the object has data on disk that is not saved in its ",
+                            "project (", paste(attr(inside, "external"), collapse = ", "),
+                            "); save it first with g <- saveGiotto(g)", call. = FALSE)
+                    x <- private$save_snapshot(src, x, keep = FALSE)
+                    tag <- .snapshot_pointer(x)
+                }
+            }
+            object$layers <- .resolve_layers(x, NULL, object$feat_type, object$spat_unit)
+            object$images <- .pick_images(x, object$pick_images)
+            private$project  <- src
+            private$snapshot <- tag
+            object
+        },
+
+        save_snapshot = function(src, x, keep) {
+            suppressMessages(GiottoDisk::snapshotSave(src, x, name = .lens_snapshot_name(src),
+                keep = keep, creator = "GiottoLens", session = private$session_id,
+                verbose = FALSE))
+        },
+
+        snapshot_name = function() {
+            info <- GiottoDisk::snapshotInfo(private$project)
+            name <- info$name[info$tag == private$snapshot]
+            if (!length(name))
+                stop("[LensViewer] the snapshot shown (", private$snapshot,
+                    ") was deleted", call. = FALSE)
+            name
         },
 
         # Drop what belonged to the object shown: nothing is kept for when it

@@ -5,6 +5,14 @@
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See
   adr/0017.
 * `launch_lens()` without an object starts an empty viewer, to be filled with `set_object()`.
+* A giotto object is shown from a GiottoDisk snapshot in its project: the one it matches, or
+  a new `lens_<date>_<time>` snapshot (`keep = FALSE`). An object not in a project needs
+  `launch_lens(g, project = <dir>)`, which writes it into one. An object with disk data not
+  saved in its project is refused until saved with `g <- saveGiotto(g)`. See adr/0018.
+* `viewer$gobject()` returns the object shown, and `viewer$checkout(name)` shows another
+  snapshot of the project.
+* Untiled point and polygon stores are read as one tile, up to 50,000 polygons and 2,000,000
+  points (`options(GiottoLens.untiled_max = )`).
 * The camera is kept across reloads (`state()$config$view`), and selected genes are saved by
   name (`state()$config$genes`, was positions).
 * Launching from giottoPoints / giottoPolygon layers instead of a giotto object is deprecated.

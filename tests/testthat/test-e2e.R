@@ -1271,3 +1271,32 @@ test_that("set_object() reloads the page onto another object and back, each from
     expect_equal(unlist(vs)[1:2], c(20, -30))
     expect_identical(br$errors(), character())
 })
+
+test_that("an object in memory is written into a project and drawn from untiled stores", {
+    fx <- lens_fixture()
+    sw <- function(...) suppressMessages(suppressWarnings(...))
+    g <- sw(GiottoClass::giotto())
+    g <- sw(GiottoClass::setGiotto(g, GiottoClass::createGiottoPolygon(
+        GiottoDisk::storeRead(fx$gpolygons@spatVector, output = "terra"), name = "cell",
+        verbose = FALSE), verbose = FALSE))
+    g <- sw(GiottoClass::setGiotto(g, GiottoClass::createGiottoPoints(
+        GiottoDisk::storeRead(fx$gpoints@spatVector, output = "terra"), verbose = FALSE),
+        verbose = FALSE))
+    td <- tempfile("lensproj_")
+    on.exit(unlink(td, recursive = TRUE), add = TRUE)
+    v <- launch_lens(g, open = FALSE, project = td)
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(rawToChar(http_get(paste0(v$url, "session/manifest.json"))$content),
+        simplifyVector = FALSE)
+    expect_length(m$layers$cells$tiles, 1L)
+    expect_length(m$layers$transcripts$tiles, 1L)
+
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_layer("tx", show = TRUE)
+    v$set_view(x = 50, y = -50, zoom = 3)
+    expect_true(browser_wait(br, "window.__giottolens.state.cache.has('polygons:1') && window.__giottolens.state.cache.has('transcripts:1')"))
+    expect_identical(br$errors(), character())
+})

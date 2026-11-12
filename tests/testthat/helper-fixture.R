@@ -6,42 +6,56 @@ lens_fixture <- local({
         testthat::skip_if_not_installed("GiottoDisk")
         testthat::skip_if_not_installed("GiottoClass")
         if (!is.null(fx)) return(fx)
-        suppressPackageStartupMessages(requireNamespace("GiottoDisk"))
-        old_seed <- .Random.seed_or_null()
-        set.seed(1)
-        on.exit(.restore_seed(old_seed), add = TRUE)
-        sw <- function(...) suppressMessages(suppressWarnings(...))
-
-        n   <- 400L
-        pts <- terra::vect(data.frame(
-            x = stats::runif(n, 0, 100), y = stats::runif(n, -100, 0),
-            feat_ID = sample(c("Actb", "Cd3e", "Ms4a1", "Epcam"), n, TRUE)
-        ), geom = c("x", "y"))
-        pstore <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(), pts))
-        ptile  <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomTileStore(), pstore,
-            threshold = 100L))
-        gpoints <- sw(GiottoClass::createGiottoPoints(ptile, verbose = FALSE))
-
-        sq  <- function(cx, cy, r = 3) sprintf(
-            "POLYGON((%f %f,%f %f,%f %f,%f %f,%f %f))",
-            cx - r, cy - r, cx + r, cy - r, cx + r, cy + r, cx - r, cy + r, cx - r, cy - r)
-        cen <- expand.grid(x = seq(5, 95, 10), y = seq(-95, -5, 10))
-        pv  <- terra::vect(sq(cen$x, cen$y))
-        pv$poly_ID <- sprintf("cell_%03d", seq_len(nrow(cen)))
-        gpolygons <- sw(GiottoClass::createGiottoPolygon(pv, name = "cell", verbose = FALSE))
-        pgs <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(), gpolygons[]))
-        gpolygons@spatVector <- sw(GiottoDisk::storeWrite(
-            GiottoDisk::parquetGeomTileStore(), pgs, threshold = 30L))
-
-        meta <- data.frame(
-            cell_ID = pv$poly_ID,
-            leiden.clus = rep(c("a", "b"), length.out = nrow(cen)),
-            score = seq_len(nrow(cen)) / 10
-        )
-        fx <<- list(gpoints = gpoints, gpolygons = gpolygons, meta = meta)
+        fx <<- .fixture_layers()
         fx
     }
 })
+
+# The fixture's layers, written as tile stores; each call writes new ones
+.fixture_layers <- function() {
+    suppressPackageStartupMessages(requireNamespace("GiottoDisk"))
+    old_seed <- .Random.seed_or_null()
+    set.seed(1)
+    on.exit(.restore_seed(old_seed), add = TRUE)
+    sw <- function(...) suppressMessages(suppressWarnings(...))
+
+    n   <- 400L
+    pts <- terra::vect(data.frame(
+        x = stats::runif(n, 0, 100), y = stats::runif(n, -100, 0),
+        feat_ID = sample(c("Actb", "Cd3e", "Ms4a1", "Epcam"), n, TRUE)
+    ), geom = c("x", "y"))
+    pstore <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(), pts))
+    ptile  <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomTileStore(), pstore,
+        threshold = 100L))
+    gpoints <- sw(GiottoClass::createGiottoPoints(ptile, verbose = FALSE))
+
+    sq  <- function(cx, cy, r = 3) sprintf(
+        "POLYGON((%f %f,%f %f,%f %f,%f %f,%f %f))",
+        cx - r, cy - r, cx + r, cy - r, cx + r, cy + r, cx - r, cy + r, cx - r, cy - r)
+    cen <- expand.grid(x = seq(5, 95, 10), y = seq(-95, -5, 10))
+    pv  <- terra::vect(sq(cen$x, cen$y))
+    pv$poly_ID <- sprintf("cell_%03d", seq_len(nrow(cen)))
+    gpolygons <- sw(GiottoClass::createGiottoPolygon(pv, name = "cell", verbose = FALSE))
+    pgs <- sw(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(), gpolygons[]))
+    gpolygons@spatVector <- sw(GiottoDisk::storeWrite(
+        GiottoDisk::parquetGeomTileStore(), pgs, threshold = 30L))
+
+    meta <- data.frame(
+        cell_ID = pv$poly_ID,
+        leiden.clus = rep(c("a", "b"), length.out = nrow(cen)),
+        score = seq_len(nrow(cen)) / 10
+    )
+    list(gpoints = gpoints, gpolygons = gpolygons, meta = meta)
+}
+
+# Giotto object `g` saved as snapshot "fixture" in a new project, as an object
+# loaded from a project is
+.fixture_project <- function(g) {
+    sw <- function(...) suppressMessages(suppressWarnings(...))
+    src <- sw(GiottoDisk::gDirSource(tempfile("lensproj_")))
+    g <- sw(GiottoDisk::sourceWrite(src, g))
+    sw(GiottoDisk::snapshotSave(src, g, name = "fixture", verbose = FALSE))
+}
 
 # The fixture as a giotto object with two images over the same 100 x 100
 # extent: "stain", a 1200 x 1200 16-bit COG (three overview levels) bright in
@@ -70,11 +84,14 @@ lens_image_fixture <- local({
         rgb_img <- GiottoClass::createGiottoLargeImage(rgb_file, name = "he", verbose = FALSE)
         terra::ext(rgb_img) <- c(0, 100, -100, 0)
         sw <- function(...) suppressMessages(suppressWarnings(...))
+        # Its own stores: saving into the project moves them into its vault
+        own <- .fixture_layers()
         g <- sw(GiottoClass::giotto())
-        g <- sw(GiottoClass::setGiotto(g, base$gpolygons, verbose = FALSE))
-        g <- sw(GiottoClass::setGiotto(g, base$gpoints, verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, own$gpolygons, verbose = FALSE))
+        g <- sw(GiottoClass::setGiotto(g, own$gpoints, verbose = FALSE))
         g <- sw(GiottoClass::setGiotto(g, img, verbose = FALSE))
         g <- sw(GiottoClass::setGiotto(g, rgb_img, verbose = FALSE))
+        g <- .fixture_project(g)
         fx <<- c(base, list(g = g, image_file = file, rgb_file = rgb_file))
         fx
     }
@@ -83,11 +100,12 @@ lens_image_fixture <- local({
 # Bins without polygons: a giotto object whose "bin" spatial unit has only
 # spatial locations, 900 bins on a 30 x 30 grid of spacing 2 turned by 10
 # degrees, with array_row and array_col in the cell metadata as VisiumHD
-# bins have. No GiottoDisk store is involved.
+# bins have. `g` is in a project; `mem`, the same object in memory.
 lens_bins_fixture <- local({
     fx <- NULL
     function() {
         testthat::skip_if_not_installed("GiottoClass")
+        testthat::skip_if_not_installed("GiottoDisk")
         if (!is.null(fx)) return(fx)
         sw <- function(...) suppressMessages(suppressWarnings(...))
         grid <- expand.grid(col = 0:29, row = 0:29)
@@ -108,7 +126,7 @@ lens_bins_fixture <- local({
             half = ifelse(grid$col < 15, "left", "right"))
         g <- sw(GiottoClass::setGiotto(g, GiottoClass::createCellMetaObj(
             meta, spat_unit = "bin", feat_type = "rna", verbose = FALSE), verbose = FALSE))
-        fx <<- list(g = g, xy = xy, meta = meta)
+        fx <<- list(g = .fixture_project(g), mem = g, xy = xy, meta = meta)
         fx
     }
 })

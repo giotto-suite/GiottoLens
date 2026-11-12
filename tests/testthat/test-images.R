@@ -16,7 +16,8 @@ test_that("images are picked by name and need a TIFF file", {
     out <- .image_entries(imgs)
     expect_identical(out$entries[[1L]]$url, "image/0")
     expect_identical(out$entries[[1L]]$extent, list(xmin = 0, xmax = 100, ymin = -100, ymax = 0))
-    expect_identical(out$files[["0"]], normalizePath(fx$image_file))
+    # the object is in a project, which holds its own copy of the file
+    expect_identical(out$files[["0"]], normalizePath(imgs$stain@file_path))
 
     # A VRT in @file_path (GiottoDisk's vault stubs) is skipped, not served
     stub <- imgs$stain

@@ -129,6 +129,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
   A new per-object field goes there, or a switch leaks it into the next object. Nothing is
   kept for an object not shown: keeping Lens work is a save's job.
+- A giotto object is shown from a snapshot in its project (adr/0018): `handover()` runs
+  first in `load()`, so a refusal changes nothing. The project follows the object
+  (`g@source`); `project` is only for an object not in one. Never let a hand-over save move
+  data: check `GiottoDisk::sourceContains(src, g)` before `snapshotSave()`. Layers and
+  images are worked out again from the object as saved.
+- Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
+  (`.lens_untiled_max`, measured; update the comment when re-measuring).
 - `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
   registration; settings alone are not counted) without `discard = TRUE`, and checks before
   changing anything. A switch from the page will go through the same argument after the
