@@ -181,10 +181,13 @@ class AddMenu implements IHeaderActionsRenderer {
       });
       return item;
     }));
+    // One menu open at a time: stopPropagation() keeps the document listener
+    // from closing this one, so the others are closed here
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      if (!menu.classList.contains('open')) fill();
-      menu.classList.toggle('open');
+      const opening = !menu.classList.contains('open');
+      document.querySelectorAll('.dock-menu.open').forEach(m => m.classList.remove('open'));
+      if (opening) { fill(); menu.classList.add('open'); }
     });
     document.addEventListener('click', () => menu.classList.remove('open'), { signal: this.off.signal });
     this.element.append(btn, menu);
@@ -366,6 +369,13 @@ export function initDock(host: HTMLElement): void {
 // Charts follow the metadata: rebuilt when a new table arrives
 export function refreshBuiltins(): void {
   for (const v of views.values()) if (typeOf(v.kind)?.meta) v.fill();
+}
+
+// Charts that take the theme's colours when built (ui/theme.ts): rebuilt
+// when it changes. The scatter is dark in both themes.
+const THEMED = new Set<PanelKind>(['histogram', 'density', 'spec']);
+export function refreshCharts(): void {
+  for (const v of views.values()) if (THEMED.has(v.kind)) v.fill();
 }
 
 // A panel pushed from R. An existing id is refilled where it is; a new one is

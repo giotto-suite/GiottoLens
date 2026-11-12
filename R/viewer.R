@@ -672,7 +672,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `NULL` arguments leave a setting as is.
         #' @param column Continuous column; `NULL` for the column cells are
         #'   colored by
-        #' @param preset One of `"viridis"` (the default), `"blue-red"`,
+        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
         #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
         #'   `"gray"`, `"blue-white-red"`
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
@@ -789,6 +789,19 @@ LensViewer <- R6::R6Class("LensViewer",
                 color = if (!is.null(color)) as.list(color),
                 width = if (!is.null(width)) as.numeric(width),
                 alpha = if (!is.null(alpha)) as.numeric(alpha)))
+            invisible(self)
+        },
+
+        #' @description Show the viewer's panels and controls dark or light.
+        #'   The spatial view and scatter plots stay dark in both: their
+        #'   colors (the selection, uncolored cells, image channels) are
+        #'   chosen for a dark background. Part of the saved config
+        #'   (`state()$config$theme`).
+        #' @param theme `"dark"` (the default) or `"light"`
+        set_theme = function(theme) {
+            if (!is.character(theme) || length(theme) != 1L || !theme %in% c("dark", "light"))
+                stop("[LensViewer] `theme` must be \"dark\" or \"light\"", call. = FALSE)
+            private$request("set_theme", list(theme = theme))
             invisible(self)
         },
 

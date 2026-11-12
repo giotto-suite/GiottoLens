@@ -69,6 +69,15 @@ test_that("set_outline checks its arguments before sending", {
     expect_error(v$set_outline(width = 0.01), "no viewer connected")
 })
 
+test_that("set_theme checks its argument before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_theme("blue"), "must be \"dark\" or \"light\"")
+    expect_error(v$set_theme(c("dark", "light")), "must be \"dark\" or \"light\"")
+    expect_error(v$set_theme("light"), "no viewer connected")
+})
+
 test_that("set_column_type switches numeric columns and keeps the setting", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
