@@ -1,5 +1,6 @@
 # GiottoLens (development version)
 
+* Opening a panel group's "+" menu closes any other one that is open.
 * After `select()`, a selection the page sent before it had R's rules no longer replaces
   them in R for a moment: `rules()` and `selection` right after `select()` are R's. New
   fields `seq` (`set_rule`) and `r_seq` (`cell_selection`), and outbound type `rule_seq`.
@@ -33,8 +34,8 @@
   in the background while all columns fit 256 MB; above that the tooltip shows the loaded
   columns. A type change rewrites one column, and columns that did not change stay loaded
   after a new push. The message format changed (protocol 4).
-* Continuous color-by columns can use other color scales: presets (viridis, now the default;
-  blue-red, the scale before; magma, inferno, plasma, cividis, turbo, gray, blue-white-red),
+* Continuous color-by columns can use other color scales: presets (blue-red, the default;
+  viridis, magma, inferno, plasma, cividis, turbo, gray, blue-white-red),
   reversed, or a custom scale of 2 to 9 colors edited in the cells panel legend.
   `viewer$set_color_scale(column =, preset =, colors =, reverse =, reset =)` sets the same
   from R. Scales are kept per column and are part of the saved config

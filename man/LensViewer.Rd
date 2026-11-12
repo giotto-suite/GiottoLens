@@ -395,7 +395,7 @@ minimum to its maximum. The viewer's legend sets the same values.
     \describe{
       \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
 colored by}
-      \item{\code{preset}}{One of \code{"viridis"} (the default), \code{"blue-red"},
+      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
 \code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
 \code{"gray"}, \code{"blue-white-red"}}
       \item{\code{colors}}{2 to 9 colors (names or hex strings), low to high;
