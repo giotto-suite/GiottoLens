@@ -181,10 +181,13 @@ class AddMenu implements IHeaderActionsRenderer {
       });
       return item;
     }));
+    // One menu open at a time: stopPropagation() keeps the document listener
+    // from closing this one, so the others are closed here
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      if (!menu.classList.contains('open')) fill();
-      menu.classList.toggle('open');
+      const opening = !menu.classList.contains('open');
+      document.querySelectorAll('.dock-menu.open').forEach(m => m.classList.remove('open'));
+      if (opening) { fill(); menu.classList.add('open'); }
     });
     document.addEventListener('click', () => menu.classList.remove('open'), { signal: this.off.signal });
     this.element.append(btn, menu);
