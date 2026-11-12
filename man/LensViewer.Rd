@@ -56,6 +56,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
+    \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
     \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
@@ -507,7 +508,7 @@ minimum to its maximum. The viewer's legend sets the same values.
     \describe{
       \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
 colored by}
-      \item{\code{preset}}{One of \code{"viridis"} (the default), \code{"blue-red"},
+      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
 \code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
 \code{"gray"}, \code{"blue-white-red"}}
       \item{\code{colors}}{2 to 9 colors (names or hex strings), low to high;
@@ -585,6 +586,29 @@ sets the same values.
       \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
       \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
       \item{\code{alpha}}{Opacity, in [0, 1]}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_theme"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_theme}{}}}
+\subsection{\code{LensViewer$set_theme()}}{
+  Show the viewer's panels and controls dark or light.
+The spatial view and scatter plots stay dark in both: their
+colors (the selection, uncolored cells, image channels) are
+chosen for a dark background. Part of the saved config
+(\code{state()$config$theme}).
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_theme(theme)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{theme}}{\code{"dark"} (the default) or \code{"light"}}
     }
     \if{html}{\out{</div>}}
   }

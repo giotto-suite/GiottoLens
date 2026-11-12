@@ -11,6 +11,7 @@ import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
+import { THEMES } from '../ui/theme.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
@@ -132,6 +133,11 @@ export function initRemote() {
       throw new Error('alpha must be a number in [0, 1]');
     actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
       ...(alpha != null && { alpha }) });
+  });
+
+  onMessage('set_theme', ({ theme }) => {
+    if (!THEMES.includes(theme)) throw new Error(`theme must be one of ${THEMES.join(', ')}`);
+    actions.setTheme(theme);
   });
 
   onMessage('set_mark', ({ mark, reset }) => {

@@ -14,6 +14,7 @@ import { store, actions } from '../core/store.ts';
 import { maskExcept, setRangeRule } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
+import { chartAxis, token } from '../ui/theme.ts';
 
 const BINS = 40;
 // A brush drag with the left button only: Vega-Lite's default takes any button,
@@ -96,14 +97,14 @@ export function createHistogramPanel(body, ctx) {
             ? { name: 'pick', select: { type: 'point', fields: ['label'], toggle: 'true' }, ...(value && { value }) }
             : { name: 'brush', select: { type: 'interval', encodings: ['x'], on: LEFT_DRAG, translate: LEFT_DRAG },
                 ...(value && { value }) }],
-          mark: { type: 'bar', color: '#4b5563' },
+          mark: { type: 'bar', color: token('fg-4') },
           encoding: { x, ...x2, y: { field: 'all', type: 'quantitative', title: null } } },
-        { mark: { type: 'bar', color: '#3b82f6', opacity: 0.85 },
+        { mark: { type: 'bar', color: token('accent'), opacity: 0.85 },
           encoding: { x, ...x2, y: { field: 'sel', type: 'quantitative' } } },
       ],
       config: {
         view: { stroke: null },
-        axis: { labelColor: '#9ca3af', domainColor: '#374151', tickColor: '#374151', gridColor: '#1f2937', labelFontSize: 10 },
+        axis: { ...chartAxis(), labelFontSize: 10 },
       },
     };
   }
