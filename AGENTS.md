@@ -129,8 +129,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
   A new per-object field goes there, or a switch leaks it into the next object. Nothing is
   kept for an object not shown: keeping Lens work is a save's job.
-- `clear_object()` warns about lost work (`lens_work()`: rules, annotations, pushed panels,
-  registration); settings alone are not counted.
+- `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
+  registration; settings alone are not counted) without `discard = TRUE`, and checks before
+  changing anything. A switch from the page will go through the same argument after the
+  page's own confirmation; never add a second rule there.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 

@@ -107,8 +107,7 @@ complete pairs on, the placement before). See
   Show another object in this viewer. The server and its
 URL stay; open tabs reload. Nothing of the current object is kept:
 its settings, rules, annotations, pushed panels and metadata are
-dropped, with a warning naming the rules, annotations and panels
-lost. Returns before the tabs have reloaded.
+dropped. Returns before the tabs have reloaded.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_object(
@@ -118,7 +117,8 @@ lost. Returns before the tabs have reloaded.
   spat_unit = "cell",
   images = NULL,
   image_files = NULL,
-  mark = NULL
+  mark = NULL,
+  discard = FALSE
 )}
     \if{html}{\out{</div>}}
   }
@@ -127,6 +127,10 @@ lost. Returns before the tabs have reloaded.
     \describe{
       \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark}}{As in
 \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{discard}}{Whether to drop the current object's rules,
+annotations, pushed panels and image registration. With any of
+them and \code{discard = FALSE} (default), nothing changes and an error
+names them.}
     }
     \if{html}{\out{</div>}}
   }

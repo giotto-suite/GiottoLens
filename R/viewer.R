@@ -300,12 +300,22 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @description Show another object in this viewer. The server and its
         #'   URL stay; open tabs reload. Nothing of the current object is kept:
         #'   its settings, rules, annotations, pushed panels and metadata are
-        #'   dropped, with a warning naming the rules, annotations and panels
-        #'   lost. Returns before the tabs have reloaded.
+        #'   dropped. Returns before the tabs have reloaded.
         #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark As in
         #'   [launch_lens()]
+        #' @param discard Whether to drop the current object's rules,
+        #'   annotations, pushed panels and image registration. With any of
+        #'   them and `discard = FALSE` (default), nothing changes and an error
+        #'   names them.
         set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
-                              images = NULL, image_files = NULL, mark = NULL) {
+                              images = NULL, image_files = NULL, mark = NULL,
+                              discard = FALSE) {
+            if (!isTRUE(discard) && !isFALSE(discard))
+                stop("[LensViewer$set_object] `discard` must be TRUE or FALSE", call. = FALSE)
+            work <- if (private$loaded && !discard) private$lens_work()
+            if (!is.null(work))
+                stop("[LensViewer$set_object] the current object has ", work,
+                    "; pass `discard = TRUE` to drop them", call. = FALSE)
             private$load(.resolve_object(x, gpolygons = gpolygons, feat_type = feat_type,
                 spat_unit = spat_unit, images = images, image_files = image_files,
                 mark = mark))
@@ -1225,14 +1235,10 @@ LensViewer <- R6::R6Class("LensViewer",
             private$reload_tabs()
         },
 
-        # Drop what belonged to the object shown, with a warning naming the
-        # work that is lost: nothing is kept for when it is shown again
-        # (adr/0017). Keeping Lens work is a save's job.
+        # Drop what belonged to the object shown: nothing is kept for when it
+        # is shown again (adr/0017). Keeping Lens work is a save's job;
+        # set_object() refuses to drop work unless told to.
         clear_object = function() {
-            work <- if (private$loaded) private$lens_work()
-            if (!is.null(work))
-                warning("[LensViewer$set_object] the previous object's ", work,
-                    " are not kept", call. = FALSE)
             for (id in names(private$pushed)) private$drop_panel_file(id)
             .prune_meta_files(private$meta_dir(), character())
             private$config_json  <- NULL
@@ -1250,7 +1256,8 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         # The work done in the viewer on the object shown, as text ("2 rules,
-        # 1 annotation"), or NULL for none. Settings are not counted.
+        # 1 annotation"), or NULL for none: what set_object() will not drop
+        # without `discard = TRUE`. Settings are not counted.
         lens_work = function() {
             n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
                 `pushed panel` = length(private$pushed))

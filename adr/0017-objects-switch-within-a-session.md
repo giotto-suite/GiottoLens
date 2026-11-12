@@ -31,9 +31,13 @@ object, or its config sent on `pagehide`, would overwrite the new object's state
 
 A load starts the new object from a clean slate: the settings, rules, annotations,
 registration, pushed panels, metadata and column types of the previous object are dropped,
-and its metadata and panel files deleted. If rules, annotations, pushed panels or a
-registration in progress are lost, `set_object()` warns and names them. Nothing is kept in
-memory for when the object is shown again. Keeping Lens work is the job of an explicit save
+and its metadata and panel files deleted. Nothing is kept in memory for when the object is
+shown again. Work that cannot be redone by running code again (rules, annotations, pushed
+panels, a registration in progress) is not dropped by accident: with any of it,
+`set_object()` stops before changing anything and names it, unless called with
+`discard = TRUE`, as `snapshotSave()` refuses to overwrite without `overwrite = TRUE`. The
+same argument is how a switch made in the page (to come) goes through, after the page's
+own confirmation, so R enforces one rule wherever the switch comes from. Keeping Lens work is the job of an explicit save
 of the viewer's work (to come), which refers to a snapshot of the object and holds what
 only exists in the viewer; what can be derived from the snapshot is derived again rather
 than stored.
@@ -52,6 +56,8 @@ methods that need one stop with that message.
   to connect, as after `launch_lens()`.
 - Switching back to an object means pushing its metadata and panels again, and redoing
   selections, unless the work was saved.
+- Until a save exists, any rules or annotations count as work. Once one does, only work
+  changed since the last save should.
 - Selected genes (by name) and the camera are part of the config, so a reload of the same
   object keeps them, and a save can hold them.
 - Layers launched without a giotto object are deprecated.
@@ -67,6 +73,10 @@ methods that need one stop with that message.
   pruning was most of the code, for the convenience of switching back without saving.
   Tried and removed before merging.
 - **Keep only the settings per object:** the same second place, for less.
+- **Warn and drop:** the warning comes after the work is gone.
+- **Ask in the page, or at the console (`askYesNo()`):** R would wait on the browser for a
+  command typed at the console, an agent cannot answer, and the suite has no console
+  prompts; both still need a default when nobody can answer.
 
 ## References
 

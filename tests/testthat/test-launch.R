@@ -411,10 +411,17 @@ test_that("set_object() serves another object from a clean slate", {
     a$ws$send(annot)
     expect_true(pump_until(function() identical(priv$config_json, cfg) && length(v$annotations) == 1L))
 
+    # With work on the object, nothing changes unless it is discarded
+    expect_error(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
+        "has 1 rule, 1 annotation, 1 pushed panel; pass `discard = TRUE`")
+    expect_identical(manifest()$load, 1L)
+    expect_identical(v$rules()$source, "r")
+    expect_identical(priv$config_json, cfg)
+    expect_error(v$set_object(bx$g, discard = NA), "TRUE or FALSE")
+
     # Another object: a new manifest and stores, the tab told to reload, and
-    # nothing of the first object, with a warning naming the work lost
-    expect_warning(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
-        "1 rule, 1 annotation, 1 pushed panel are not kept")
+    # nothing of the first object
+    expect_no_warning(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE))
     expect_true(pump_until(function() any(vapply(a$state$msgs, function(m) m$type == "reload", NA))))
     expect_identical(manifest()$load, 2L)
     expect_identical(c(status(tile$url), status(tile$file)), c(404L, 404L))
@@ -438,9 +445,9 @@ test_that("set_object() serves another object from a clean slate", {
     expect_true(pump_until(function() length(b$state$msgs) > 0))
     expect_identical(b$state$msgs[[1]]$type, "reload")
 
-    # Back to the first object: served again, from a clean slate, and no
-    # warning when there was no work
-    expect_no_warning(v$set_object(fx$g))
+    # Back to the first object: served again, from a clean slate; without
+    # work there is nothing to discard
+    expect_no_error(v$set_object(fx$g))
     expect_identical(manifest()$load, 3L)
     expect_null(priv$config_json)
     expect_identical(nrow(v$rules()), 0L)
@@ -456,7 +463,7 @@ test_that("R evaluates rules on the cells of the object shown", {
     box <- lens_polygon(rbind(c(0, -100), c(100, -100), c(100, 0), c(0, 0)))
     v$select(box)
     expect_length(v$selection, 100L)
-    expect_warning(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL), "1 rule")
+    v$set_object(bx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE)
     v$select(box)
     expect_length(v$selection, sum(bx$xy$sdimx >= 0 & bx$xy$sdimx <= 100 &
         bx$xy$sdimy >= -100 & bx$xy$sdimy <= 0))

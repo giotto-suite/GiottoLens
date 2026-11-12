@@ -1,8 +1,9 @@
 # GiottoLens (development version)
 
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
-  reload. The new object starts from a clean slate; rules, annotations and pushed panels of
-  the previous one are dropped with a warning. See adr/0017.
+  reload. The new object starts from a clean slate. If the current object has rules,
+  annotations or pushed panels, it stops and names them unless `discard = TRUE`. See
+  adr/0017.
 * `launch_lens()` without an object starts an empty viewer, to be filled with `set_object()`.
 * The camera is kept across reloads (`state()$config$view`), and selected genes are saved by
   name (`state()$config$genes`, was positions).
