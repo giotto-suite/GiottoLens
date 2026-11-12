@@ -593,6 +593,19 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Show the viewer's panels and controls dark or light.
+        #'   The spatial view and scatter plots stay dark in both: their
+        #'   colors (the selection, uncolored cells, image channels) are
+        #'   chosen for a dark background. Part of the saved config
+        #'   (`state()$config$theme`).
+        #' @param theme `"dark"` (the default) or `"light"`
+        set_theme = function(theme) {
+            if (!is.character(theme) || length(theme) != 1L || !theme %in% c("dark", "light"))
+                stop("[LensViewer] `theme` must be \"dark\" or \"light\"", call. = FALSE)
+            private$request("set_theme", list(theme = theme))
+            invisible(self)
+        },
+
         #' @description Show or hide an image, or set its colour or contrast;
         #'   `NULL` arguments leave a setting as is. Images draw under the
         #'   cells, each in its own colour, added together;

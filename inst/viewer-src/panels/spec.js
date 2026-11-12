@@ -10,6 +10,7 @@ import { store, actions } from '../core/store.ts';
 import { rangeBuffer, readColumns, numRows } from '../data/parquet.ts';
 import { primeMask, encodeMask } from '../selection/rules.ts';
 import { chartArea, whenVisible } from './controls.js';
+import { chartAxis, token } from '../ui/theme.ts';
 
 const loadEmbed = () => import('vega-embed').then(m => m.default);
 
@@ -65,8 +66,8 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
   if (linked && !s.layer && !s.encoding?.opacity)
     s.encoding = { ...s.encoding, opacity: { condition: { test: 'datum._sel == 1', value: 0.9 }, value: 0.15 } };
   s.config = { view: { stroke: null },
-    axis: { labelColor: '#9ca3af', titleColor: '#9ca3af', domainColor: '#374151', tickColor: '#374151', gridColor: '#1f2937' },
-    legend: { labelColor: '#9ca3af', titleColor: '#9ca3af' }, ...s.config };
+    axis: { ...chartAxis(), titleColor: token('fg-2') },
+    legend: { labelColor: token('fg-2'), titleColor: token('fg-2') }, ...s.config };
 
   const embed = await loadEmbed();
   if (destroyed) return { destroy() {} };

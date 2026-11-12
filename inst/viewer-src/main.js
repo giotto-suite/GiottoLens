@@ -19,7 +19,8 @@ import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
 import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
-import { initDock, placeControls, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
+import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
+import { applyTheme } from './ui/theme.ts';
 import { initPersist } from './core/persist.ts';
 import { Deck, OrthographicView } from 'deck.gl';
 import Split from 'split.js';
@@ -157,6 +158,8 @@ async function main() {
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
+  applyTheme(store.getState().theme);
+  store.subscribe(s => s.theme, t => { applyTheme(t); refreshCharts(); });
 
   initAnnotations();
   initInput();

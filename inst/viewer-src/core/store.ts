@@ -31,6 +31,7 @@ export interface OutlineStyle {
   width: number;                     // cell outline width, screen pixels
   alpha: number;                     // cell outline opacity, 0-1
 }
+import type { Theme } from '../ui/theme.ts';
 export type Mode = 'pan' | 'ruler' | 'txlasso' | 'poly' | 'rect' | 'freehand' | 'lasso' | 'brush' | 'landmark';
 export type Combine = 'or' | 'and';
 
@@ -62,6 +63,7 @@ export interface Config {
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
   closedPanels: string[];       // control panels closed by hand: a restore leaves them out
   registration: Registration | null;  // an image being registered (data/registration.ts)
+  theme: Theme;                 // the page's colours (ui/theme.ts)
 }
 
 export interface Runtime {
@@ -98,6 +100,7 @@ export const initialConfig = (): Config => ({
   layout: null,
   closedPanels: [],
   registration: null,
+  theme: 'dark',
 });
 
 // Saved through R and restored after a reload (core/persist.ts). Rules and
@@ -161,6 +164,7 @@ export const actions = {
     set(s => ({ outline: { ...s.outline, ...patch } }));
   },
   resetOutline() { set({ outline: initialConfig().outline }); },
+  setTheme(theme: Theme) { set({ theme }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
   },
