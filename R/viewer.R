@@ -473,7 +473,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `NULL` arguments leave a setting as is.
         #' @param column Continuous column; `NULL` for the column cells are
         #'   colored by
-        #' @param preset One of `"viridis"` (the default), `"blue-red"`,
+        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
         #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
         #'   `"gray"`, `"blue-white-red"`
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
