@@ -445,15 +445,16 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description The object shown, loaded from its snapshot. Changes
-        #'   made to it do not reach the viewer until passed to `set_object()`.
+        #' @description The object shown, loaded from its snapshot with
+        #'   [GiottoClass::loadGiotto()] on each call: the viewer does not hold
+        #'   it. Changes made to it do not reach the viewer until passed to
+        #'   `set_object()`.
         gobject = function() {
             private$need_object("LensViewer$gobject")
             if (is.null(private$snapshot))
                 stop("[LensViewer$gobject] the viewer shows layers, not a giotto object",
                     call. = FALSE)
-            suppressMessages(GiottoDisk::snapshotLoad(private$project,
-                name = private$snapshot_name()))
+            private$load_snapshot(private$snapshot_name())
         },
 
         #' @description Show a snapshot of the current project, as
@@ -467,7 +468,7 @@ LensViewer <- R6::R6Class("LensViewer",
             if (is.null(private$project))
                 stop("[LensViewer$checkout] no project open; call set_object(g) first",
                     call. = FALSE)
-            x <- suppressMessages(GiottoDisk::snapshotLoad(private$project, name = name))
+            x <- private$load_snapshot(name)
             self$set_object(x, spat_unit = spat_unit, feat_type = feat_type,
                 discard = discard)
         },
@@ -1425,6 +1426,14 @@ LensViewer <- R6::R6Class("LensViewer",
             private$project  <- src
             private$snapshot <- tag
             object
+        },
+
+        # Through loadGiotto(), which finishes what snapshotLoad() reads:
+        # project migration, images, python path, data.table allocation and
+        # initialize()
+        load_snapshot = function(name) {
+            suppressMessages(GiottoClass::loadGiotto(private$project@path, name = name,
+                verbose = FALSE))
         },
 
         save_snapshot = function(src, x, keep) {

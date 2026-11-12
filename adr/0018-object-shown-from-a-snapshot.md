@@ -35,8 +35,12 @@ stores outside the project, the viewer stops before changing anything and asks f
 `g <- saveGiotto(g)`. Changes held in memory are written into the snapshot's object file
 and never move anything.
 
-`viewer$gobject()` loads the snapshot shown; `viewer$checkout(name)` shows another snapshot
-of the project.
+`viewer$gobject()` loads the snapshot shown, and `viewer$checkout(name)` shows another
+snapshot of the project, both through `loadGiotto()`, which finishes what `snapshotLoad()`
+reads (project migration, images, python path, data.table allocation, `initialize()`). The
+viewer never holds the object: it keeps the project, the snapshot's tag, the store paths
+and the cell IDs, and loads the object when asked. Jobs will do the same from the project
+path and a tag rather than receive a copy.
 
 An object written from memory has untiled stores. The viewer reads an untiled geometry
 store as one tile, its one parquet file over its extent, which the browser loads whole: up

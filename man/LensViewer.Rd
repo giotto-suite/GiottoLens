@@ -152,8 +152,10 @@ names them.}
 \if{html}{\out{<a id="method-LensViewer-gobject"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-gobject}{}}}
 \subsection{\code{LensViewer$gobject()}}{
-  The object shown, loaded from its snapshot. Changes
-made to it do not reach the viewer until passed to \code{set_object()}.
+  The object shown, loaded from its snapshot with
+\code{\link[GiottoClass:loadGiotto]{GiottoClass::loadGiotto()}} on each call: the viewer does not hold
+it. Changes made to it do not reach the viewer until passed to
+\code{set_object()}.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$gobject()}
