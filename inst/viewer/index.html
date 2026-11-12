@@ -402,8 +402,76 @@
       opacity: 0.25; transition: opacity 0.2s;
     }
     #btn-screenshot:hover { opacity: 1; }
+
+    /* No object loaded (launch_lens() without one) */
+    body.empty #toolbar, body.empty #dock, body.empty .gutter, body.empty #rule-strip,
+    body.empty #btn-screenshot { display: none; }
+    body.empty #spatial-pane { width: 100% !important; }
+    body.empty #deck-canvas, body.empty #scalebar { display: none; }
+
+    /* The start page (ui/start.ts): in place of the view, or as a dialog */
+    .start {
+      position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+      width: min(720px, calc(100% - 32px)); max-height: 84%; overflow-y: auto;
+      color: var(--fg-1); font-size: 12px; line-height: 1.5;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .start.busy { opacity: 0.6; pointer-events: none; }
+    .start-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.55); }
+    .start-overlay .start {
+      background: var(--bg-1); border: 1px solid var(--bg-2); border-radius: 8px; padding: 16px 18px;
+    }
+    .start-close {
+      position: absolute; top: 8px; right: 10px; background: none; border: none;
+      color: var(--fg-3); font-size: 18px; cursor: pointer;
+    }
+    .start-close:hover { color: var(--fg-0); }
+    .start-title { font-size: 16px; color: var(--fg-0); }
+    .start-body { display: flex; flex-direction: column; gap: 8px; }
+    .start-label { font-size: 10px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 6px; }
+    .start-open { display: flex; gap: 6px; }
+    .start-input {
+      flex: 1; padding: 5px 8px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 4px;
+      color: var(--fg-0); font-size: 12px; font-family: monospace; outline: none;
+    }
+    .start-input:focus { border-color: var(--fg-4); }
+    .start-btn, .start-select {
+      padding: 4px 10px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 4px;
+      color: var(--fg-1); font-size: 11px; font-family: monospace; cursor: pointer; white-space: nowrap;
+    }
+    .start-btn:hover { background: var(--bg-3); color: var(--fg-0); }
+    .start-btn.danger { border-color: #7f1d1d; color: #fca5a5; }
+    .start-link { align-self: flex-start; background: none; border: none; color: var(--accent-fg); font-family: monospace; font-size: 11px; cursor: pointer; padding: 0; }
+    .start-head { display: flex; flex-direction: column; gap: 4px; }
+    .start-path b { color: var(--fg-0); }
+    .start-list { display: flex; flex-direction: column; border: 1px solid var(--bg-2); border-radius: 6px; }
+    .start-list > .start-sub { padding: 8px 10px; }
+    .start-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-top: 1px solid var(--bg-2); }
+    .start-row:first-child { border-top: none; }
+    .start-row.recent { cursor: pointer; }
+    .start-row.recent:hover { background: rgba(255,255,255,0.04); }
+    .start-row.missing { opacity: 0.45; cursor: default; }
+    .start-row.current { background: var(--row-sel); }
+    .start-main { flex: 1; min-width: 0; }
+    .start-name { color: var(--fg-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .start-sub { color: var(--fg-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .start-desc { color: var(--fg-2); font-size: 11px; }
+    .start-badge { margin-left: 6px; padding: 0 5px; border-radius: 8px; font-size: 10px; background: var(--accent-bg); color: var(--accent-fg); }
+    .start-badge.auto { background: var(--bg-2); color: var(--fg-2); }
+    .start-actions { display: flex; gap: 6px; align-items: center; }
+    .start-toggle { color: var(--fg-2); font-size: 11px; cursor: pointer; }
+    .start-hint { color: var(--fg-3); font-size: 11px; margin-top: 6px; }
+    .start-status { color: var(--fg-2); font-size: 11px; min-height: 1.5em; }
+    .start-status.error { color: #fca5a5; }
+    .start-confirm {
+      border: 1px solid #7f1d1d; border-radius: 6px; padding: 10px 12px; background: rgba(127,29,29,0.15);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .start-confirm-row { display: flex; gap: 6px; }
+    /* The dialog follows the theme; the start page is in the always-dark spatial pane */
+    :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error) { color: #b91c1c; }
   </style>
-  <script type="module" crossorigin src="./assets/index-WcdFZEHu.js"></script>
+  <script type="module" crossorigin src="./assets/index-MBkGErNr.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-BHncyuL9.css">
 </head>
 <body>
@@ -452,6 +520,8 @@
     <button class="tool-btn" id="btn-crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
     <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
     <button class="tool-btn" id="btn-stats-toggle" title="show or hide the panels"><i data-lucide="bar-chart-2"></i></button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" id="btn-project" title="project: open a snapshot or another project"><i data-lucide="folder-open"></i></button>
   </div>
       <div id="scalebar">
         <div id="scalebar-bar"></div>
