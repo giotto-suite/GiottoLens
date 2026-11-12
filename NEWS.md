@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* A light theme for the panels and controls: `viewer$set_theme("light")`. The spatial view
+  and scatter plots stay dark. The theme is part of the saved config (`state()$config$theme`).
 * Opening a panel group's "+" menu closes any other one that is open.
 * After `select()`, a selection the page sent before it had R's rules no longer replaces
   them in R for a moment: `rules()` and `selection` right after `select()` are R's. New

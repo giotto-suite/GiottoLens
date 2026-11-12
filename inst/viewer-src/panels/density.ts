@@ -21,6 +21,7 @@ import { needColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 // @ts-ignore: plain JS module
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
+import { chartAxis, token, tokenRGB } from '../ui/theme.ts';
 
 export const BINS = 256;
 
@@ -84,10 +85,11 @@ export const COLORS: Uint8Array = (() => {
   }
   return lut;
 })();
-const GREY = [55, 65, 81];
+const GREY: [number, number, number] = [55, 65, 81];   // the dark theme's bg-3
 // RGBA pixels, row 0 at the top (largest y). Log scale: counts span orders of
-// magnitude, and a linear one shows only the densest bins.
-export function densityPixels(d: Density, bins = BINS): Uint8ClampedArray {
+// magnitude, and a linear one shows only the densest bins. `grey`: bins
+// with cells but none selected.
+export function densityPixels(d: Density, bins = BINS, grey = GREY): Uint8ClampedArray {
   const px = new Uint8ClampedArray(bins * bins * 4);
   const counts = d.sel ?? d.all;
   const top = Math.log1p(d.sel ? d.maxSel : d.maxAll) || 1;
@@ -101,7 +103,7 @@ export function densityPixels(d: Density, bins = BINS): Uint8ClampedArray {
         const i = Math.round(255 * Math.log1p(n) / top) * 3;
         px[o] = COLORS[i]; px[o + 1] = COLORS[i + 1]; px[o + 2] = COLORS[i + 2];
       } else {
-        px[o] = GREY[0]; px[o + 1] = GREY[1]; px[o + 2] = GREY[2];
+        px[o] = grey[0]; px[o + 1] = grey[1]; px[o + 2] = grey[2];
       }
       px[o + 3] = 255;
     }
@@ -140,8 +142,8 @@ export function sameBox(a: Rule | null | undefined, b: Rule | null | undefined, 
 let _embed: Promise<any> | null = null;
 const loadEmbed = () => (_embed ??= import('vega-embed').then(m => m.default));
 
-const AXIS = { labelColor: '#9ca3af', titleColor: '#6b7280', domainColor: '#374151', tickColor: '#374151',
-  gridColor: '#1f2937', labelFontSize: 10, titleFontSize: 10, titleFontWeight: 'normal' };
+const axis = () => ({ ...chartAxis(), titleColor: token('fg-3'), labelFontSize: 10, titleFontSize: 10,
+  titleFontWeight: 'normal' });
 
 export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandle {
   const cols = [...(state.metaInfo as Map<string, MetaInfo>).values()].filter(c => c.kind === 'continuous');
@@ -166,6 +168,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
   const tex = Object.assign(document.createElement('canvas'), {
     style: 'position:absolute;z-index:0;pointer-events:none;image-rendering:pixelated' });
   const bins = Object.assign(document.createElement('canvas'), { width: BINS, height: BINS });
+  const grey = tokenRGB('bg-3');
   area.replaceChildren(host, tex);
   const source = ctx.id === 'density' ? 'density' : `density:${ctx.id}`;
   let view: any = null, gen = 0, own: Rule | null = null;
@@ -221,7 +224,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     if (!xc || !yc || !view) return;
     const [dx, dy] = domains();
     const d = live ? withSel(allCounts(), live) : binDensity(xc, yc, fg(), BINS, dx, dy, allCounts());
-    bins.getContext('2d')!.putImageData(new ImageData(densityPixels(d) as any, BINS, BINS), 0, 0);
+    bins.getContext('2d')!.putImageData(new ImageData(densityPixels(d, BINS, grey) as any, BINS, BINS), 0, 0);
     const g = tex.getContext('2d')!;
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, tex.width, tex.height);
@@ -252,7 +255,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
       ...paneSize(), autosize: { type: 'fit', contains: 'padding' }, background: 'transparent',
       layer,
       // No grid: it would be drawn over the bins
-      config: { view: { stroke: null }, axis: { ...AXIS, grid: false } },
+      config: { view: { stroke: null }, axis: { ...axis(), grid: false } },
     };
   }
 

@@ -371,6 +371,13 @@ export function refreshBuiltins(): void {
   for (const v of views.values()) if (typeOf(v.kind)?.meta) v.fill();
 }
 
+// Charts that take the theme's colours when built (ui/theme.ts): rebuilt
+// when it changes. The scatter is dark in both themes.
+const THEMED = new Set<PanelKind>(['histogram', 'density', 'spec']);
+export function refreshCharts(): void {
+  for (const v of views.values()) if (THEMED.has(v.kind)) v.fill();
+}
+
 // A panel pushed from R. An existing id is refilled where it is; a new one is
 // placed by `where` next to `ref`, by default next to the charts (chartRef()),
 // or at the dock's left edge when there are none.
