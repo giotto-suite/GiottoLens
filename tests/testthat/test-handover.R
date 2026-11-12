@@ -52,12 +52,14 @@ test_that("an object in memory is written into `project` and kept", {
 
 test_that("an object that matches its snapshot is shown from it, without a save", {
     fx <- lens_image_fixture()
+    # Other tests may have saved into the fixture's project before
+    before <- GiottoDisk::snapshotInfo(fx$g@source)
     v <- launch_lens(fx$g, open = FALSE)
     on.exit(v$close(), add = TRUE)
     priv <- get("private", v$.__enclos_env__)
     info <- snaps(v)
-    expect_identical(info$name, "fixture")
-    expect_identical(priv$snapshot, info$tag)
+    expect_identical(info$tag, before$tag)
+    expect_identical(priv$snapshot, info$tag[info$name == "fixture"])
 })
 
 test_that("a changed object gets a new snapshot, one per change", {
