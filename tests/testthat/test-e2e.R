@@ -406,6 +406,15 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     br$js("document.querySelector('[data-panel=cells] .outline-reset').click()")
     expect_true(browser_wait(br,
         "window.__giottolens.store.getState().outline.alpha === 0.8"))
+    # Light panels, the spatial view still dark
+    expect_identical(v$state()$config$theme, "dark")
+    v$set_theme("light")
+    expect_identical(v$state()$config$theme, "light")
+    expect_true(browser_wait(br, "document.documentElement.dataset.theme === 'light'"))
+    expect_true(browser_wait(br, paste0(
+        "getComputedStyle(document.getElementById('spatial-pane')).backgroundColor === 'rgb(17, 24, 39)' && ",
+        "getComputedStyle(document.body).backgroundColor === 'rgb(243, 244, 246)'")))
+    v$set_theme("dark")
 
     png <- v$screenshot()
     expect_true(file.exists(png))

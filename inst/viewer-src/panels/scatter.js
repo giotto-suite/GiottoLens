@@ -36,6 +36,7 @@ export function createScatterPanel(body, ctx) {
     { icon: 'maximize-2', title: 'zoom to fit', onClick: () => homeVS && deck?.setProps({ viewState: { ...homeVS } }) },
   ]);
   const area = chartArea(body);
+  area.classList.add('lens-dark');   // dark in both themes, like the spatial view (ui/theme.ts)
 
   function setMode(m) {
     mode = m;
