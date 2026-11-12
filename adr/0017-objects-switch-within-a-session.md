@@ -58,6 +58,11 @@ methods that need one stop with that message.
   selections, unless the work was saved.
 - Until a save exists, any rules or annotations count as work. Once one does, only work
   changed since the last save should.
+- `close()` does not refuse yet: it is the explicit end of the viewer, and cleanup (package
+  unload, a failed launch, tests) must close without asking. Once a save exists,
+  `close(discard = FALSE)` should refuse unsaved work, and so should `launch_lens(port =)`
+  replacing a viewer on that port; internal teardown goes through a private close that
+  never refuses.
 - Selected genes (by name) and the camera are part of the config, so a reload of the same
   object keeps them, and a save can hold them.
 - Layers launched without a giotto object are deprecated.
