@@ -82,17 +82,6 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     invisible(output)
 }
 
-# Which cells, as a string: the count and an MD5 of the IDs in order. Kept
-# state that indexes cells by position (rules, metadata) is reused only for
-# the same fingerprint.
-.cells_fingerprint <- function(cell_ids) {
-    if (is.null(cell_ids)) return(NULL)
-    f <- tempfile()
-    on.exit(unlink(f), add = TRUE)
-    writeLines(cell_ids, f, useBytes = TRUE)
-    paste0(length(cell_ids), ":", unname(tools::md5sum(f)))
-}
-
 # Directories the server mounts under data/<layer>/ (layer name → store path)
 .layer_mounts <- function(gpoints = NULL, gpolygons = NULL) {
     mounts <- list()

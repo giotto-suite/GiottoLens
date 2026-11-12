@@ -129,9 +129,7 @@ serve_lens <- function(...) {
 }
 
 # What launch_lens() and set_object() load: the layers, images and mark,
-# checked, and `key`, which object it is: its objUID(), so that switching back
-# to it brings back its state (adr/0017). Layers given without a giotto object
-# share one key.
+# checked.
 .resolve_object <- function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
                             images = NULL, image_files = NULL, mark = NULL) {
     giotto <- inherits(x, "giotto")
@@ -144,12 +142,9 @@ serve_lens <- function(...) {
         images      = imgs,
         image_files = .check_image_files(image_files, taken = names(imgs)),
         mark        = mark,
-        spat_unit   = if (giotto) spat_unit,
-        key         = (if (giotto) GiottoClass::objUID(x)) %||% .lens_no_key
+        spat_unit   = if (giotto) spat_unit
     )
 }
-
-.lens_no_key <- ".layers"
 
 # Once per session: the tests and scripts that still do it see it once
 .warn_layer_launch <- function() {
@@ -303,11 +298,10 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Show another object in this viewer. The server and its
-        #'   URL stay; open tabs reload. What the viewer held for the current
-        #'   object (the viewer's settings, rules, pushed panels, metadata and
-        #'   column types) is kept, and comes back when the same object (by
-        #'   [GiottoClass::objUID()]) is shown again. If its cells changed,
-        #'   only the settings come back.
+        #'   URL stay; open tabs reload. Nothing of the current object is kept:
+        #'   its settings, rules, annotations, pushed panels and metadata are
+        #'   dropped, with a warning naming the rules, annotations and panels
+        #'   lost. Returns before the tabs have reloaded.
         #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark As in
         #'   [launch_lens()]
         set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
@@ -1057,9 +1051,8 @@ LensViewer <- R6::R6Class("LensViewer",
             cat("LensViewer\n")
             cat("  url:         ", self$url, "\n")
             cat("  running:     ", !is.null(private$server), "\n")
-            cat("  object:      ", if (is.null(private$key)) "none" else
-                sprintf("%s (%s cells)", private$key,
-                    format(length(private$cell_ids), big.mark = ",")), "\n")
+            cat("  object:      ", if (!private$loaded) "none" else
+                sprintf("%s cells", format(length(private$cell_ids), big.mark = ",")), "\n")
             cat("  connected:   ", length(private$conns), "tab(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
@@ -1072,12 +1065,10 @@ LensViewer <- R6::R6Class("LensViewer",
         session     = NULL,
         transfer    = "auto",
         routes      = NULL,     # env: mounts (layer -> store dir), images (k -> file)
-        key         = NULL,     # the object shown (.resolve_object()); NULL for none
-        cells_fp    = NULL,     # .cells_fingerprint() of its cells
+        loaded      = FALSE,    # whether an object is shown
         cells_file  = NULL,     # its cell table in the session dir (.export_session())
         load_seq    = 0L,       # loads so far; the manifest and each tab's ready carry it
         conn_load   = NULL,     # env: connection id -> the load its page came from
-        objects     = list(),   # by key: the state of objects not shown (stash())
         image_names = character(),
         image_files = character(),  # image name -> the image's own file
         cell_ids    = NULL,
@@ -1121,10 +1112,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 }
             }
             urls <- function(msg) vapply(msg$columns, `[[`, "", "url")
-            # Objects not shown keep their files for when they are again
-            kept <- unlist(lapply(private$objects, function(o) urls(o$cached_meta)))
-            .prune_meta_files(private$meta_dir(),
-                c(urls(out$msg), urls(private$cached_meta), kept))
+            .prune_meta_files(private$meta_dir(), c(urls(out$msg), urls(private$cached_meta)))
             private$cached_meta <- out$msg
             if (self$connected())
                 private$broadcast(.encode_ws_message("load_metadata", out$msg))
@@ -1176,8 +1164,8 @@ LensViewer <- R6::R6Class("LensViewer",
             r$data
         },
 
-        drop_panel_file = function(id, pushed = private$pushed) {
-            url <- pushed[[id]]$data_url
+        drop_panel_file = function(id) {
+            url <- private$pushed[[id]]$data_url
             if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
         },
 
@@ -1198,9 +1186,9 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         # Show `object` (from .resolve_object()): write its manifest and cell
-        # table, serve its stores and images, swap in its state, and make open
-        # tabs reload. A tab still on the previous object is ignored until it
-        # has (adr/0017).
+        # table, serve its stores and images, start its state empty, and make
+        # open tabs reload. A tab still on the previous object is ignored until
+        # it has (adr/0017).
         load = function(object) {
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
@@ -1211,19 +1199,16 @@ LensViewer <- R6::R6Class("LensViewer",
                 load = private$load_seq + 1L, cells_file = cells_file)
             old <- setdiff(list.files(private$session, "^cells-[0-9]+\\.parquet$"), cells_file)
             unlink(file.path(private$session, old))
-            private$cells_file <- cells_file
-            private$stash()
+            private$clear_object()
             private$set_routes(.layer_mounts(object$layers$gpoints, object$layers$gpolygons),
                 imgs$files)
+            private$cells_file  <- cells_file
             private$image_names <- vapply(imgs$entries, `[[`, "", "name")
             private$image_files <- imgs$sources
             private$cell_ids    <- cl$cell_ids
             private$cells       <- if (!is.null(cl$source)) cl[c("source", "mark", "marks")]
             private$spat_unit   <- object$spat_unit
-            private$key         <- object$key
-            private$cells_fp    <- .cells_fingerprint(cl$cell_ids)
-            private$cells_xy    <- NULL
-            private$unstash(object$key)
+            private$loaded      <- TRUE
             private$reload_tabs()
         },
 
@@ -1231,54 +1216,47 @@ LensViewer <- R6::R6Class("LensViewer",
         load_empty = function() {
             .export_empty(file.path(private$session, "manifest.json"),
                 load = private$load_seq + 1L)
-            private$stash()
+            private$clear_object()
             private$set_routes(list(), list())
             private$image_names <- character()
             private$image_files <- character()
-            private$cell_ids <- private$cells <- private$spat_unit <- NULL
-            private$key <- private$cells_fp <- private$cells_xy <- private$cells_file <- NULL
-            private$unstash(NULL)
+            private$cell_ids <- private$cells <- private$spat_unit <- private$cells_file <- NULL
+            private$loaded <- FALSE
             private$reload_tabs()
         },
 
-        # Keep the shown object's state under its key
-        stash = function() {
-            if (is.null(private$key)) return(invisible())
-            private$objects[[private$key]] <- list(
-                cells        = private$cells_fp,
-                config_json  = private$config_json,
-                rule_set     = private$rule_set,
-                combine      = private$combine,
-                pushed       = private$pushed,
-                cached_meta  = private$cached_meta,
-                meta_values  = private$meta_values,
-                col_types    = private$col_types,
-                annotations  = self$annotations,
-                registration = self$registration
-            )
-        },
-
-        # Take the state kept for `key`, or start empty. The settings,
-        # annotations and registration hold names and coordinates, so they
-        # come back whatever the cells; rules, metadata and panels only for the
-        # same cells, since they index cells by position.
-        unstash = function(key) {
-            s <- if (!is.null(key)) private$objects[[key]]
-            same <- !is.null(s) && identical(s$cells, private$cells_fp)
-            if (!is.null(s) && !same)
-                for (id in names(s$pushed)) private$drop_panel_file(id, s$pushed)
-            if (!is.null(key)) private$objects[[key]] <- NULL
-            private$config_json  <- s$config_json
-            self$annotations     <- s$annotations %||% list()
-            self$registration    <- s$registration
-            private$rule_set     <- if (same) s$rule_set else list()
-            private$combine      <- if (same) s$combine else "or"
-            private$pushed       <- if (same) s$pushed else list()
-            private$cached_meta  <- if (same) s$cached_meta
-            private$meta_values  <- if (same) s$meta_values else list()
-            private$col_types    <- if (same) s$col_types else list()
+        # Drop what belonged to the object shown, with a warning naming the
+        # work that is lost: nothing is kept for when it is shown again
+        # (adr/0017). Keeping Lens work is a save's job.
+        clear_object = function() {
+            work <- if (private$loaded) private$lens_work()
+            if (!is.null(work))
+                warning("[LensViewer$set_object] the previous object's ", work,
+                    " are not kept", call. = FALSE)
+            for (id in names(private$pushed)) private$drop_panel_file(id)
+            .prune_meta_files(private$meta_dir(), character())
+            private$config_json  <- NULL
+            private$rule_set     <- list()
+            private$combine      <- "or"
+            private$pushed       <- list()
+            private$cached_meta  <- NULL
+            private$meta_values  <- list()
+            private$col_types    <- list()
+            private$cells_xy     <- NULL
+            self$annotations     <- list()
+            self$registration    <- NULL
             self$selection       <- NULL
             self$selection_rules <- NULL
+        },
+
+        # The work done in the viewer on the object shown, as text ("2 rules,
+        # 1 annotation"), or NULL for none. Settings are not counted.
+        lens_work = function() {
+            n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
+                `pushed panel` = length(private$pushed))
+            parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
+            if (!is.null(self$registration)) parts <- c(parts, "image registration")
+            if (length(parts)) paste(parts, collapse = ", ")
         },
 
         # Serve `mounts` (layer -> store dir) and `images` (k -> file) instead
@@ -1316,7 +1294,7 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         need_object = function(site) {
-            if (is.null(private$key))
+            if (!private$loaded)
                 stop("[", site, "] no object loaded; call viewer$set_object(g) first",
                     call. = FALSE)
         },

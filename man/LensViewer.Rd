@@ -105,11 +105,10 @@ complete pairs on, the placement before). See
 \if{latex}{\out{\hypertarget{method-LensViewer-set_object}{}}}
 \subsection{\code{LensViewer$set_object()}}{
   Show another object in this viewer. The server and its
-URL stay; open tabs reload. What the viewer held for the current
-object (the viewer's settings, rules, pushed panels, metadata and
-column types) is kept, and comes back when the same object (by
-\code{\link[GiottoClass:objUID]{GiottoClass::objUID()}}) is shown again. If its cells changed,
-only the settings come back.
+URL stay; open tabs reload. Nothing of the current object is kept:
+its settings, rules, annotations, pushed panels and metadata are
+dropped, with a warning naming the rules, annotations and panels
+lost. Returns before the tabs have reloaded.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_object(

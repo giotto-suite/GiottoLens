@@ -1,14 +1,13 @@
 # GiottoLens (development version)
 
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
-  reload. Switching back to an object brings back its settings, rules, pushed panels and
-  metadata; if its cells changed, only the settings. See adr/0017.
+  reload. The new object starts from a clean slate; rules, annotations and pushed panels of
+  the previous one are dropped with a warning. See adr/0017.
 * `launch_lens()` without an object starts an empty viewer, to be filled with `set_object()`.
-* The camera is kept across reloads and switches (`state()$config$view`), and selected genes
-  are saved by name (`state()$config$genes`, was positions).
+* The camera is kept across reloads (`state()$config$view`), and selected genes are saved by
+  name (`state()$config$genes`, was positions).
 * Launching from giottoPoints / giottoPolygon layers instead of a giotto object is deprecated.
-* Protocol 5: `ready` carries the page's load, and R sends `reload`. Requires GiottoClass
-  0.7.28 (`objUID()`).
+* Protocol 5: `ready` carries the page's load, and R sends `reload`.
 
 * After `select()`, a selection the page sent before it had R's rules no longer replaces
   them in R for a moment: `rules()` and `selection` right after `select()` are R's. New

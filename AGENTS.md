@@ -124,12 +124,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - The server outlives the object: `launch_lens()` and `set_object()` both go through
   `private$load()` (`load_empty()` for none). The stores and images served are in
   `private$routes`, read per request; never capture them in a closure.
-- Everything that belongs to the object shown is either swapped by `stash()` / `unstash()`
-  (config, rules, combine, pushed panels, metadata, column types, annotations, registration)
-  or reset by `load()` (cell IDs, fingerprint, cell table, `cells_xy`). A new per-object field
-  goes in one of the two, or a switch leaks it into the next object.
-- Kept state is keyed by `objUID()` (`.lens_no_key` for layer launches). Rules, metadata and
-  panels come back only for the same `.cells_fingerprint()`.
+- Everything that belongs to the object shown is reset by `load()` through `clear_object()`
+  (config, rules, combine, pushed panels and their files, metadata and its files, column
+  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
+  A new per-object field goes there, or a switch leaks it into the next object. Nothing is
+  kept for an object not shown: keeping Lens work is a save's job.
+- `clear_object()` warns about lost work (`lens_work()`: rules, annotations, pushed panels,
+  registration); settings alone are not counted.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 
@@ -181,7 +182,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
 - Selected genes are saved by name and the camera (`view`) in data coordinates; a saved view
-  replaces the fitted one when the config is restored.
+  replaces the fitted one when the config is restored (a reload of the same object).
 - The config except rules and combine mode is saved through R (`core/persist.ts`, adr/0009):
   sent on change as JSON text, kept verbatim in `private$config_json`, returned in `restore`.
   Nothing is sent before the restore, so defaults never overwrite it. Bump `CONFIG_VERSION`

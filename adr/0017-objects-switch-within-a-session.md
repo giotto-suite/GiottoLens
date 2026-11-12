@@ -1,4 +1,4 @@
-# 0017. A viewer switches objects within its session; state is kept per object
+# 0017. A viewer switches objects within its session, each from a clean slate
 
 - **Status:** Proposed
 - **Date:** 2026-11-11
@@ -29,12 +29,14 @@ panels, registration, column types) from a tab whose load is not current, and te
 that connects with an older load to reload. Otherwise a tab still showing the previous
 object, or its config sent on `pagehide`, would overwrite the new object's state.
 
-What the viewer holds for an object is kept by its `objUID()` when another is shown, and
-taken back when that object is shown again. The settings, annotations and registration
-hold names and coordinates, so they come back whatever the cells. Rules, metadata and
-pushed panels index cells by position, so they come back only when the cells are the same
-(`.cells_fingerprint()`: the count and an MD5 of the IDs in order). Files the session keeps
-for objects not shown (metadata columns, panel data) are not pruned while they are kept.
+A load starts the new object from a clean slate: the settings, rules, annotations,
+registration, pushed panels, metadata and column types of the previous object are dropped,
+and its metadata and panel files deleted. If rules, annotations, pushed panels or a
+registration in progress are lost, `set_object()` warns and names them. Nothing is kept in
+memory for when the object is shown again. Keeping Lens work is the job of an explicit save
+of the viewer's work (to come), which refers to a snapshot of the object and holds what
+only exists in the viewer; what can be derived from the snapshot is derived again rather
+than stored.
 
 Files whose name stays the same across loads are never served from the browser's cache:
 the manifest is fetched with `cache: 'no-store'`, and the cell table is named per load.
@@ -48,24 +50,27 @@ methods that need one stop with that message.
 
 - `set_object()` returns before tabs have reloaded; calls that need the page wait for a tab
   to connect, as after `launch_lens()`.
-- Kept state is in memory; it is what a saved session (#21) would write to a file.
-- Layers launched without a giotto object share one key; such launches are deprecated.
-- Selected genes and the camera are part of the config, by name and in data coordinates,
-  so they come back with an object and after a reload.
+- Switching back to an object means pushing its metadata and panels again, and redoing
+  selections, unless the work was saved.
+- Selected genes (by name) and the camera are part of the config, so a reload of the same
+  object keeps them, and a save can hold them.
+- Layers launched without a giotto object are deprecated.
 
 ## Alternatives considered
 
-- **A new viewer per object:** a new URL each time, and nothing carried over.
+- **A new viewer per object:** a new URL each time.
 - **Swap the object in the page without a reload:** every module would need to drop its
   data and handlers; a reload resets all of it.
-- **Key kept state by a hash of the object's manifest:** changes with every edit, so state
-  would never come back after a step; the uid stays with the object.
-- **Keep only the page's config per object:** rules, panels and metadata would be lost on
-  every switch.
+- **Keep each object's state in memory, by `objUID()`, and restore it on switching back:**
+  a second place for Lens work besides the save, lost on `close()` and invisible. Getting
+  the key right (spatial unit, feature type, which cells) and keeping its files out of
+  pruning was most of the code, for the convenience of switching back without saving.
+  Tried and removed before merging.
+- **Keep only the settings per object:** the same second place, for less.
 
 ## References
 
-`R/viewer.R` (`set_object`, `load`, `stash`, `unstash`, `set_routes`, `reload_tabs`),
-`R/server.R` (`.lens_app`, `.files_paths`), `R/export.R` (`.export_empty`,
-`.cells_fingerprint`), `inst/viewer-src/main.js`, `core/comms.js` (`setHello`);
+`R/viewer.R` (`set_object`, `load`, `clear_object`, `set_routes`, `reload_tabs`),
+`R/server.R` (`.lens_app`, `.files_paths`), `R/export.R` (`.export_empty`),
+`inst/viewer-src/main.js`, `core/comms.js` (`setHello`);
 `tests/testthat/test-launch.R`, `tests/testthat/test-e2e.R`.

@@ -1229,7 +1229,7 @@ test_that("a type change redraws a histogram of the column once it loads", {
     expect_identical(br$errors(), character())
 })
 
-test_that("set_object() reloads the page onto another object and back, with its camera and genes", {
+test_that("set_object() reloads the page onto another object and back, each from a clean slate", {
     fx <- lens_image_fixture()
     bx <- lens_bins_fixture()
     v  <- launch_lens(open = FALSE)
@@ -1255,12 +1255,19 @@ test_that("set_object() reloads the page onto another object and back, with its 
     expect_true(br$js("window.__giottolens.state.manifest.layers.transcripts === undefined"))
     expect_identical(br$js("window.__giottolens.store.getState().genes.length"), 0L)
 
-    # Back: the camera and genes it had
+    # Back: nothing of before is kept, so the camera is fitted again
     v$set_object(fx$g, images = FALSE)
     expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
-    expect_true(browser_wait(br, "window.__giottolens.state.currentViewState.zoom === 3"))
+    expect_identical(br$js("window.__giottolens.store.getState().genes.length"), 0L)
+    expect_false(isTRUE(br$js("window.__giottolens.state.currentViewState.zoom === 3")))
+
+    # A reload of the same object keeps its camera (the config R holds)
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 20, y = -30, zoom = 3)
+    expect_true(pump_until(function() identical(as.numeric(saved()$view$zoom), 3)))
+    br$session$Page$reload()
+    expect_true(browser_wait(br, "window.__giottolens?.state?.currentViewState?.zoom === 3"))
     vs <- br$js("window.__giottolens.state.currentViewState.target")
     expect_equal(unlist(vs)[1:2], c(20, -30))
-    expect_identical(sort(unlist(br$js("window.__giottolens.store.getState().genes"))), c("Actb", "Cd3e"))
     expect_identical(br$errors(), character())
 })
