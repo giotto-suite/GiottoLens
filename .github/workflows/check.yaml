@@ -97,8 +97,8 @@ jobs:
         with:
           extra-packages: |
             any::rcmdcheck
-            github::giotto-suite/GiottoClass
-            github::giotto-suite/GiottoDisk
+            github::giotto-suite/GiottoClass@gsource
+            github::giotto-suite/GiottoDisk@dev
       - uses: r-lib/actions/check-r-package@v2
         with:
           error-on: '"error"'

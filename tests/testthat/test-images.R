@@ -37,7 +37,7 @@ test_that("image files are served by Range at image/<k> and nothing else is", {
                 "/lens/tok/image/../image/0", "/lens/other/image/0"))
         expect_identical(.data_response(req(p), list(), "/lens/tok", images)$status, 404L, info = p)
 
-    app <- .lens_app(tempdir(), tempdir(), list(m = tempdir()), "tok", list(), images = images)
+    app <- .lens_app(tempdir(), tempdir(), lens_routes(list(m = tempdir()), images), "tok", list())
     expect_true(app$staticPaths[["/lens/tok/image"]]$options$exclude)
 })
 

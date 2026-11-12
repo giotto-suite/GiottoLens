@@ -384,6 +384,16 @@
       opacity: 0.25; transition: opacity 0.2s;
     }
     #btn-screenshot:hover { opacity: 1; }
+
+    /* No object loaded (launch_lens() without one) */
+    body.empty #toolbar, body.empty #dock, body.empty .gutter, body.empty #rule-strip,
+    body.empty #btn-screenshot { display: none; }
+    body.empty #spatial-pane { width: 100% !important; }
+    #empty-note {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: #9ca3af; font-size: 14px; line-height: 1.6; text-align: center;
+    }
+    #empty-note code { color: #e5e7eb; }
   </style>
 </head>
 <body>

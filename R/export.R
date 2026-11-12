@@ -17,14 +17,17 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     invisible(output)
 }
 
-# Writes manifest.json (and cells.parquet). Cells come from the polygon tiles,
+# Writes manifest.json (and the cell table, `cells_file`, beside it). A viewer
+# names the table per load: a page reloading onto another object must not get
+# the previous one's from its cache. Cells come from the polygon tiles,
 # or without polygons from `locations` (from .spat_locations()) (adr/0010).
 # `mark`: a user mark (.check_mark()). `images`: manifest entries from
 # .image_entries(). Returns the cell IDs in the viewer's cell order
 # (`cell_ids`, NULL without cells) and the cell layer's `source`, `mark` and
 # `marks` (whether the mark is drawn by default).
 .export_session <- function(gpoints, gpolygons, output, transfer = "auto",
-                            images = list(), locations = NULL, mark = NULL) {
+                            images = list(), locations = NULL, mark = NULL,
+                            load = 1L, cells_file = "cells.parquet") {
     layers <- list()
     extent <- NULL
     cells  <- NULL
@@ -48,8 +51,8 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         )
     }
     if (!is.null(cells)) {
-        layers$cells$cells <- list(url = "session/cells.parquet", n = nrow(cells$table))
-        .write_cells(cells$table, file.path(dirname(output), "cells.parquet"))
+        layers$cells$cells <- list(url = paste0("session/", cells_file), n = nrow(cells$table))
+        .write_cells(cells$table, file.path(dirname(output), cells_file))
         extent <- .merge_extent(extent, layers$cells$extent)
     }
     if (!is.null(gpoints)) {
@@ -60,8 +63,8 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     if (!length(layers))
         stop("[export_manifest] provide gpoints and/or gpolygons", call. = FALSE)
 
-    manifest <- list(version = "0.5.0", extent = extent, transfer = transfer,
-        layers = layers)
+    manifest <- list(version = "0.5.0", load = load, extent = extent,
+        transfer = transfer, layers = layers)
     if (length(images)) manifest$images <- images
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
     list(
@@ -70,6 +73,24 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         mark     = layers$cells$mark,
         marks    = layers$cells$marks
     )
+}
+
+# The manifest of a viewer showing no object. `load` as in .export_session().
+.export_empty <- function(output, load) {
+    jsonlite::write_json(list(version = "0.5.0", load = load, empty = TRUE,
+        layers = structure(list(), names = character())), output, auto_unbox = TRUE)
+    invisible(output)
+}
+
+# Which cells, as a string: the count and an MD5 of the IDs in order. Kept
+# state that indexes cells by position (rules, metadata) is reused only for
+# the same fingerprint.
+.cells_fingerprint <- function(cell_ids) {
+    if (is.null(cell_ids)) return(NULL)
+    f <- tempfile()
+    on.exit(unlink(f), add = TRUE)
+    writeLines(cell_ids, f, useBytes = TRUE)
+    paste0(length(cell_ids), ":", unname(tools::md5sum(f)))
 }
 
 # Directories the server mounts under data/<layer>/ (layer name → store path)

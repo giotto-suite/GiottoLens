@@ -23,11 +23,13 @@ launch_lens(
 serve_lens(...)
 }
 \arguments{
-\item{x}{A giotto object \strong{or} a giottoPoints backed by a
-GiottoDisk tile store.}
+\item{x}{A giotto object, or \code{NULL} (default) to start without
+one and load it later with \code{viewer$set_object()}. A giottoPoints backed
+by a GiottoDisk tile store still works but is deprecated: pass a giotto
+object.}
 
-\item{gpolygons}{giottoPolygon backed by a GiottoDisk tile store. Ignored
-when \code{x} is a giotto object.}
+\item{gpolygons}{giottoPolygon backed by a GiottoDisk tile store, with a
+giottoPoints \code{x} (deprecated). Ignored when \code{x} is a giotto object.}
 
 \item{feat_type}{Feature type key when \code{x} is a giotto object (default
 \code{"rna"}). \code{NULL} launches without transcripts.}

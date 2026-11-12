@@ -113,6 +113,14 @@ lens_bins_fixture <- local({
     }
 })
 
+# The routes a viewer's app reads (see .lens_app())
+lens_routes <- function(mounts = list(), images = list()) {
+    e <- new.env(parent = emptyenv())
+    e$mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
+    e$images <- lapply(images, normalizePath, mustWork = TRUE)
+    e
+}
+
 .Random.seed_or_null <- function() {
     if (exists(".Random.seed", globalenv())) get(".Random.seed", globalenv())
 }
@@ -151,7 +159,9 @@ http_get <- function(url, headers = list(), timeout = 10) {
     res
 }
 
-ws_client <- function(url, origin = NULL) {
+# `load`: the load the page says it shows (the manifest's), or NULL to say
+# nothing, as a page from before set_object() existed
+ws_client <- function(url, origin = NULL, load = NULL) {
     headers <- if (!is.null(origin)) list(Origin = origin)
     ws <- websocket::WebSocket$new(url, headers = headers, autoConnect = FALSE)
     state <- new.env()
@@ -159,7 +169,8 @@ ws_client <- function(url, origin = NULL) {
     ws$onOpen(function(e) {
         state$open <- TRUE
         # A real tab announces itself once its handlers are registered
-        ws$send(sprintf('{"type":"ready","data":{"protocol":%d}}', .lens_protocol))
+        ws$send(jsonlite::toJSON(list(type = "ready", data = c(list(protocol = .lens_protocol),
+            if (!is.null(load)) list(load = load))), auto_unbox = TRUE))
     })
     ws$onClose(function(e) state$closed <- TRUE)
     ws$onMessage(function(e) state$msgs[[length(state$msgs) + 1L]] <-
@@ -175,3 +186,7 @@ ws_url <- function(viewer, token = NULL) {
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Many tests launch from the fixture's layers on purpose; the deprecation is
+# tested on its own (test-launch.R)
+.lens_warned$layers <- TRUE

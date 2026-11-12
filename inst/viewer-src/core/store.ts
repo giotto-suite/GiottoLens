@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
+import { state } from './state.js';
 import type { Registration, Landmark, Affine } from '../data/registration.ts';
 import type { CategoryStyle, ColorScale } from '../render/colors.ts';
 
@@ -41,13 +42,16 @@ export interface Annotation {
   coords: [number, number][];
 }
 
+// The camera as saved: centre and zoom (deck.gl's OrthographicView)
+export interface SavedView { target: [number, number]; zoom: number }
+
 export interface Config {
   layers: Record<LayerName, LayerVis>;
   outline: OutlineStyle;
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
-  genes: number[];              // selected gene indices into manifest genes
+  genes: string[];              // selected genes, by name
   colorBy: string | null;       // metadata column colouring the cells
   // per categorical column, per category: color, visibility, fill opacity
   categoryStyles: Record<string, Record<string, CategoryStyle>>;
@@ -62,6 +66,7 @@ export interface Config {
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
   closedPanels: string[];       // control panels closed by hand: a restore leaves them out
   registration: Registration | null;  // an image being registered (data/registration.ts)
+  view: SavedView | null;       // the camera; null: fitted to the data
 }
 
 export interface Runtime {
@@ -98,13 +103,14 @@ export const initialConfig = (): Config => ({
   layout: null,
   closedPanels: [],
   registration: null,
+  view: null,
 });
 
 // Saved through R and restored after a reload (core/persist.ts). Rules and
 // the combine mode are left out: R restores those itself, since it evaluates
 // them. Bump CONFIG_VERSION and add a step to `migrate` when a saved field
 // changes meaning.
-const CONFIG_VERSION = 1;
+const CONFIG_VERSION = 2;
 const UNSAVED: (keyof Config)[] = ['rules', 'combine'];
 type Saved = Partial<Config>;
 
@@ -117,7 +123,7 @@ function savedConfig(s: LensState): Saved {
 
 // Layers and images merge by name, and only names this page has: a saved
 // image the page did not load is dropped, and RGB is the file's, not saved
-function mergeConfig(saved: unknown, current: LensState): LensState {
+export function mergeConfig(saved: unknown, current: LensState): LensState {
   const s = (saved ?? {}) as Saved;
   const out = { ...current } as Record<string, unknown>;
   for (const k of Object.keys(s) as (keyof Config)[])
@@ -132,7 +138,16 @@ function mergeConfig(saved: unknown, current: LensState): LensState {
   const reg = out.registration as Registration | null | undefined;
   const registration = reg && reg.image in images ? reg : null;
   const mode = out.mode === 'landmark' && !registration ? 'pan' : out.mode;
-  return { ...out, layers, images, registration, mode } as LensState;
+  // Genes this object's transcripts have
+  const genes = ((out.genes ?? []) as unknown[]).filter((g): g is string =>
+    typeof g === 'string' && !!state.geneIndex?.has(g));
+  return { ...out, layers, images, registration, mode, genes } as LensState;
+}
+
+// A config saved by an older bundle. 2: genes by name (were indices into the
+// manifest's gene list, which differ between objects)
+export function migrateConfig(saved: unknown, version: number): Saved {
+  return (version < 2 ? { ...(saved as Saved), genes: [] } : saved) as Saved;
 }
 
 export const store = createStore<LensState>()(subscribeWithSelector(persist((): LensState => ({
@@ -147,7 +162,7 @@ export const store = createStore<LensState>()(subscribeWithSelector(persist((): 
   skipHydration: true,          // main.js rehydrates once images are open
   partialize: savedConfig,
   merge: mergeConfig,
-  migrate: saved => saved as Saved,
+  migrate: migrateConfig,
 })));
 
 const set = store.setState;
@@ -166,12 +181,13 @@ export const actions = {
   },
   setTxPalette(i: number) { set({ txPalette: i }); },
   setColorAll(on: boolean) { set({ colorAll: on }); },
-  toggleGene(i: number) {
+  toggleGene(name: string) {
     const g = get().genes;
-    set({ genes: g.includes(i) ? g.filter(x => x !== i) : [...g, i] });
+    set({ genes: g.includes(name) ? g.filter(x => x !== name) : [...g, name] });
   },
-  addGenes(idx: number[]) { set(s => ({ genes: [...new Set([...s.genes, ...idx])] })); },
+  addGenes(names: string[]) { set(s => ({ genes: [...new Set([...s.genes, ...names])] })); },
   clearGenes() { set({ genes: [] }); },
+  setView(view: SavedView | null) { set({ view }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
   // patch the styles of some categories of `column`
   setCategoryStyles(column: string, patch: Record<string, Partial<CategoryStyle>>) {

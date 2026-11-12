@@ -98,8 +98,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
   `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
   - `/lens/<token>/`: bundle, from the package;
-  - `.../session/`: per-viewer temp dir (manifest, `cells.parquet`, metadata, panel data),
-    removed by `close()`;
+  - `.../session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, metadata, panel
+    data), removed by `close()`. A file whose name stays across loads (the manifest) is
+    fetched with `cache: 'no-store'`;
   - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
   - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
   - `.../image/<k>`: image file k only (never its folder), through `.data_response()`;
@@ -117,6 +118,18 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   generated R code (`.rule_code()`) through `encodeString()`.
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
+
+### Objects in a session (adr/0017)
+
+- The server outlives the object: `launch_lens()` and `set_object()` both go through
+  `private$load()` (`load_empty()` for none). The stores and images served are in
+  `private$routes`, read per request; never capture them in a closure.
+- Everything that belongs to the object shown is either swapped by `stash()` / `unstash()`
+  (config, rules, combine, pushed panels, metadata, column types, annotations, registration)
+  or reset by `load()` (cell IDs, fingerprint, cell table, `cells_xy`). A new per-object field
+  goes in one of the two, or a switch leaks it into the next object.
+- Kept state is keyed by `objUID()` (`.lens_no_key` for layer launches). Rules, metadata and
+  panels come back only for the same `.cells_fingerprint()`.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 
@@ -167,6 +180,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
+- Selected genes are saved by name and the camera (`view`) in data coordinates; a saved view
+  replaces the fitted one when the config is restored.
 - The config except rules and combine mode is saved through R (`core/persist.ts`, adr/0009):
   sent on change as JSON text, kept verbatim in `private$config_json`, returned in `restore`.
   Nothing is sent before the restore, so defaults never overwrite it. Bump `CONFIG_VERSION`
@@ -174,12 +189,15 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 4)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 5)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
+- `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
+  older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
+  reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps

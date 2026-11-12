@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { store, actions, getConfig, initialConfig } from '../core/store.ts';
+import { store, actions, getConfig, initialConfig, mergeConfig, migrateConfig } from '../core/store.ts';
+import { state } from '../core/state.js';
 
 describe('store', () => {
   it('changes only through actions and notifies subscribers once per change', () => {
@@ -17,8 +18,11 @@ describe('store', () => {
   it('keeps layer patches, genes and brush radius consistent', () => {
     actions.setLayer('tx', { alpha: 0.2 });
     expect(store.getState().layers.tx).toEqual({ show: false, alpha: 0.2 });
-    actions.toggleGene(3); actions.toggleGene(5); actions.toggleGene(3);
-    expect(store.getState().genes).toEqual([5]);
+    actions.toggleGene('Cd3e'); actions.toggleGene('Actb'); actions.toggleGene('Cd3e');
+    expect(store.getState().genes).toEqual(['Actb']);
+    actions.addGenes(['Epcam', 'Actb']);
+    expect(store.getState().genes).toEqual(['Actb', 'Epcam']);
+    actions.clearGenes();
     actions.setBrushRadius(1000);
     expect(store.getState().brushRadius).toBe(300);
   });
@@ -50,6 +54,19 @@ describe('store', () => {
     expect(store.getState().colorScales.v).toEqual({ preset: 'magma', reverse: true });
     actions.resetColorScale('v');
     expect(store.getState().colorScales).toEqual({});
+  });
+
+  it('restores genes this object has, by name, and the camera', () => {
+    state.geneIndex = new Map([['Actb', 0], ['Cd3e', 1]]);
+    const saved = { ...getConfig(), genes: ['Cd3e', 'Gone'], view: { target: [5, -5], zoom: 3 } };
+    const s = mergeConfig(saved, store.getState());
+    expect(s.genes).toEqual(['Cd3e']);
+    expect(s.view).toEqual({ target: [5, -5], zoom: 3 });
+    // a config from before genes were names drops its indices
+    expect(migrateConfig({ genes: [0, 1], txPalette: 2 }, 1)).toEqual({ genes: [], txPalette: 2 });
+    actions.setView({ target: [1, 2], zoom: 4 });
+    expect(getConfig().view).toEqual({ target: [1, 2], zoom: 4 });
+    actions.setView(null);
   });
 
   it('getConfig returns only the savable part as JSON', () => {

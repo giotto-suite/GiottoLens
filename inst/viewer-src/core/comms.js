@@ -9,14 +9,20 @@
 // { type: 'reply', id, data | error }.
 
 // Bump when the message format changes; R warns on a mismatch
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 
 let ws             = null;
 let reconnectTimer = null;
 const handlers     = new Map();   // type → Set of handlers
 const outQueue     = new Map();   // type → latest message while disconnected
 
+let hello          = {};          // more for the 'ready' message (setHello())
+
 export const isConnected = () => ws?.readyState === WebSocket.OPEN;
+
+// What the page tells R on every connect besides its protocol: the load its
+// manifest came from, so R can make a page from before a set_object() reload
+export function setHello(data) { hello = { ...data }; }
 
 export function onMessage(type, fn) {
   if (!handlers.has(type)) handlers.set(type, new Set());
@@ -78,7 +84,7 @@ function connect() {
     clearTimeout(reconnectTimer);
     setRStatus('connected');
     // Handlers are registered before connect(), so R may send right away
-    ws.send(JSON.stringify({ type: 'ready', data: { protocol: PROTOCOL } }));
+    ws.send(JSON.stringify({ type: 'ready', data: { ...hello, protocol: PROTOCOL } }));
     for (const m of outQueue.values()) ws.send(m);
     outQueue.clear();
   };

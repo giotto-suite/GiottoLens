@@ -1,7 +1,7 @@
 # ── Viewer → R messages ──────────────────────────────────────────────────────
 
 # Bump with PROTOCOL in inst/viewer-src/core/comms.js
-.lens_protocol <- 4L
+.lens_protocol <- 5L
 
 # Message types the viewer sends; anything else arriving on the socket is
 # dropped. `on()` callbacks can be registered for the first two.
@@ -9,6 +9,11 @@
     "ready", "reply", "client_error", "log", "config", "panel_closed",
     "registration_update", "set_column_type")
 .lens_callback_types <- c("cell_selection", "annotations_update")
+
+# Messages about the object a page shows, ignored from a page that has not
+# reloaded since the last set_object() (adr/0017)
+.lens_object_types <- c("cell_selection", "annotations_update", "config",
+    "panel_closed", "registration_update", "set_column_type")
 
 # Parse and validate one WebSocket text frame.
 # Returns list(type, data), or NULL with a warning when the frame is invalid.

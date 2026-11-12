@@ -38,6 +38,7 @@ complete pairs on, the placement before). See
 \subsection{Public methods}{
   \itemize{
     \item \href{#method-LensViewer-initialize}{\code{LensViewer$new()}}
+    \item \href{#method-LensViewer-set_object}{\code{LensViewer$set_object()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
@@ -83,34 +84,50 @@ complete pairs on, the placement before). See
   Start a viewer server. Use \code{\link[=launch_lens]{launch_lens()}} instead.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$new(
-  gpoints,
-  gpolygons,
-  port,
-  host,
-  url_prefix,
-  transfer = "auto",
-  spat_unit = NULL,
-  images = list(),
-  locations = NULL,
-  mark = NULL,
-  image_files = character()
+    \preformatted{LensViewer$new(port, host, url_prefix, transfer = "auto", object = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{port, host}}{Where to listen}
+      \item{\code{url_prefix}}{Base URL the browser uses}
+      \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{object}}{What to show, from \code{.resolve_object()} (internal), or
+\code{NULL} to start without an object}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_object"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_object}{}}}
+\subsection{\code{LensViewer$set_object()}}{
+  Show another object in this viewer. The server and its
+URL stay; open tabs reload. What the viewer held for the current
+object (the viewer's settings, rules, pushed panels, metadata and
+column types) is kept, and comes back when the same object (by
+\code{\link[GiottoClass:objUID]{GiottoClass::objUID()}}) is shown again. If its cells changed,
+only the settings come back.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_object(
+  x,
+  gpolygons = NULL,
+  feat_type = "rna",
+  spat_unit = "cell",
+  images = NULL,
+  image_files = NULL,
+  mark = NULL
 )}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{gpoints, gpolygons}}{Tile-store-backed layers (either may be NULL)}
-      \item{\code{port, host}}{Where to listen}
-      \item{\code{url_prefix}}{Base URL the browser uses}
-      \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{spat_unit}}{Spatial unit the cells belong to (for \code{subset()})}
-      \item{\code{images}}{Named list of giottoLargeImage objects to show}
-      \item{\code{locations}}{Cells from spatial locations when there are no
-polygons (internal)}
-      \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{image_files}}{Named image file paths, see \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark}}{As in
+\code{\link[=launch_lens]{launch_lens()}}}
     }
     \if{html}{\out{</div>}}
   }

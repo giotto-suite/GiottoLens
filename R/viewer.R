@@ -8,10 +8,12 @@
 #' Tile data goes through a Range-aware handler so the viewer reads only the
 #' columns it draws.
 #'
-#' @param x          A giotto object **or** a giottoPoints backed by a
-#'   GiottoDisk tile store.
-#' @param gpolygons  giottoPolygon backed by a GiottoDisk tile store. Ignored
-#'   when `x` is a giotto object.
+#' @param x          A giotto object, or `NULL` (default) to start without
+#'   one and load it later with `viewer$set_object()`. A giottoPoints backed
+#'   by a GiottoDisk tile store still works but is deprecated: pass a giotto
+#'   object.
+#' @param gpolygons  giottoPolygon backed by a GiottoDisk tile store, with a
+#'   giottoPoints `x` (deprecated). Ignored when `x` is a giotto object.
 #' @param feat_type  Feature type key when `x` is a giotto object (default
 #'   `"rna"`). `NULL` launches without transcripts.
 #' @param spat_unit  Spatial unit key when `x` is a giotto object (default
@@ -70,10 +72,10 @@ launch_lens <- function(
     image_files = NULL
 ) {
     transfer <- match.arg(transfer)
-    mark   <- .check_mark(mark)
-    layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
-    imgs   <- .pick_images(x, images)
-    image_files <- .check_image_files(image_files, taken = names(imgs))
+    # Checked before the server starts, so a bad argument leaves none running
+    object <- if (!is.null(x) || !is.null(gpolygons)) .resolve_object(x,
+        gpolygons = gpolygons, feat_type = feat_type, spat_unit = spat_unit,
+        images = images, image_files = image_files, mark = mark)
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -83,12 +85,8 @@ launch_lens <- function(
     }
     url_prefix <- sub("/+$", "", url_prefix %||% paste0("http://127.0.0.1:", port))
 
-    viewer <- LensViewer$new(
-        gpoints = layers$gpoints, gpolygons = layers$gpolygons,
-        port = port, host = host, url_prefix = url_prefix, transfer = transfer,
-        spat_unit = if (inherits(x, "giotto")) spat_unit, images = imgs,
-        locations = layers$locations, mark = mark, image_files = image_files
-    )
+    viewer <- LensViewer$new(port = port, host = host, url_prefix = url_prefix,
+        transfer = transfer, object = object)
     if (open) .open_viewer(viewer$url)
     message("Viewer: ", viewer$url)
     invisible(viewer)
@@ -129,6 +127,38 @@ serve_lens <- function(...) {
 .onUnload <- function(libpath) {
     for (v in as.list(.lens_registry)) try(v$close(), silent = TRUE)
 }
+
+# What launch_lens() and set_object() load: the layers, images and mark,
+# checked, and `key`, which object it is: its objUID(), so that switching back
+# to it brings back its state (adr/0017). Layers given without a giotto object
+# share one key.
+.resolve_object <- function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
+                            images = NULL, image_files = NULL, mark = NULL) {
+    giotto <- inherits(x, "giotto")
+    if (!giotto) .warn_layer_launch()
+    mark   <- .check_mark(mark)
+    layers <- .resolve_layers(x, gpolygons, feat_type, spat_unit)
+    imgs   <- .pick_images(x, images)
+    list(
+        layers      = layers,
+        images      = imgs,
+        image_files = .check_image_files(image_files, taken = names(imgs)),
+        mark        = mark,
+        spat_unit   = if (giotto) spat_unit,
+        key         = (if (giotto) GiottoClass::objUID(x)) %||% .lens_no_key
+    )
+}
+
+.lens_no_key <- ".layers"
+
+# Once per session: the tests and scripts that still do it see it once
+.warn_layer_launch <- function() {
+    if (isTRUE(.lens_warned$layers)) return(invisible())
+    .lens_warned$layers <- TRUE
+    warning("[launch_lens] launching from giottoPoints / giottoPolygon layers is ",
+        "deprecated; pass a giotto object", call. = FALSE)
+}
+.lens_warned <- new.env(parent = emptyenv())
 
 .resolve_layers <- function(x, gpolygons, feat_type, spat_unit) {
     locations <- NULL
@@ -244,38 +274,48 @@ LensViewer <- R6::R6Class("LensViewer",
         registration = NULL,
 
         #' @description Start a viewer server. Use [launch_lens()] instead.
-        #' @param gpoints,gpolygons Tile-store-backed layers (either may be NULL)
         #' @param port,host Where to listen
         #' @param url_prefix Base URL the browser uses
         #' @param transfer Tile transfer mode, see [launch_lens()]
-        #' @param spat_unit Spatial unit the cells belong to (for `subset()`)
-        #' @param images Named list of giottoLargeImage objects to show
-        #' @param locations Cells from spatial locations when there are no
-        #'   polygons (internal)
-        #' @param mark How cells are drawn without polygons, see [launch_lens()]
-        #' @param image_files Named image file paths, see [launch_lens()]
-        initialize = function(gpoints, gpolygons, port, host, url_prefix,
-                              transfer = "auto", spat_unit = NULL, images = list(),
-                              locations = NULL, mark = NULL, image_files = character()) {
+        #' @param object What to show, from `.resolve_object()` (internal), or
+        #'   `NULL` to start without an object
+        initialize = function(port, host, url_prefix, transfer = "auto", object = NULL) {
             self$port         <- port
-            private$spat_unit <- spat_unit
+            private$transfer  <- transfer
             private$token     <- .rand_id(24L)
             private$conns     <- new.env(parent = emptyenv())
+            private$conn_load <- new.env(parent = emptyenv())
+            private$routes    <- new.env(parent = emptyenv())
+            private$routes$mounts <- list()
+            private$routes$images <- list()
             private$session   <- file.path(tempdir(), "giottolens",
                 paste0(port, "-", .rand_id(8L)))
             dir.create(file.path(private$session, "metadata"),
                 recursive = TRUE, showWarnings = FALSE)
-            imgs <- .image_entries(images, image_files)
-            private$image_names <- vapply(imgs$entries, `[[`, "", "name")
-            private$image_files <- imgs$sources
-            cl <- .export_session(gpoints, gpolygons,
-                output = file.path(private$session, "manifest.json"), transfer = transfer,
-                images = imgs$entries, locations = locations, mark = mark)
-            private$cell_ids <- cl$cell_ids
-            if (!is.null(cl$source)) private$cells <- cl[c("source", "mark", "marks")]
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
-            private$start_server(host, .layer_mounts(gpoints, gpolygons), imgs$files)
+            private$start_server(host)
             assign(as.character(port), self, envir = .lens_registry)
+            tryCatch(if (is.null(object)) private$load_empty() else private$load(object),
+                error = function(e) {
+                    self$close()
+                    stop(e)
+                })
+        },
+
+        #' @description Show another object in this viewer. The server and its
+        #'   URL stay; open tabs reload. What the viewer held for the current
+        #'   object (the viewer's settings, rules, pushed panels, metadata and
+        #'   column types) is kept, and comes back when the same object (by
+        #'   [GiottoClass::objUID()]) is shown again. If its cells changed,
+        #'   only the settings come back.
+        #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark As in
+        #'   [launch_lens()]
+        set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
+                              images = NULL, image_files = NULL, mark = NULL) {
+            private$load(.resolve_object(x, gpolygons = gpolygons, feat_type = feat_type,
+                spat_unit = spat_unit, images = images, image_files = image_files,
+                mark = mark))
+            invisible(self)
         },
 
         #' @description Send a typed message to every connected tab
@@ -307,6 +347,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param feat_type Feature type key for dim reds (default `"rna"`)
         push_metadata = function(x, cols = NULL, dimreds = NULL, dims = 1:2,
                                  spat_unit = "cell", feat_type = "rna") {
+            private$need_object("LensViewer$push_metadata")
             meta <- if (inherits(x, "giotto")) {
                 prep_meta(x, cols = cols, dimreds = dimreds, dims = dims,
                     spat_unit = spat_unit, feat_type = feat_type)
@@ -341,6 +382,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param column Column name, as pushed
         #' @param type `"categorical"` or `"continuous"`
         set_column_type = function(column, type = c("categorical", "continuous")) {
+            private$need_object("LensViewer$set_column_type")
             type <- match.arg(type)
             if (is.null(private$cached_meta))
                 stop("[LensViewer] no metadata pushed yet", call. = FALSE)
@@ -368,6 +410,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   and turns cross-filter mode off so it shows as is.
         #' @param ids Character vector of cell IDs to select (empty vector clears).
         set_selection = function(ids) {
+            private$need_object("LensViewer$set_selection")
             ids <- as.character(ids)
             idx <- match(ids, private$cell_ids)
             if (anyNA(idx))
@@ -394,6 +437,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `NULL` keeps the current mode.
         #' @return The selected cell IDs, invisibly.
         select = function(rule, source = "r", replace = TRUE, combine = NULL) {
+            private$need_object("LensViewer$select")
             if (!is.null(rule)) {
                 rule <- .resolve_cells(rule, private$cell_ids)
                 rule$source <- source
@@ -824,6 +868,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   viewer shows)
         #' @param feat_type Feature type, passed to `subsetGiotto()`
         subset = function(gobject, spat_unit = NULL, feat_type = "rna") {
+            private$need_object("LensViewer$subset")
             if (!length(self$selection))
                 stop("[LensViewer] nothing is selected", call. = FALSE)
             if (!requireNamespace("GiottoClass", quietly = TRUE))
@@ -846,6 +891,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param ids Cell IDs
         #' @param pad Margin around them, as a fraction of their extent
         zoom_to = function(ids = self$selection, pad = 0.1) {
+            private$need_object("LensViewer$zoom_to")
             idx <- match(as.character(ids), private$cell_ids)
             idx <- idx[!is.na(idx)]
             if (!length(idx)) stop("[LensViewer] none of the IDs are cells in the viewer", call. = FALSE)
@@ -876,6 +922,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @return The panel id, invisibly.
         push_panel = function(spec, data = NULL, id = NULL, title = NULL,
                               where = c("tab", "right", "below"), ref = NULL) {
+            private$need_object("LensViewer$push_panel")
             where <- match.arg(where)
             if (is.null(id)) {
                 repeat {
@@ -967,6 +1014,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param names  Optional character vector of names (one per row).
         #'   Falls back to an `x$name` column if present, else blank.
         push_polygons = function(x, names = NULL) {
+            private$need_object("LensViewer$push_polygons")
             if (!self$connected()) {
                 warning("[LensViewer] no viewer connected yet", call. = FALSE)
                 return(invisible(self))
@@ -1009,6 +1057,9 @@ LensViewer <- R6::R6Class("LensViewer",
             cat("LensViewer\n")
             cat("  url:         ", self$url, "\n")
             cat("  running:     ", !is.null(private$server), "\n")
+            cat("  object:      ", if (is.null(private$key)) "none" else
+                sprintf("%s (%s cells)", private$key,
+                    format(length(private$cell_ids), big.mark = ",")), "\n")
             cat("  connected:   ", length(private$conns), "tab(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
@@ -1019,6 +1070,14 @@ LensViewer <- R6::R6Class("LensViewer",
     private = list(
         token       = NULL,
         session     = NULL,
+        transfer    = "auto",
+        routes      = NULL,     # env: mounts (layer -> store dir), images (k -> file)
+        key         = NULL,     # the object shown (.resolve_object()); NULL for none
+        cells_fp    = NULL,     # .cells_fingerprint() of its cells
+        cells_file  = NULL,     # its cell table in the session dir (.export_session())
+        load_seq    = 0L,       # loads so far; the manifest and each tab's ready carry it
+        conn_load   = NULL,     # env: connection id -> the load its page came from
+        objects     = list(),   # by key: the state of objects not shown (stash())
         image_names = character(),
         image_files = character(),  # image name -> the image's own file
         cell_ids    = NULL,
@@ -1062,7 +1121,10 @@ LensViewer <- R6::R6Class("LensViewer",
                 }
             }
             urls <- function(msg) vapply(msg$columns, `[[`, "", "url")
-            .prune_meta_files(private$meta_dir(), c(urls(out$msg), urls(private$cached_meta)))
+            # Objects not shown keep their files for when they are again
+            kept <- unlist(lapply(private$objects, function(o) urls(o$cached_meta)))
+            .prune_meta_files(private$meta_dir(),
+                c(urls(out$msg), urls(private$cached_meta), kept))
             private$cached_meta <- out$msg
             if (self$connected())
                 private$broadcast(.encode_ws_message("load_metadata", out$msg))
@@ -1083,7 +1145,7 @@ LensViewer <- R6::R6Class("LensViewer",
 
         eval_ctx = function() {
             if (is.null(private$cells_xy)) {
-                cells <- arrow::read_parquet(file.path(private$session, "cells.parquet"),
+                cells <- arrow::read_parquet(file.path(private$session, private$cells_file),
                     col_select = c("x", "y"))
                 # As float32, exactly what the browser tests against
                 private$cells_xy <- list(x = as.numeric(cells$x), y = as.numeric(cells$y))
@@ -1093,6 +1155,7 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # Send a request to the first tab and wait for its reply
         request = function(type, data = NULL, timeout = 10) {
+            private$need_object("LensViewer")
             if (!self$connected())
                 stop("[LensViewer] no viewer connected", call. = FALSE)
             private$req_id <- private$req_id + 1L
@@ -1113,8 +1176,8 @@ LensViewer <- R6::R6Class("LensViewer",
             r$data
         },
 
-        drop_panel_file = function(id) {
-            url <- private$pushed[[id]]$data_url
+        drop_panel_file = function(id, pushed = private$pushed) {
+            url <- pushed[[id]]$data_url
             if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
         },
 
@@ -1134,7 +1197,131 @@ LensViewer <- R6::R6Class("LensViewer",
             for (ws in as.list(private$conns)) try(ws$send(json), silent = TRUE)
         },
 
-        start_server = function(host, mounts, images = list()) {
+        # Show `object` (from .resolve_object()): write its manifest and cell
+        # table, serve its stores and images, swap in its state, and make open
+        # tabs reload. A tab still on the previous object is ignored until it
+        # has (adr/0017).
+        load = function(object) {
+            imgs <- .image_entries(object$images, object$image_files)
+            cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
+            cl <- .export_session(object$layers$gpoints, object$layers$gpolygons,
+                output = file.path(private$session, "manifest.json"),
+                transfer = private$transfer, images = imgs$entries,
+                locations = object$layers$locations, mark = object$mark,
+                load = private$load_seq + 1L, cells_file = cells_file)
+            old <- setdiff(list.files(private$session, "^cells-[0-9]+\\.parquet$"), cells_file)
+            unlink(file.path(private$session, old))
+            private$cells_file <- cells_file
+            private$stash()
+            private$set_routes(.layer_mounts(object$layers$gpoints, object$layers$gpolygons),
+                imgs$files)
+            private$image_names <- vapply(imgs$entries, `[[`, "", "name")
+            private$image_files <- imgs$sources
+            private$cell_ids    <- cl$cell_ids
+            private$cells       <- if (!is.null(cl$source)) cl[c("source", "mark", "marks")]
+            private$spat_unit   <- object$spat_unit
+            private$key         <- object$key
+            private$cells_fp    <- .cells_fingerprint(cl$cell_ids)
+            private$cells_xy    <- NULL
+            private$unstash(object$key)
+            private$reload_tabs()
+        },
+
+        # No object: the page says so and waits
+        load_empty = function() {
+            .export_empty(file.path(private$session, "manifest.json"),
+                load = private$load_seq + 1L)
+            private$stash()
+            private$set_routes(list(), list())
+            private$image_names <- character()
+            private$image_files <- character()
+            private$cell_ids <- private$cells <- private$spat_unit <- NULL
+            private$key <- private$cells_fp <- private$cells_xy <- private$cells_file <- NULL
+            private$unstash(NULL)
+            private$reload_tabs()
+        },
+
+        # Keep the shown object's state under its key
+        stash = function() {
+            if (is.null(private$key)) return(invisible())
+            private$objects[[private$key]] <- list(
+                cells        = private$cells_fp,
+                config_json  = private$config_json,
+                rule_set     = private$rule_set,
+                combine      = private$combine,
+                pushed       = private$pushed,
+                cached_meta  = private$cached_meta,
+                meta_values  = private$meta_values,
+                col_types    = private$col_types,
+                annotations  = self$annotations,
+                registration = self$registration
+            )
+        },
+
+        # Take the state kept for `key`, or start empty. The settings,
+        # annotations and registration hold names and coordinates, so they
+        # come back whatever the cells; rules, metadata and panels only for the
+        # same cells, since they index cells by position.
+        unstash = function(key) {
+            s <- if (!is.null(key)) private$objects[[key]]
+            same <- !is.null(s) && identical(s$cells, private$cells_fp)
+            if (!is.null(s) && !same)
+                for (id in names(s$pushed)) private$drop_panel_file(id, s$pushed)
+            if (!is.null(key)) private$objects[[key]] <- NULL
+            private$config_json  <- s$config_json
+            self$annotations     <- s$annotations %||% list()
+            self$registration    <- s$registration
+            private$rule_set     <- if (same) s$rule_set else list()
+            private$combine      <- if (same) s$combine else "or"
+            private$pushed       <- if (same) s$pushed else list()
+            private$cached_meta  <- if (same) s$cached_meta
+            private$meta_values  <- if (same) s$meta_values else list()
+            private$col_types    <- if (same) s$col_types else list()
+            self$selection       <- NULL
+            self$selection_rules <- NULL
+        },
+
+        # Serve `mounts` (layer -> store dir) and `images` (k -> file) instead
+        # of the previous object's
+        set_routes = function(mounts, images) {
+            mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
+            images <- lapply(images, normalizePath, mustWork = TRUE)
+            root <- .lens_root(private$token)
+            for (m in names(private$routes$mounts))
+                private$server$removeStaticPath(paste0(root, "/files/", m))
+            paths <- .files_paths(root, mounts)
+            if (length(paths)) private$server$setStaticPath(.list = paths)
+            private$routes$mounts <- mounts
+            private$routes$images <- images
+        },
+
+        # A new load: tabs reload, and until they do, what they send about
+        # the previous object is ignored
+        reload_tabs = function() {
+            private$load_seq <- private$load_seq + 1L
+            for (id in ls(private$conn_load)) assign(id, NA_integer_, envir = private$conn_load)
+            if (self$connected()) private$broadcast(.encode_ws_message("reload"))
+        },
+
+        conn_id = function(ws) {
+            for (id in ls(private$conns))
+                if (identical(get(id, envir = private$conns), ws)) return(id)
+            NULL
+        },
+
+        # Whether `ws`'s page shows the current load
+        conn_current = function(ws) {
+            id <- private$conn_id(ws)
+            !is.null(id) && identical(private$conn_load[[id]], private$load_seq)
+        },
+
+        need_object = function(site) {
+            if (is.null(private$key))
+                stop("[", site, "] no object loaded; call viewer$set_object(g) first",
+                    call. = FALSE)
+        },
+
+        start_server = function(host) {
             priv <- private
             pub  <- self
             handlers <- list(
@@ -1147,6 +1334,10 @@ LensViewer <- R6::R6Class("LensViewer",
                     parsed <- .parse_ws_message(msg)
                     if (is.null(parsed)) return(invisible())
                     dat <- parsed$data
+                    # A page still showing the previous object: what it says
+                    # about that object would land on this one
+                    if (parsed$type %in% .lens_object_types && !priv$conn_current(ws))
+                        return(invisible())
                     switch(parsed$type,
                         # The tab has registered its handlers: send what it
                         # needs, so a reload or new tab matches the others
@@ -1155,6 +1346,17 @@ LensViewer <- R6::R6Class("LensViewer",
                                 warning("[LensViewer] the viewer bundle speaks protocol ",
                                     .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
                                     "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
+                            # The page loaded before the last set_object(): it
+                            # reloads first. A page that does not say which
+                            # load it has (an older bundle) is taken as current.
+                            load <- dat$load
+                            if (is.numeric(load) && length(load) == 1L &&
+                                    as.integer(load) != priv$load_seq) {
+                                ws$send(.encode_ws_message("reload"))
+                                return(invisible())
+                            }
+                            id <- priv$conn_id(ws)
+                            if (!is.null(id)) assign(id, priv$load_seq, envir = priv$conn_load)
                             # The saved config first, so a reload comes back as
                             # it was; then the data and panels it refers to
                             ws$send(.encode_ws_message("restore", list(
@@ -1223,19 +1425,19 @@ LensViewer <- R6::R6Class("LensViewer",
                     )
                 },
                 close = function(ws) {
-                    for (id in ls(priv$conns))
-                        if (identical(get(id, envir = priv$conns), ws))
-                            rm(list = id, envir = priv$conns)
+                    id <- priv$conn_id(ws)
+                    if (!is.null(id)) rm(list = id, envir = priv$conns)
+                    if (!is.null(id) && exists(id, envir = priv$conn_load, inherits = FALSE))
+                        rm(list = id, envir = priv$conn_load)
                 }
             )
             private$server <- tryCatch(
                 httpuv::startServer(host, self$port, .lens_app(
                     viewer_dir  = .viewer_dir(),
                     session_dir = private$session,
-                    mounts      = mounts,
+                    routes      = private$routes,
                     token       = private$token,
                     ws_handlers = handlers,
-                    images      = images,
                     # RStudio Server's proxy changes the Origin; the token
                     # still guards the socket
                     check_origin = .ide() != "rstudio-server"

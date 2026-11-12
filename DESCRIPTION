@@ -26,7 +26,7 @@ Imports:
 Suggests:
     chromote,
     curl,
-    GiottoClass,
+    GiottoClass (>= 0.7.28),
     GiottoDisk,
     png,
     sf,

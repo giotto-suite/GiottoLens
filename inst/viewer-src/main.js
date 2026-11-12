@@ -1,6 +1,6 @@
 import { state } from './core/state.js';
 import { store, actions } from './core/store.ts';
-import { initComms, onMessage, reportError } from './core/comms.js';
+import { initComms, onMessage, reportError, setHello } from './core/comms.js';
 import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
@@ -8,7 +8,7 @@ import { setTransfer } from './data/parquet.ts';
 import { setMetaInfo, needColumns, prefetchColumns } from './data/meta.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
-import { updateTiles, scheduleTiles, setViewState } from './data/schedule.js';
+import { updateTiles, scheduleTiles, setViewState, onSetView } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
@@ -31,7 +31,17 @@ createIcons({ icons });
 
 const $status = msg => { document.getElementById('status').textContent = msg; };
 
+// The camera is saved with the config, a moment after it stops moving
+let viewTimer;
+function saveView(viewState) {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => actions.setView({
+    target: [viewState.target[0], viewState.target[1]], zoom: viewState.zoom,
+  }), 250);
+}
+
 function onViewStateChange({ viewState }) {
+  saveView(viewState);
   state.currentViewState = viewState;
   state.deckgl.setProps({ viewState });
   updateScalebar(viewState);
@@ -83,10 +93,18 @@ async function loadImages(entries) {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function main() {
   $status('loading manifest…');
-  state.manifest = await fetch('session/manifest.json').then(r => {
+  // Never from the cache: the file changes when R loads another object
+  state.manifest = await fetch('session/manifest.json', { cache: 'no-store' }).then(r => {
     if (!r.ok) throw new Error(`manifest.json not found (${r.status})`);
     return r.json();
   });
+  // R loaded another object (set_object()): start over with its manifest
+  onMessage('reload', () => location.reload());
+  setHello({ load: state.manifest.load });
+  if (state.manifest.empty) {
+    showEmpty();
+    return;
+  }
   // Tile URLs are relative to this page so the viewer works behind a
   // path-prefixing proxy; fetch resolves them, but keep them absolute anyway
   for (const layer of Object.values(state.manifest.layers))
@@ -211,11 +229,28 @@ async function main() {
   // The saved config comes from R on connect ('restore'), over the defaults
   // set above, images included
   initPersist();
+  // A saved camera replaces the fitted one
+  store.persist.onFinishHydration(s => {
+    if (s.view) setViewState({ ...initialViewState, target: [s.view.target[0], s.view.target[1], 0],
+      zoom: s.view.zoom });
+  });
+  onSetView(saveView);
   store.persist.rehydrate();
   initComms();   // after every handler is registered
 
   $status('ready');
   updateTiles(initialViewState);
+}
+
+// No object loaded: say how to load one, and wait for R to
+function showEmpty() {
+  document.body.classList.add('empty');
+  const note = document.createElement('div');
+  note.id = 'empty-note';
+  note.innerHTML = 'No object loaded.<br>In R: <code>viewer$set_object(g)</code>';
+  document.getElementById('spatial-pane').append(note);
+  initComms();
+  $status('no object');
 }
 
 // Handles for tests and debugging from the browser console

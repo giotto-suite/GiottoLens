@@ -48,12 +48,12 @@ export function createTranscriptsPanel(body: HTMLElement): PanelHandle {
     const matches = term ? genes.filter(g => g.toLowerCase().includes(term)) : genes;
     const rows = matches.slice(0, MAX_LIST_ROWS).map(name => {
       const idx = state.geneIndex.get(name);
-      const sel = selected.has(idx);
+      const sel = selected.has(name);
       const row = el('div', { className: 'gene-row' + (sel ? ' selected' : '') });
       const dot = el('span', { className: 'gene-dot' });
       dot.style.background = sel ? colorForGene(idx) : 'transparent';
       row.append(dot, el('span', { className: 'gene-name', textContent: name }));
-      row.addEventListener('click', () => actions.toggleGene(idx));
+      row.addEventListener('click', () => actions.toggleGene(name));
       return row;
     });
     if (matches.length > MAX_LIST_ROWS)
