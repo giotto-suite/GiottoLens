@@ -247,7 +247,8 @@ The protocol is request/reply: a message from R with an `id` is answered by the 
 the handler's result or error. A tab announces `ready` once its handlers are registered, and
 R then sends it the saved configuration, the current metadata, rules and pushed panels, so
 reloads and new tabs match. Browser errors
-are forwarded and printed in the R console.
+are forwarded and printed in the R console. The page asks R in the other direction for the
+start page only: list projects and their snapshots, and open one (adr/0019).
 
 ## Panels
 

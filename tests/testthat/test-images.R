@@ -16,7 +16,8 @@ test_that("images are picked by name and need a TIFF file", {
     out <- .image_entries(imgs)
     expect_identical(out$entries[[1L]]$url, "image/0")
     expect_identical(out$entries[[1L]]$extent, list(xmin = 0, xmax = 100, ymin = -100, ymax = 0))
-    expect_identical(out$files[["0"]], normalizePath(fx$image_file))
+    # the object is in a project, which holds its own copy of the file
+    expect_identical(out$files[["0"]], normalizePath(imgs$stain@file_path))
 
     # A VRT in @file_path (GiottoDisk's vault stubs) is skipped, not served
     stub <- imgs$stain
@@ -37,7 +38,7 @@ test_that("image files are served by Range at image/<k> and nothing else is", {
                 "/lens/tok/image/../image/0", "/lens/other/image/0"))
         expect_identical(.data_response(req(p), list(), "/lens/tok", images)$status, 404L, info = p)
 
-    app <- .lens_app(tempdir(), tempdir(), list(m = tempdir()), "tok", list(), images = images)
+    app <- .lens_app(tempdir(), tempdir(), lens_routes(list(m = tempdir()), images), "tok", list())
     expect_true(app$staticPaths[["/lens/tok/image"]]$options$exclude)
 })
 

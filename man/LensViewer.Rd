@@ -38,6 +38,10 @@ complete pairs on, the placement before). See
 \subsection{Public methods}{
   \itemize{
     \item \href{#method-LensViewer-initialize}{\code{LensViewer$new()}}
+    \item \href{#method-LensViewer-set_object}{\code{LensViewer$set_object()}}
+    \item \href{#method-LensViewer-gobject}{\code{LensViewer$gobject()}}
+    \item \href{#method-LensViewer-checkout}{\code{LensViewer$checkout()}}
+    \item \href{#method-LensViewer-open_project}{\code{LensViewer$open_project()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
@@ -85,33 +89,141 @@ complete pairs on, the placement before). See
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$new(
-  gpoints,
-  gpolygons,
   port,
   host,
   url_prefix,
   transfer = "auto",
-  spat_unit = NULL,
-  images = list(),
-  locations = NULL,
-  mark = NULL,
-  image_files = character()
+  object = NULL,
+  project = NULL
 )}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{gpoints, gpolygons}}{Tile-store-backed layers (either may be NULL)}
       \item{\code{port, host}}{Where to listen}
       \item{\code{url_prefix}}{Base URL the browser uses}
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{spat_unit}}{Spatial unit the cells belong to (for \code{subset()})}
-      \item{\code{images}}{Named list of giottoLargeImage objects to show}
-      \item{\code{locations}}{Cells from spatial locations when there are no
-polygons (internal)}
-      \item{\code{mark}}{How cells are drawn without polygons, see \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{image_files}}{Named image file paths, see \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{object}}{What to show, from \code{.resolve_object()} (internal), or
+\code{NULL} to start without an object}
+      \item{\code{project}}{Without \code{object}: a project (gDirSource) whose start
+page to show}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_object"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_object}{}}}
+\subsection{\code{LensViewer$set_object()}}{
+  Show another object in this viewer. The server and its
+URL stay; open tabs reload. Nothing of the current object is kept:
+its settings, rules, annotations, pushed panels and metadata are
+dropped. Returns before the tabs have reloaded.
+
+The viewer shows a snapshot of the object, in the object's project:
+the snapshot it was loaded from or saved as, or another of the same
+object, when nothing has changed since (\code{\link[GiottoClass:manifestDiff]{GiottoClass::manifestDiff()}});
+otherwise a new snapshot, \verb{lens_<date>_<time>}, saved with
+\code{creator = "GiottoLens"} and \code{keep = FALSE}. That save never moves
+the object's data: an object with stores outside its project (disk
+results not saved yet) is refused until saved with
+\code{g <- saveGiotto(g)}. An object written into \code{project} is saved
+with \code{keep = TRUE}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_object(
+  x,
+  gpolygons = NULL,
+  feat_type = "rna",
+  spat_unit = "cell",
+  images = NULL,
+  image_files = NULL,
+  mark = NULL,
+  project = NULL,
+  discard = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark, project}}{As in \code{\link[=launch_lens]{launch_lens()}}}
+      \item{\code{discard}}{Whether to drop the current object's rules,
+annotations, pushed panels and image registration. With any of
+them and \code{discard = FALSE} (default), nothing changes and an error
+names them.}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-gobject"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-gobject}{}}}
+\subsection{\code{LensViewer$gobject()}}{
+  The object shown, loaded from its snapshot with
+\code{\link[GiottoClass:loadGiotto]{GiottoClass::loadGiotto()}} on each call: the viewer does not hold
+it. Changes made to it do not reach the viewer until passed to
+\code{set_object()}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$gobject()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-checkout"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-checkout}{}}}
+\subsection{\code{LensViewer$checkout()}}{
+  Show a snapshot of the current project, loaded with
+\code{\link[GiottoClass:loadGiotto]{GiottoClass::loadGiotto()}}. It is shown as it was saved: no new
+snapshot is made for it.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$checkout(name, spat_unit, feat_type, discard = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Snapshot name, as listed by \code{\link[GiottoDisk:snapshotInfo]{GiottoDisk::snapshotInfo()}}}
+      \item{\code{spat_unit, feat_type}}{As in \code{\link[=launch_lens]{launch_lens()}}. Left out: the
+current ones if the snapshot has them, else \code{"cell"} and \code{"rna"},
+else its first.}
+      \item{\code{discard}}{As in \code{set_object()}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-open_project"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-open_project}{}}}
+\subsection{\code{LensViewer$open_project()}}{
+  Open a GiottoDisk project. Without \code{name}, the viewer
+shows the project's start page, which lists its snapshots, and
+drops the object shown; with \code{name}, it shows that snapshot, as
+\code{checkout()}. The project must exist: this never creates one.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$open_project(
+  path,
+  name = NULL,
+  spat_unit,
+  feat_type,
+  discard = FALSE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{path}}{The project's directory}
+      \item{\code{name}}{Snapshot to show, or \code{NULL} (default) for the start page}
+      \item{\code{spat_unit, feat_type, discard}}{As in \code{checkout()}}
     }
     \if{html}{\out{</div>}}
   }

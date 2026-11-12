@@ -61,7 +61,7 @@ test_that("a store with links leading out of it is not served by the static thre
     file.symlink(secret, file.path(root, "sub", "out.bin"))
     expect_true(.links_outside(root))
 
-    app <- .lens_app(.viewer_dir(), tempdir(), list(m = root), "tok", list())
+    app <- .lens_app(.viewer_dir(), tempdir(), lens_routes(list(m = root)), "tok", list())
     expect_true(app$staticPaths[["/lens/tok/files/m"]]$options$exclude)
     # ...so files/ goes through .data_response, which checks real paths
     req <- function(path) list(PATH_INFO = path, REQUEST_METHOD = "GET")

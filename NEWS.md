@@ -1,5 +1,29 @@
 # GiottoLens (development version)
 
+* `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
+  reload. The new object starts from a clean slate. If the current object has rules,
+  annotations or pushed panels, it stops and names them unless `discard = TRUE`. See
+  adr/0017.
+* `launch_lens()` without an object starts an empty viewer, to be filled with `set_object()`.
+* A giotto object is shown from a GiottoDisk snapshot in its project: the one it matches, or
+  a new `lens_<date>_<time>` snapshot (`keep = FALSE`). An object not in a project needs
+  `launch_lens(g, project = <dir>)`, which writes it into one. An object with disk data not
+  saved in its project is refused until saved with `g <- saveGiotto(g)`. See adr/0018.
+* `viewer$gobject()` returns the object shown, and `viewer$checkout(name)` shows another
+  snapshot of the project as it was saved, without a new save.
+* A start page on a viewer without an object: open a GiottoDisk project from the recent
+  ones, a path or (in RStudio) a folder dialog, and open one of its snapshots. The
+  toolbar's project button shows it over the view. Unkept automatic saves are hidden
+  behind a toggle. `viewer$open_project(path)` and `launch_lens(project = path)` start on
+  it; switching asks before dropping Lens work. See adr/0019.
+* Untiled point and polygon stores are read as one tile, up to 50,000 polygons and 2,000,000
+  points (`options(GiottoLens.untiled_max = )`).
+* The camera is kept across reloads (`state()$config$view`), and selected genes are saved by
+  name (`state()$config$genes`, was positions).
+* Launching from giottoPoints / giottoPolygon layers instead of a giotto object is deprecated.
+* Protocol 6: `ready` carries the page's load, R sends `reload`, and the page asks R with
+  `ask`, answered with `answer`.
+
 * A light theme for the panels and controls: `viewer$set_theme("light")`. The spatial view
   and scatter plots stay dark. The theme is part of the saved config (`state()$config$theme`).
 * Opening a panel group's "+" menu closes any other one that is open.

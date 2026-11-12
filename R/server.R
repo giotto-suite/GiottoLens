@@ -8,7 +8,9 @@
 #
 #   /lens/<token>/            viewer bundle, served from the package in place
 #   /lens/<token>/session/    manifest.json, cells.parquet, metadata/ (temp dir)
-#   /lens/<token>/data/<m>/   data store <m>, through the Range handler below
+#   /lens/<token>/data/<m>/   data store <m>, through the Range handler below.
+#                             The stores and images change when another
+#                             object is loaded (`routes`); the token does not.
 #   /lens/<token>/files/<m>/  the same files whole, from httpuv's own thread
 #                             (fast when the browser is local; adr/0004). That
 #                             thread follows symlinks, so a store with links
@@ -29,31 +31,27 @@
     "Content-Encoding"             = "identity"
 )
 
-# `mounts`: named list of data directories (name → path).
-# `images`: named list of image files (k → path), see .image_entries().
+# `routes`: environment holding `mounts`, the data directories (name → path),
+# and `images`, the image files (k → path, see .image_entries()), both
+# normalized; read on each request, so a load can change them. The files/
+# paths of a new object's stores are added with .files_paths().
 # `session_dir`: directory with manifest.json and metadata/.
 # `ws_handlers`: list(open = function(ws), message = function(ws, msg),
 #   close = function(ws)); `token`: the per-launch path segment.
 # `check_origin`: FALSE behind a proxy that changes the Origin (RStudio Server,
 #   Workbench); the token still guards the socket.
-.lens_app <- function(viewer_dir, session_dir, mounts, token, ws_handlers,
-                      check_origin = TRUE, images = list()) {
-    mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
-    images <- lapply(images, normalizePath, mustWork = TRUE)
+.lens_app <- function(viewer_dir, session_dir, routes, token, ws_handlers,
+                      check_origin = TRUE) {
     root <- .lens_root(token)
-    static <- function(dir, index = FALSE) httpuv::staticPath(dir,
-        indexhtml = index, fallthrough = FALSE, headers = .static_headers)
-    files <- lapply(mounts, function(m)
-        if (.links_outside(m)) httpuv::excludeStaticPath() else static(m))
     paths <- c(
-        stats::setNames(list(static(viewer_dir, index = TRUE), static(session_dir),
-            httpuv::excludeStaticPath(), httpuv::excludeStaticPath()),
+        stats::setNames(list(.static_path(viewer_dir, index = TRUE),
+            .static_path(session_dir), httpuv::excludeStaticPath(),
+            httpuv::excludeStaticPath()),
             paste0(root, c("", "/session", "/data", "/image"))),
-        # No stores when the cells come from spatial locations alone
-        if (length(files)) stats::setNames(files, paste0(root, "/files/", names(mounts)))
+        .files_paths(root, routes$mounts)
     )
     list(
-        call = function(req) .data_response(req, mounts, root, images),
+        call = function(req) .data_response(req, routes$mounts, root, routes$images),
         staticPaths = paths,
         onWSOpen = function(ws) {
             if (!.ws_allowed(ws$request, token, check_origin)) {
@@ -70,6 +68,17 @@
 }
 
 .lens_root <- function(token) paste0("/lens/", token)
+
+.static_path <- function(dir, index = FALSE) httpuv::staticPath(dir,
+    indexhtml = index, fallthrough = FALSE, headers = .static_headers)
+
+# The files/<m> static paths for normalized store dirs `mounts`; none when the
+# cells come from spatial locations alone
+.files_paths <- function(root, mounts) {
+    files <- lapply(mounts, function(m)
+        if (.links_outside(m)) httpuv::excludeStaticPath() else .static_path(m))
+    if (length(files)) stats::setNames(files, paste0(root, "/files/", names(mounts)))
+}
 
 # TRUE when a symlink under `dir` (a normalized path) resolves outside it
 .links_outside <- function(dir) {

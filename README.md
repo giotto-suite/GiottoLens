@@ -37,6 +37,12 @@ forward (for example R on an HPC node).
 ## R API
 
 ```r
+# What the viewer shows: a snapshot of a GiottoDisk project
+viewer$set_object(g)                # another object; refuses to drop Lens work without discard = TRUE
+g <- viewer$gobject()               # the object shown, loaded from its snapshot
+viewer$checkout("clustered")        # another snapshot of the project
+viewer$open_project("~/proj")       # the project's start page; name = "clustered" opens one
+
 # Read what the user did
 viewer$selection            # selected cell IDs
 viewer$selection_rules      # the rules behind them (lasso, brush, histogram range, ...)

@@ -185,10 +185,10 @@ export function initRemote() {
   });
 
   onMessage('set_genes', ({ genes }) => {
-    const idx = (genes ?? []).map(g => state.geneIndex.get(g)).filter(i => i != null);
+    const names = (genes ?? []).filter(g => state.geneIndex.has(g));
     actions.clearGenes();
-    actions.addGenes(idx);
-    return { matched: idx.length };
+    actions.addGenes(names);
+    return { matched: names.length };
   });
 
   onMessage('screenshot', () => {

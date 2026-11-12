@@ -60,8 +60,13 @@ export function scheduleTiles(viewState, delay = 150) {
   state.tileTimer = setTimeout(() => updateTiles(viewState), delay);
 }
 
+// Run `fn(viewState)` after each setViewState() (the saved camera)
+const viewHooks = new Set();
+export function onSetView(fn) { viewHooks.add(fn); }
+
 // Jump the camera (fit, zoom-to-annotation) and load what is now in view
 export function setViewState(viewState) {
+  viewHooks.forEach(fn => fn(viewState));
   state.currentViewState = viewState;
   state.deckgl.setProps({ viewState });
   updateScalebar(viewState);

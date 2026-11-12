@@ -201,7 +201,7 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     # A rule from R reaches the page, and a lasso from the page reaches R
     v$select(lens_categories("half", "left"))
     expect_true(browser_wait(br, "document.getElementById('sel-count').textContent.startsWith('450 ')"))
-    cells <- arrow::read_parquet(file.path(get("private", v$.__enclos_env__)$session, "cells.parquet"))
+    cells <- local({ p <- get("private", v$.__enclos_env__); arrow::read_parquet(file.path(p$session, p$cells_file)) })
     ring  <- rbind(c(40, -85), c(75, -85), c(75, -50), c(40, -50))
     br$js(sprintf("window.__giottolens.actions.setRule('spatial', {source:'spatial',kind:'polygon',space:'spatial',params:{rings:[%s]}})",
         jsonlite::toJSON(ring)))
@@ -279,7 +279,7 @@ test_that("selections do not depend on what is loaded, and match R", {
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "window.__giottolens?.state.meta?.size === 2"))
 
-    cells <- arrow::read_parquet(file.path(get("private", v$.__enclos_env__)$session, "cells.parquet"))
+    cells <- local({ p <- get("private", v$.__enclos_env__); arrow::read_parquet(file.path(p$session, p$cells_file)) })
     ring  <- rbind(c(10, -80), c(70, -90), c(60, -20), c(20, -30))
     expected <- sort(cells$cell_ID[pip(ring, cells$x, cells$y)])
     rule_js <- sprintf("{source:'spatial',kind:'polygon',space:'spatial',params:{rings:[%s]}}",
@@ -881,7 +881,7 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
     expect_true(pump_until(function() v$connected()))
 
     priv  <- get("private", v$.__enclos_env__)
-    cells <- arrow::read_parquet(file.path(priv$session, "cells.parquet"))
+    cells <- arrow::read_parquet(file.path(priv$session, priv$cells_file))
     in_r  <- function() sort(cells$cell_ID[.eval_rule(.resolve_cells(v$selection_rules[[1]], cells$cell_ID),
         list(x = cells$x, y = cells$y))])
     rule_kind <- function() br$js("window.__giottolens.store.getState().rules.spatial?.kind ?? null")
@@ -1235,5 +1235,111 @@ test_that("a type change redraws a histogram of the column once it loads", {
     expect_true(browser_wait(br, "window.__giottolens.state.meta.get('score')?.kind === 'categorical'"))
     v$set_column_type("score", "continuous")
     expect_true(browser_wait(br, "window.__giottolens.state.meta.get('score')?.kind === 'continuous'"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("set_object() reloads the page onto another object and back, each from a clean slate", {
+    fx <- lens_image_fixture()
+    bx <- lens_bins_fixture()
+    v  <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "document.body.classList.contains('empty') && !!document.querySelector('.start')"))
+    expect_true(pump_until(function() v$connected()))
+
+    v$set_object(fx$g, images = FALSE)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
+    expect_false(br$js("document.body.classList.contains('empty')"))
+    expect_true(pump_until(function() v$connected()))
+    v$show_genes(c("Actb", "Cd3e"))
+    v$set_view(x = 20, y = -30, zoom = 3)
+    saved <- function() if (!is.null(priv$config_json)) jsonlite::fromJSON(priv$config_json)$state
+    expect_true(pump_until(function() identical(saved()$view$zoom, 3L) || identical(saved()$view$zoom, 3)))
+    expect_identical(sort(saved()$genes), c("Actb", "Cd3e"))
+
+    v$set_object(bx$g, spat_unit = "bin", feat_type = NULL)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 900"))
+    expect_true(br$js("window.__giottolens.state.manifest.layers.transcripts === undefined"))
+    expect_identical(br$js("window.__giottolens.store.getState().genes.length"), 0L)
+
+    # Back: nothing of before is kept, so the camera is fitted again
+    v$set_object(fx$g, images = FALSE)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
+    expect_identical(br$js("window.__giottolens.store.getState().genes.length"), 0L)
+    expect_false(isTRUE(br$js("window.__giottolens.state.currentViewState.zoom === 3")))
+
+    # A reload of the same object keeps its camera (the config R holds)
+    expect_true(pump_until(function() v$connected()))
+    v$set_view(x = 20, y = -30, zoom = 3)
+    expect_true(pump_until(function() identical(as.numeric(saved()$view$zoom), 3)))
+    br$session$Page$reload()
+    expect_true(browser_wait(br, "window.__giottolens?.state?.currentViewState?.zoom === 3"))
+    vs <- br$js("window.__giottolens.state.currentViewState.target")
+    expect_equal(unlist(vs)[1:2], c(20, -30))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the start page opens a project's snapshot, and asks before dropping work", {
+    bx <- lens_bins_fixture()
+    proj <- normalizePath(bx$g@source@path)
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    row_open <- function(name) sprintf(paste0("(() => { const r = [...document.querySelectorAll('.start-row')]",
+        ".find(r => r.querySelector('.start-name')?.firstChild?.textContent === '%s');",
+        " r?.querySelector('.start-actions .start-btn')?.click(); return !!r; })()"), name)
+
+    # The path box
+    expect_true(browser_wait(br, "!!document.querySelector('.start-input')"))
+    br$js(sprintf("(() => { const i = document.querySelector('.start-input'); i.value = %s;
+        i.form.requestSubmit(); return true; })()", jsonlite::toJSON(proj, auto_unbox = TRUE)))
+    expect_true(browser_wait(br, row_open("fixture")))
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 900"))
+    expect_identical(normalizePath(get("private", v$.__enclos_env__)$project@path), proj)
+
+    # With an annotation, the project button's dialog asks first
+    expect_true(pump_until(function() v$connected()))
+    v$push_polygons("POLYGON((40 -70,60 -70,60 -50,40 -50,40 -70))")
+    expect_true(pump_until(function() length(v$annotations) == 1L))
+    br$js("document.getElementById('btn-project').click()")
+    expect_true(browser_wait(br, row_open("fixture")))
+    expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
+    expect_length(v$annotations, 1L)
+    br$js("document.querySelector('.start-confirm .danger').click()")
+    expect_true(pump_until(function() !length(v$annotations)))
+    expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",
+        "!document.querySelector('.start-overlay')")))
+    expect_identical(br$errors(), character())
+})
+
+test_that("an object in memory is written into a project and drawn from untiled stores", {
+    fx <- lens_fixture()
+    sw <- function(...) suppressMessages(suppressWarnings(...))
+    g <- sw(GiottoClass::giotto())
+    g <- sw(GiottoClass::setGiotto(g, GiottoClass::createGiottoPolygon(
+        GiottoDisk::storeRead(fx$gpolygons@spatVector, output = "terra"), name = "cell",
+        verbose = FALSE), verbose = FALSE))
+    g <- sw(GiottoClass::setGiotto(g, GiottoClass::createGiottoPoints(
+        GiottoDisk::storeRead(fx$gpoints@spatVector, output = "terra"), verbose = FALSE),
+        verbose = FALSE))
+    td <- tempfile("lensproj_")
+    on.exit(unlink(td, recursive = TRUE), add = TRUE)
+    v <- launch_lens(g, open = FALSE, project = td)
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(rawToChar(http_get(paste0(v$url, "session/manifest.json"))$content),
+        simplifyVector = FALSE)
+    expect_length(m$layers$cells$tiles, 1L)
+    expect_length(m$layers$transcripts$tiles, 1L)
+
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
+    expect_true(pump_until(function() v$connected()))
+    v$set_layer("tx", show = TRUE)
+    v$set_view(x = 50, y = -50, zoom = 3)
+    expect_true(browser_wait(br, "window.__giottolens.state.cache.has('polygons:1') && window.__giottolens.state.cache.has('transcripts:1')"))
     expect_identical(br$errors(), character())
 })

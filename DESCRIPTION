@@ -26,9 +26,10 @@ Imports:
 Suggests:
     chromote,
     curl,
-    GiottoClass,
-    GiottoDisk,
+    GiottoClass (>= 0.7.28),
+    GiottoDisk (>= 0.0.0.8),
     png,
+    rstudioapi,
     sf,
     terra,
     testthat (>= 3.0.0),

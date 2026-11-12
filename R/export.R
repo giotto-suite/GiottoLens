@@ -17,14 +17,17 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     invisible(output)
 }
 
-# Writes manifest.json (and cells.parquet). Cells come from the polygon tiles,
+# Writes manifest.json (and the cell table, `cells_file`, beside it). A viewer
+# names the table per load: a page reloading onto another object must not get
+# the previous one's from its cache. Cells come from the polygon tiles,
 # or without polygons from `locations` (from .spat_locations()) (adr/0010).
 # `mark`: a user mark (.check_mark()). `images`: manifest entries from
 # .image_entries(). Returns the cell IDs in the viewer's cell order
 # (`cell_ids`, NULL without cells) and the cell layer's `source`, `mark` and
 # `marks` (whether the mark is drawn by default).
 .export_session <- function(gpoints, gpolygons, output, transfer = "auto",
-                            images = list(), locations = NULL, mark = NULL) {
+                            images = list(), locations = NULL, mark = NULL,
+                            load = 1L, cells_file = "cells.parquet") {
     layers <- list()
     extent <- NULL
     cells  <- NULL
@@ -48,8 +51,8 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         )
     }
     if (!is.null(cells)) {
-        layers$cells$cells <- list(url = "session/cells.parquet", n = nrow(cells$table))
-        .write_cells(cells$table, file.path(dirname(output), "cells.parquet"))
+        layers$cells$cells <- list(url = paste0("session/", cells_file), n = nrow(cells$table))
+        .write_cells(cells$table, file.path(dirname(output), cells_file))
         extent <- .merge_extent(extent, layers$cells$extent)
     }
     if (!is.null(gpoints)) {
@@ -60,8 +63,8 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     if (!length(layers))
         stop("[export_manifest] provide gpoints and/or gpolygons", call. = FALSE)
 
-    manifest <- list(version = "0.5.0", extent = extent, transfer = transfer,
-        layers = layers)
+    manifest <- list(version = "0.5.0", load = load, extent = extent,
+        transfer = transfer, layers = layers)
     if (length(images)) manifest$images <- images
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
     list(
@@ -70,6 +73,16 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
         mark     = layers$cells$mark,
         marks    = layers$cells$marks
     )
+}
+
+# The manifest of a viewer showing no object. `load` as in .export_session();
+# `project`: the directory of the project whose snapshots the page lists.
+.export_empty <- function(output, load, project = NULL) {
+    m <- list(version = "0.5.0", load = load, empty = TRUE,
+        layers = structure(list(), names = character()))
+    m$project <- project
+    jsonlite::write_json(m, output, auto_unbox = TRUE)
+    invisible(output)
 }
 
 # Directories the server mounts under data/<layer>/ (layer name → store path)
@@ -85,18 +98,15 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 
 # `cell_tiles`: per-tile offsets and centroid bounds from .build_cells()
 .layer_manifest <- function(store, layer, cell_tiles = NULL) {
-    tp   <- store@tiles
-    bnds <- tp@bounds   # [xmin, xmax, ymin, ymax] per row
-    meta <- tp@metadata # columns: tile, n_records
+    st <- .store_tiles(store)
 
-    tiles <- lapply(seq_len(nrow(bnds)), function(i) {
-        idx  <- meta$tile[i]
-        file <- .tile_file(store, idx)
+    tiles <- lapply(seq_len(nrow(st)), function(i) {
+        file <- st$file[i]
         t <- list(
-            index = idx,
-            xmin  = bnds[i, 1], xmax = bnds[i, 2],
-            ymin  = bnds[i, 3], ymax = bnds[i, 4],
-            n     = meta$n_records[i],
+            index = st$index[i],
+            xmin  = st$xmin[i], xmax = st$xmax[i],
+            ymin  = st$ymin[i], ymax = st$ymax[i],
+            n     = st$n[i],
             url   = paste0("data/", layer, "/", file),    # Range reads
             file  = paste0("files/", layer, "/", file),   # whole file
             # Lets the viewer skip a size probe before its Range reads
@@ -126,6 +136,27 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     out
 }
 
+# The tiles of a points or polygons store as the viewer reads them: index,
+# bounds, row count and parquet file (relative to the store directory). An
+# untiled parquetGeomStore is one tile: its one file, over its extent.
+.store_tiles <- function(store) {
+    if (methods::.hasSlot(store, "tiles")) {
+        b    <- store@tiles@bounds    # [xmin, xmax, ymin, ymax] per row
+        meta <- store@tiles@metadata  # columns: tile, n_records
+        return(data.frame(index = meta$tile, xmin = b[, 1], xmax = b[, 2],
+            ymin = b[, 3], ymax = b[, 4], n = meta$n_records,
+            file = vapply(meta$tile, function(i) .tile_file(store, i), ""),
+            row.names = NULL))
+    }
+    file <- list.files(store@path, pattern = "\\.parquet$", recursive = TRUE)
+    if (length(file) != 1L)
+        stop("[launch_lens] expected one parquet file in the untiled store at '",
+            store@path, "', found ", length(file), call. = FALSE)
+    e <- store@params$disk_extent
+    data.frame(index = 1L, xmin = e[[1L]], xmax = e[[2L]], ymin = e[[3L]], ymax = e[[4L]],
+        n = arrow::open_dataset(file.path(store@path, file))$num_rows, file = file)
+}
+
 # Tile parquet path relative to the store directory
 .tile_file <- function(store, tile_idx) {
     tile_dir <- file.path(
@@ -152,9 +183,10 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 # never needs string IDs. R keeps the IDs and translates (adr/0002).
 
 .build_cells <- function(store) {
-    tile_idx <- store@tiles@metadata$tile
-    parts <- lapply(tile_idx, function(idx) {
-        f    <- file.path(store@path, .tile_file(store, idx))
+    st <- .store_tiles(store)
+    tile_idx <- st$index
+    parts <- lapply(st$file, function(file) {
+        f    <- file.path(store@path, file)
         cols <- names(arrow::open_dataset(f)$schema)
         tbl  <- arrow::read_parquet(f,
             col_select = intersect(c("poly_ID", "x_index", "y_index"), cols))

@@ -36,6 +36,8 @@ R/
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
+  projects.R   opening projects: path check, snapshot list, default keys, recent projects,
+               the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
@@ -55,7 +57,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
               landmarks.ts (registration pairs)
   ui/         input.js, annotations.js (name popup, sync to R), tooltip.js, rules.js, release.js,
-              dom.js, registration.ts (landmark tool, image pane)
+              dom.js, registration.ts (landmark tool, image pane), start.ts (start page and
+              project dialog, through askR())
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
@@ -98,8 +101,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
   `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
   - `/lens/<token>/`: bundle, from the package;
-  - `.../session/`: per-viewer temp dir (manifest, `cells.parquet`, metadata, panel data),
-    removed by `close()`;
+  - `.../session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, metadata, panel
+    data), removed by `close()`. A file whose name stays across loads (the manifest) is
+    fetched with `cache: 'no-store'`;
   - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
   - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
   - `.../image/<k>`: image file k only (never its folder), through `.data_response()`;
@@ -117,6 +121,28 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   generated R code (`.rule_code()`) through `encodeString()`.
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
   `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
+
+### Objects in a session (adr/0017)
+
+- The server outlives the object: `launch_lens()` and `set_object()` both go through
+  `private$load()` (`load_empty()` for none). The stores and images served are in
+  `private$routes`, read per request; never capture them in a closure.
+- Everything that belongs to the object shown is reset by `load()` through `clear_object()`
+  (config, rules, combine, pushed panels and their files, metadata and its files, column
+  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
+  A new per-object field goes there, or a switch leaks it into the next object. Nothing is
+  kept for an object not shown: keeping Lens work is a save's job.
+- A giotto object is shown from a snapshot in its project (adr/0018): `handover()` runs
+  first in `load()`, so a refusal changes nothing. The project follows the object
+  (`g@source`); `project` is only for an object not in one. Never let a hand-over save move
+  data: check `GiottoDisk::sourceContains(src, g)` before `snapshotSave()`. Layers and
+  images are worked out again from the object as saved.
+- Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
+  (`.lens_untiled_max`, measured; update the comment when re-measuring).
+- `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
+  registration; settings alone are not counted) without `discard = TRUE`, and checks before
+  changing anything. A switch from the page will go through the same argument after the
+  page's own confirmation; never add a second rule there.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 
@@ -167,6 +193,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
+- Selected genes are saved by name and the camera (`view`) in data coordinates; a saved view
+  replaces the fitted one when the config is restored (a reload of the same object).
 - The config except rules and combine mode is saved through R (`core/persist.ts`, adr/0009):
   sent on change as JSON text, kept verbatim in `private$config_json`, returned in `restore`.
   Nothing is sent before the restore, so defaults never overwrite it. Bump `CONFIG_VERSION`
@@ -174,12 +202,19 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 4)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
+- The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
+  answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
+  `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
+  (adr/0019). An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
+- `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
+  older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
+  reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps

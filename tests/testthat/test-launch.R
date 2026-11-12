@@ -375,3 +375,107 @@ test_that("set_mark checks its arguments, and describe() reports the cells", {
     expect_error(p$set_mark(size = 1), "no cells")
     expect_null(p$describe()$cells)
 })
+
+test_that("a viewer starts without an object and refuses what needs one", {
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(rawToChar(http_get(paste0(v$url, "session/manifest.json"))$content))
+    expect_true(m$empty)
+    expect_identical(m$load, 1L)
+    expect_error(v$push_metadata(data.frame(cell_ID = "a", x = 1)), "no object loaded")
+    expect_error(v$select(lens_range("x", 0, 1)), "no object loaded")
+    expect_error(v$state(), "no object loaded")
+    expect_output(print(v), "object: +none")
+})
+
+test_that("layer launches are deprecated, once per session", {
+    fx <- lens_fixture()
+    .lens_warned$layers <- NULL
+    on.exit(.lens_warned$layers <- TRUE, add = TRUE)
+    expect_warning(.resolve_object(fx$gpoints, fx$gpolygons), "deprecated")
+    expect_no_warning(.resolve_object(fx$gpoints, fx$gpolygons))
+})
+
+test_that("set_object() serves another object from a clean slate", {
+    fx <- lens_image_fixture()
+    bx <- lens_bins_fixture()
+    skip_if_not_installed("websocket")
+    v <- launch_lens(fx$g, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    manifest <- function() jsonlite::fromJSON(rawToChar(
+        http_get(paste0(v$url, "session/manifest.json"))$content), simplifyVector = FALSE)
+    status <- function(u) http_get(paste0(v$url, u))$status_code
+    tile <- manifest()$layers$cells$tiles[[1]]
+    expect_identical(c(status(tile$url), status(tile$file)), c(200L, 200L))
+
+    a <- ws_client(ws_url(v), load = 1L)
+    expect_true(pump_until(function() length(a$state$msgs) > 1))
+    v$push_metadata(fx$meta)
+    v$select(lens_categories("leiden_clus", "a"))
+    expect_message(v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)), NA)
+    cfg <- '{"state":{"genes":["Actb"]},"version":2}'
+    annot <- '{"type":"annotations_update","data":{"annotations":[{"id":"q","type":"polygon","geojson":"{}"}]}}'
+    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    a$ws$send(annot)
+    expect_true(pump_until(function() identical(priv$config_json, cfg) && length(v$annotations) == 1L))
+
+    # With work on the object, nothing changes unless it is discarded
+    expect_error(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
+        "has 1 rule, 1 annotation, 1 pushed panel; pass `discard = TRUE`")
+    expect_identical(manifest()$load, 1L)
+    expect_identical(v$rules()$source, "r")
+    expect_identical(priv$config_json, cfg)
+    expect_error(v$set_object(bx$g, discard = NA), "TRUE or FALSE")
+
+    # Another object: a new manifest and stores, the tab told to reload, and
+    # nothing of the first object
+    expect_no_warning(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE))
+    expect_true(pump_until(function() any(vapply(a$state$msgs, function(m) m$type == "reload", NA))))
+    expect_identical(manifest()$load, 2L)
+    expect_identical(c(status(tile$url), status(tile$file)), c(404L, 404L))
+    expect_identical(nrow(v$rules()), 0L)
+    expect_null(priv$cached_meta)
+    expect_length(priv$pushed, 0L)
+    expect_null(priv$config_json)
+    expect_length(v$annotations, 0L)
+    expect_length(list.files(file.path(priv$session, "metadata")), 0L)
+    expect_length(list.files(file.path(priv$session, "panels")), 0L)
+    expect_output(print(v), "900 cells")
+
+    # Until it reloads, what the old tab says about its object is ignored
+    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    a$ws$send(annot)
+    pump_until(function() FALSE, timeout = 0.3)
+    expect_null(priv$config_json)
+    expect_length(v$annotations, 0L)
+    # A tab that reconnects with the old load is told to reload
+    b <- ws_client(ws_url(v), load = 1L)
+    expect_true(pump_until(function() length(b$state$msgs) > 0))
+    expect_identical(b$state$msgs[[1]]$type, "reload")
+
+    # Back to the first object: served again, from a clean slate; without
+    # work there is nothing to discard
+    expect_no_error(v$set_object(fx$g))
+    expect_identical(manifest()$load, 3L)
+    expect_null(priv$config_json)
+    expect_identical(nrow(v$rules()), 0L)
+    expect_identical(c(status(tile$url), status(tile$file)), c(200L, 200L))
+    for (cl in list(a, b)) cl$ws$close()
+})
+
+test_that("R evaluates rules on the cells of the object shown", {
+    fx <- lens_image_fixture()
+    bx <- lens_bins_fixture()
+    v <- launch_lens(fx$g, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    box <- lens_polygon(rbind(c(0, -100), c(100, -100), c(100, 0), c(0, 0)))
+    v$select(box)
+    expect_length(v$selection, 100L)
+    v$set_object(bx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE)
+    v$select(box)
+    expect_length(v$selection, sum(bx$xy$sdimx >= 0 & bx$xy$sdimx <= 100 &
+        bx$xy$sdimy >= -100 & bx$xy$sdimy <= 0))
+    expect_true(all(startsWith(v$selection, "bin_")))
+    expect_length(list.files(get("private", v$.__enclos_env__)$session, "^cells-"), 1L)
+})

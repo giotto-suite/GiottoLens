@@ -112,7 +112,7 @@ export function txDrawTiles() {
 
 function buildTileDraw({ pos, geneIdxs, stride: tileStride = 1 }) {
   const { genes, colorAll, txPalette } = store.getState();
-  const selected  = new Set(genes);
+  const selected  = new Set(genes.map(g => state.geneIndex.get(g)));
   const filtering = selected.size > 0;
   const useColor  = filtering || colorAll;
   const pal       = PALETTES[txPalette] ?? PALETTES[0];
