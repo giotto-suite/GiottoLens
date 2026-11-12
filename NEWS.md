@@ -10,13 +10,19 @@
   `launch_lens(g, project = <dir>)`, which writes it into one. An object with disk data not
   saved in its project is refused until saved with `g <- saveGiotto(g)`. See adr/0018.
 * `viewer$gobject()` returns the object shown, and `viewer$checkout(name)` shows another
-  snapshot of the project.
+  snapshot of the project as it was saved, without a new save.
+* A start page on a viewer without an object: open a GiottoDisk project from the recent
+  ones, a path or (in RStudio) a folder dialog, and open one of its snapshots. The
+  toolbar's project button shows it over the view. Unkept automatic saves are hidden
+  behind a toggle. `viewer$open_project(path)` and `launch_lens(project = path)` start on
+  it; switching asks before dropping Lens work. See adr/0019.
 * Untiled point and polygon stores are read as one tile, up to 50,000 polygons and 2,000,000
   points (`options(GiottoLens.untiled_max = )`).
 * The camera is kept across reloads (`state()$config$view`), and selected genes are saved by
   name (`state()$config$genes`, was positions).
 * Launching from giottoPoints / giottoPolygon layers instead of a giotto object is deprecated.
-* Protocol 5: `ready` carries the page's load, and R sends `reload`.
+* Protocol 6: `ready` carries the page's load, R sends `reload`, and the page asks R with
+  `ask`, answered with `answer`.
 
 * After `select()`, a selection the page sent before it had R's rules no longer replaces
   them in R for a moment: `rules()` and `selection` right after `select()` are R's. New

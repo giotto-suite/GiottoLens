@@ -16,7 +16,9 @@
 #'   a GiottoDisk tile store still works but is deprecated: pass a giotto
 #'   object.
 #' @param project    For an `x` not in a GiottoDisk project: the directory of
-#'   the project to write it into (created if needed). Its points and polygons
+#'   the project to write it into (created if needed). Without `x`: a
+#'   project to open on its start page, which lists its snapshots (see
+#'   `LensViewer$open_project()`). Its points and polygons
 #'   are written untiled and read as one tile, which the browser loads whole:
 #'   up to 50,000 polygons and 2,000,000 points, or as set with
 #'   `options(GiottoLens.untiled_max = c(polygons = , points = ))`. This is
@@ -86,6 +88,7 @@ launch_lens <- function(
     object <- if (!is.null(x) || !is.null(gpolygons)) .resolve_object(x,
         gpolygons = gpolygons, feat_type = feat_type, spat_unit = spat_unit,
         images = images, image_files = image_files, mark = mark, project = project)
+    start <- if (is.null(object) && !is.null(project)) .project_source(project, "launch_lens")
 
     port <- if (is.null(port)) httpuv::randomPort(host = host) else as.integer(port)
     old  <- .lens_registry[[as.character(port)]]
@@ -96,7 +99,7 @@ launch_lens <- function(
     url_prefix <- sub("/+$", "", url_prefix %||% paste0("http://127.0.0.1:", port))
 
     viewer <- LensViewer$new(port = port, host = host, url_prefix = url_prefix,
-        transfer = transfer, object = object)
+        transfer = transfer, object = object, project = start)
     if (open) .open_viewer(viewer$url)
     message("Viewer: ", viewer$url)
     invisible(viewer)
@@ -385,7 +388,10 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param transfer Tile transfer mode, see [launch_lens()]
         #' @param object What to show, from `.resolve_object()` (internal), or
         #'   `NULL` to start without an object
-        initialize = function(port, host, url_prefix, transfer = "auto", object = NULL) {
+        #' @param project Without `object`: a project (gDirSource) whose start
+        #'   page to show
+        initialize = function(port, host, url_prefix, transfer = "auto", object = NULL,
+                              project = NULL) {
             self$port         <- port
             private$transfer  <- transfer
             # Which viewer saved a snapshot; never the token, which grants access
@@ -403,7 +409,7 @@ LensViewer <- R6::R6Class("LensViewer",
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host)
             assign(as.character(port), self, envir = .lens_registry)
-            tryCatch(if (is.null(object)) private$load_empty() else private$load(object),
+            tryCatch(if (is.null(object)) private$load_empty(project) else private$load(object),
                 error = function(e) {
                     self$close()
                     stop(e)
@@ -433,12 +439,7 @@ LensViewer <- R6::R6Class("LensViewer",
         set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
                               images = NULL, image_files = NULL, mark = NULL,
                               project = NULL, discard = FALSE) {
-            if (!isTRUE(discard) && !isFALSE(discard))
-                stop("[LensViewer$set_object] `discard` must be TRUE or FALSE", call. = FALSE)
-            work <- if (private$loaded && !discard) private$lens_work()
-            if (!is.null(work))
-                stop("[LensViewer$set_object] the current object has ", work,
-                    "; pass `discard = TRUE` to drop them", call. = FALSE)
+            private$check_work("LensViewer$set_object", discard)
             private$load(.resolve_object(x, gpolygons = gpolygons, feat_type = feat_type,
                 spat_unit = spat_unit, images = images, image_files = image_files,
                 mark = mark, project = project))
@@ -457,20 +458,42 @@ LensViewer <- R6::R6Class("LensViewer",
             private$load_snapshot(private$snapshot_name())
         },
 
-        #' @description Show a snapshot of the current project, as
-        #'   `set_object()` would show the object it holds; its spatial unit
-        #'   and feature type are the current ones unless given.
+        #' @description Show a snapshot of the current project, loaded with
+        #'   [GiottoClass::loadGiotto()]. It is shown as it was saved: no new
+        #'   snapshot is made for it.
         #' @param name Snapshot name, as listed by [GiottoDisk::snapshotInfo()]
-        #' @param spat_unit,feat_type As in [launch_lens()]
+        #' @param spat_unit,feat_type As in [launch_lens()]. Left out: the
+        #'   current ones if the snapshot has them, else `"cell"` and `"rna"`,
+        #'   else its first.
         #' @param discard As in `set_object()`
-        checkout = function(name, spat_unit = private$spat_unit %||% "cell",
-                            feat_type = private$feat_type, discard = FALSE) {
+        checkout = function(name, spat_unit, feat_type, discard = FALSE) {
             if (is.null(private$project))
-                stop("[LensViewer$checkout] no project open; call set_object(g) first",
-                    call. = FALSE)
-            x <- private$load_snapshot(name)
-            self$set_object(x, spat_unit = spat_unit, feat_type = feat_type,
-                discard = discard)
+                stop("[LensViewer$checkout] no project open; call open_project() or ",
+                    "set_object(g) first", call. = FALSE)
+            private$check_work("LensViewer$checkout", discard)
+            private$open_snapshot(private$project, name,
+                spat_unit = if (missing(spat_unit)) NA else spat_unit,
+                feat_type = if (missing(feat_type)) NA else feat_type,
+                site = "LensViewer$checkout")
+            invisible(self)
+        },
+
+        #' @description Open a GiottoDisk project. Without `name`, the viewer
+        #'   shows the project's start page, which lists its snapshots, and
+        #'   drops the object shown; with `name`, it shows that snapshot, as
+        #'   `checkout()`. The project must exist: this never creates one.
+        #' @param path The project's directory
+        #' @param name Snapshot to show, or `NULL` (default) for the start page
+        #' @param spat_unit,feat_type,discard As in `checkout()`
+        open_project = function(path, name = NULL, spat_unit, feat_type, discard = FALSE) {
+            private$check_work("LensViewer$open_project", discard)
+            src <- .project_source(path, "LensViewer$open_project")
+            if (is.null(name)) private$load_empty(project = src)
+            else private$open_snapshot(src, name,
+                spat_unit = if (missing(spat_unit)) NA else spat_unit,
+                feat_type = if (missing(feat_type)) NA else feat_type,
+                site = "LensViewer$open_project")
+            invisible(self)
         },
 
         #' @description Send a typed message to every connected tab
@@ -1214,10 +1237,10 @@ LensViewer <- R6::R6Class("LensViewer",
             cat("  running:     ", !is.null(private$server), "\n")
             cat("  object:      ", if (!private$loaded) "none" else
                 sprintf("%s cells", format(length(private$cell_ids), big.mark = ",")), "\n")
-            if (!is.null(private$project)) {
+            if (!is.null(private$project))
                 cat("  project:     ", private$project@path, "\n")
+            if (!is.null(private$snapshot))
                 cat("  snapshot:    ", private$snapshot, "\n")
-            }
             cat("  connected:   ", length(private$conns), "tab(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
@@ -1380,30 +1403,38 @@ LensViewer <- R6::R6Class("LensViewer",
             private$spat_unit   <- object$spat_unit
             private$feat_type   <- object$feat_type
             private$loaded      <- TRUE
+            if (!is.null(private$project)) .add_recent(private$project@path)
             private$reload_tabs()
         },
 
-        # No object: the page says so and waits
-        load_empty = function() {
+        # No object: the page says so and waits, or with `project` (a
+        # gDirSource) lists its snapshots to open (adr/0019)
+        load_empty = function(project = NULL) {
             .export_empty(file.path(private$session, "manifest.json"),
-                load = private$load_seq + 1L)
+                load = private$load_seq + 1L, project = if (!is.null(project)) project@path)
             private$clear_object()
             private$set_routes(list(), list())
             private$image_names <- character()
             private$image_files <- character()
             private$cell_ids <- private$cells <- private$spat_unit <- private$cells_file <- NULL
-            private$feat_type <- private$project <- private$snapshot <- NULL
+            private$feat_type <- private$snapshot <- NULL
+            private$project <- project
             private$loaded <- FALSE
+            if (!is.null(project)) .add_recent(project@path)
             private$reload_tabs()
         },
 
         # The snapshot to show for giotto object `object$x` (adr/0018): one it
         # matches, or a new one. Stops before saving anything when the save
         # would move the object's data. Returns `object` with the layers and
-        # images of the object as saved.
+        # images of the object as saved. An object just loaded from a
+        # snapshot (`object$snapshot`, its tag) is shown from it unchecked.
         handover = function(object) {
             x <- object$x
-            if (is.null(x@source)) {
+            if (!is.null(object$snapshot)) {
+                src <- x@source
+                tag <- object$snapshot
+            } else if (is.null(x@source)) {
                 src <- suppressMessages(GiottoDisk::gDirSource(object$project))
                 x <- suppressMessages(GiottoDisk::sourceWrite(src, x))
                 x <- private$save_snapshot(src, x, keep = TRUE)
@@ -1431,9 +1462,86 @@ LensViewer <- R6::R6Class("LensViewer",
         # Through loadGiotto(), which finishes what snapshotLoad() reads:
         # project migration, images, python path, data.table allocation and
         # initialize()
-        load_snapshot = function(name) {
-            suppressMessages(GiottoClass::loadGiotto(private$project@path, name = name,
-                verbose = FALSE))
+        load_snapshot = function(name, path = private$project@path) {
+            suppressMessages(GiottoClass::loadGiotto(path, name = name, verbose = FALSE))
+        },
+
+        # Show snapshot `name` of project `src`. NA spat_unit / feat_type: the
+        # current ones if it has them, else .default_keys()'s.
+        open_snapshot = function(src, name, spat_unit = NA, feat_type = NA, site) {
+            if (!is.character(name) || length(name) != 1L || is.na(name))
+                stop("[", site, "] `name` must be a snapshot name", call. = FALSE)
+            info <- GiottoDisk::snapshotInfo(src)
+            tag <- info$tag[info$name == name]
+            if (!length(tag))
+                stop("[", site, "] no snapshot '", name, "' in ", src@path, "; it has: ",
+                    if (nrow(info)) paste(info$name, collapse = ", ") else "none",
+                    call. = FALSE)
+            x <- private$load_snapshot(name, src@path)
+            keys <- .default_keys(x, spat_unit, feat_type,
+                prefer_unit = private$spat_unit, prefer_feat = private$feat_type)
+            object <- .resolve_object(x, spat_unit = keys$spat_unit,
+                feat_type = keys$feat_type)
+            object$snapshot <- tag
+            private$load(object)
+        },
+
+        # Stops when the object shown has Lens work and `discard` is FALSE:
+        # what set_object(), checkout() and open_project() will not drop
+        check_work = function(site, discard) {
+            if (!isTRUE(discard) && !isFALSE(discard))
+                stop("[", site, "] `discard` must be TRUE or FALSE", call. = FALSE)
+            work <- if (private$loaded && !discard) private$lens_work()
+            if (!is.null(work))
+                stop("[", site, "] the current object has ", work,
+                    "; pass `discard = TRUE` to drop them", call. = FALSE)
+        },
+
+        # A request from the page (`ask`), answered to that page only with
+        # `answer` {id, data, error, code}. The start page lists projects and
+        # their snapshots and opens one (adr/0019).
+        answer = function(ws, id, dat) {
+            res <- tryCatch(private$ask(dat), error = function(e)
+                list(error = .console_text(conditionMessage(e))))
+            try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
+        },
+
+        ask = function(dat) {
+            str1 <- function(v) if (is.character(v) && length(v) == 1L && !is.na(v)) v
+            switch(str1(dat$op) %||% "",
+                projects = {
+                    recent <- .recent_projects()
+                    list(data = list(
+                        current = if (!is.null(private$project)) private$project@path,
+                        recent  = lapply(seq_len(nrow(recent)), function(i) list(
+                            path = recent$path[[i]], opened = recent$opened[[i]],
+                            exists = file.exists(file.path(recent$path[[i]], "giottodir.json")))),
+                        browse  = .can_browse()))
+                },
+                browse = list(data = list(path = .browse_folder())),
+                snapshots = {
+                    src <- .project_source(str1(dat$path), "LensViewer")
+                    current <- !is.null(private$project) &&
+                        identical(normalizePath(private$project@path), src@path)
+                    list(data = list(path = src@path,
+                        current = if (current) private$snapshot,
+                        snapshots = .project_snapshots(src)))
+                },
+                open = {
+                    work <- if (private$loaded && !isTRUE(dat$discard)) private$lens_work()
+                    if (!is.null(work))
+                        return(list(error = paste0("the current object has ", work),
+                            code = "work"))
+                    src  <- .project_source(str1(dat$path), "LensViewer")
+                    name <- str1(dat$name)
+                    private$open_snapshot(src, name, spat_unit = str1(dat$spat_unit) %||% NA,
+                        feat_type = str1(dat$feat_type) %||% NA, site = "LensViewer")
+                    private$add_log("open", list(path = src@path, name = name))
+                    message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
+                    list(data = list(snapshot = private$snapshot))
+                },
+                list(error = "unknown request")
+            )
         },
 
         save_snapshot = function(src, x, keep) {
@@ -1518,7 +1626,8 @@ LensViewer <- R6::R6Class("LensViewer",
 
         need_object = function(site) {
             if (!private$loaded)
-                stop("[", site, "] no object loaded; call viewer$set_object(g) first",
+                stop("[", site, "] no object loaded; call viewer$set_object(g)",
+                    if (!is.null(private$project)) " or viewer$checkout(name)", " first",
                     call. = FALSE)
         },
 
@@ -1576,6 +1685,7 @@ LensViewer <- R6::R6Class("LensViewer",
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
                         },
+                        ask = priv$answer(ws, parsed$id, dat),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
                         panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {

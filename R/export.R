@@ -75,10 +75,13 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     )
 }
 
-# The manifest of a viewer showing no object. `load` as in .export_session().
-.export_empty <- function(output, load) {
-    jsonlite::write_json(list(version = "0.5.0", load = load, empty = TRUE,
-        layers = structure(list(), names = character())), output, auto_unbox = TRUE)
+# The manifest of a viewer showing no object. `load` as in .export_session();
+# `project`: the directory of the project whose snapshots the page lists.
+.export_empty <- function(output, load, project = NULL) {
+    m <- list(version = "0.5.0", load = load, empty = TRUE,
+        layers = structure(list(), names = character()))
+    m$project <- project
+    jsonlite::write_json(m, output, auto_unbox = TRUE)
     invisible(output)
 }
 

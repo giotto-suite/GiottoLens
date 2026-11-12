@@ -69,3 +69,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0016](0016-controls-dock-as-self-contained-panels.md) | The side panel's controls dock as self-contained panels | Proposed | 2026-11-07 |
 | [0017](0017-objects-switch-within-a-session.md) | A viewer switches objects within its session, each from a clean slate | Proposed | 2026-11-11 |
 | [0018](0018-object-shown-from-a-snapshot.md) | The viewer shows a snapshot of the object, in the object's project | Proposed | 2026-11-12 |
+| [0019](0019-projects-opened-from-the-page.md) | Projects are opened from the page, and R does the opening | Proposed | 2026-11-12 |

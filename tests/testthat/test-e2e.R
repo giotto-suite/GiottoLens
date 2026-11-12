@@ -1237,7 +1237,7 @@ test_that("set_object() reloads the page onto another object and back, each from
     priv <- get("private", v$.__enclos_env__)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "document.body.classList.contains('empty') && !!document.getElementById('empty-note')"))
+    expect_true(browser_wait(br, "document.body.classList.contains('empty') && !!document.querySelector('.start')"))
     expect_true(pump_until(function() v$connected()))
 
     v$set_object(fx$g, images = FALSE)
@@ -1269,6 +1269,40 @@ test_that("set_object() reloads the page onto another object and back, each from
     expect_true(browser_wait(br, "window.__giottolens?.state?.currentViewState?.zoom === 3"))
     vs <- br$js("window.__giottolens.state.currentViewState.target")
     expect_equal(unlist(vs)[1:2], c(20, -30))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the start page opens a project's snapshot, and asks before dropping work", {
+    bx <- lens_bins_fixture()
+    proj <- normalizePath(bx$g@source@path)
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    row_open <- function(name) sprintf(paste0("(() => { const r = [...document.querySelectorAll('.start-row')]",
+        ".find(r => r.querySelector('.start-name')?.firstChild?.textContent === '%s');",
+        " r?.querySelector('.start-actions .start-btn')?.click(); return !!r; })()"), name)
+
+    # The path box
+    expect_true(browser_wait(br, "!!document.querySelector('.start-input')"))
+    br$js(sprintf("(() => { const i = document.querySelector('.start-input'); i.value = %s;
+        i.form.requestSubmit(); return true; })()", jsonlite::toJSON(proj, auto_unbox = TRUE)))
+    expect_true(browser_wait(br, row_open("fixture")))
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 900"))
+    expect_identical(normalizePath(get("private", v$.__enclos_env__)$project@path), proj)
+
+    # With an annotation, the project button's dialog asks first
+    expect_true(pump_until(function() v$connected()))
+    v$push_polygons("POLYGON((40 -70,60 -70,60 -50,40 -50,40 -70))")
+    expect_true(pump_until(function() length(v$annotations) == 1L))
+    br$js("document.getElementById('btn-project').click()")
+    expect_true(browser_wait(br, row_open("fixture")))
+    expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
+    expect_length(v$annotations, 1L)
+    br$js("document.querySelector('.start-confirm .danger').click()")
+    expect_true(pump_until(function() !length(v$annotations)))
+    expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",
+        "!document.querySelector('.start-overlay')")))
     expect_identical(br$errors(), character())
 })
 

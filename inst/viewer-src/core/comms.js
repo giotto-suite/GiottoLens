@@ -6,10 +6,12 @@
 //
 // Messages are { type, id?, data }. A message from R with an `id` is a
 // request: the handler's return value (or error) goes back as
-// { type: 'reply', id, data | error }.
+// { type: 'reply', id, data | error }. The page asks R in the other direction
+// with askR(): { type: 'ask', id, data: { op, ... } }, answered with
+// { type: 'answer', data: { id, data | error, code? } }.
 
 // Bump when the message format changes; R warns on a mismatch
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 
 let ws             = null;
 let reconnectTimer = null;
@@ -17,12 +19,21 @@ const handlers     = new Map();   // type → Set of handlers
 const outQueue     = new Map();   // type → latest message while disconnected
 
 let hello          = {};          // more for the 'ready' message (setHello())
+let askSeq         = 0;
+const asked        = new Map();   // ask id → { resolve, reject }
+const connectFns   = new Set();   // called on every connect (onConnect())
 
 export const isConnected = () => ws?.readyState === WebSocket.OPEN;
 
 // What the page tells R on every connect besides its protocol: the load its
 // manifest came from, so R can make a page from before a set_object() reload
 export function setHello(data) { hello = { ...data }; }
+
+// `fn` runs on every connect, after 'ready' is sent; returns an unsubscribe
+export function onConnect(fn) {
+  connectFns.add(fn);
+  return () => connectFns.delete(fn);
+}
 
 export function onMessage(type, fn) {
   if (!handlers.has(type)) handlers.set(type, new Set());
@@ -36,6 +47,26 @@ export function sendToR(type, data) {
   const msg = JSON.stringify({ type, data });
   if (isConnected()) ws.send(msg);
   else outQueue.set(type, msg);
+}
+
+// Ask R (op and its arguments); resolves with R's answer, or rejects with an
+// Error carrying R's message and `code`. Only while connected: an ask is an
+// action, not state, so it is never queued.
+export function askR(op, args = {}) {
+  if (!isConnected()) return Promise.reject(new Error('R is not connected'));
+  const id = `ask-${++askSeq}`;
+  return new Promise((resolve, reject) => {
+    asked.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ type: 'ask', id, data: { op, ...args } }));
+  });
+}
+
+function onAnswer({ id, data, error, code }) {
+  const p = asked.get(id);
+  if (!p) return;
+  asked.delete(id);
+  if (error != null) p.reject(Object.assign(new Error(error), { code }));
+  else p.resolve(data);
 }
 
 export function reportError(err, where = '') {
@@ -87,18 +118,23 @@ function connect() {
     ws.send(JSON.stringify({ type: 'ready', data: { ...hello, protocol: PROTOCOL } }));
     for (const m of outQueue.values()) ws.send(m);
     outQueue.clear();
+    for (const fn of connectFns) fn();
   };
 
   ws.onmessage = ({ data }) => {
     let msg;
     try { msg = JSON.parse(data); } catch (e) { reportError(e, 'parsing a message from R'); return; }
-    dispatch(msg);
+    if (msg.type === 'answer') onAnswer(msg.data ?? {});
+    else dispatch(msg);
   };
 
   ws.onerror = () => setRStatus('disconnected');
 
   ws.onclose = () => {
     setRStatus('disconnected');
+    // Their answers would come on this socket
+    for (const p of asked.values()) p.reject(new Error('R disconnected'));
+    asked.clear();
     reconnectTimer = setTimeout(connect, 2000);
   };
 }

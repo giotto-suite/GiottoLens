@@ -41,6 +41,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_object}{\code{LensViewer$set_object()}}
     \item \href{#method-LensViewer-gobject}{\code{LensViewer$gobject()}}
     \item \href{#method-LensViewer-checkout}{\code{LensViewer$checkout()}}
+    \item \href{#method-LensViewer-open_project}{\code{LensViewer$open_project()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
@@ -86,7 +87,14 @@ complete pairs on, the placement before). See
   Start a viewer server. Use \code{\link[=launch_lens]{launch_lens()}} instead.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$new(port, host, url_prefix, transfer = "auto", object = NULL)}
+    \preformatted{LensViewer$new(
+  port,
+  host,
+  url_prefix,
+  transfer = "auto",
+  object = NULL,
+  project = NULL
+)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
@@ -97,6 +105,8 @@ complete pairs on, the placement before). See
       \item{\code{transfer}}{Tile transfer mode, see \code{\link[=launch_lens]{launch_lens()}}}
       \item{\code{object}}{What to show, from \code{.resolve_object()} (internal), or
 \code{NULL} to start without an object}
+      \item{\code{project}}{Without \code{object}: a project (gDirSource) whose start
+page to show}
     }
     \if{html}{\out{</div>}}
   }
@@ -167,15 +177,42 @@ it. Changes made to it do not reach the viewer until passed to
 \if{html}{\out{<a id="method-LensViewer-checkout"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-checkout}{}}}
 \subsection{\code{LensViewer$checkout()}}{
-  Show a snapshot of the current project, as
-\code{set_object()} would show the object it holds; its spatial unit
-and feature type are the current ones unless given.
+  Show a snapshot of the current project, loaded with
+\code{\link[GiottoClass:loadGiotto]{GiottoClass::loadGiotto()}}. It is shown as it was saved: no new
+snapshot is made for it.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$checkout(
-  name,
-  spat_unit = private$spat_unit \%||\% "cell",
-  feat_type = private$feat_type,
+    \preformatted{LensViewer$checkout(name, spat_unit, feat_type, discard = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Snapshot name, as listed by \code{\link[GiottoDisk:snapshotInfo]{GiottoDisk::snapshotInfo()}}}
+      \item{\code{spat_unit, feat_type}}{As in \code{\link[=launch_lens]{launch_lens()}}. Left out: the
+current ones if the snapshot has them, else \code{"cell"} and \code{"rna"},
+else its first.}
+      \item{\code{discard}}{As in \code{set_object()}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-open_project"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-open_project}{}}}
+\subsection{\code{LensViewer$open_project()}}{
+  Open a GiottoDisk project. Without \code{name}, the viewer
+shows the project's start page, which lists its snapshots, and
+drops the object shown; with \code{name}, it shows that snapshot, as
+\code{checkout()}. The project must exist: this never creates one.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$open_project(
+  path,
+  name = NULL,
+  spat_unit,
+  feat_type,
   discard = FALSE
 )}
     \if{html}{\out{</div>}}
@@ -183,9 +220,9 @@ and feature type are the current ones unless given.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{Snapshot name, as listed by \code{\link[GiottoDisk:snapshotInfo]{GiottoDisk::snapshotInfo()}}}
-      \item{\code{spat_unit, feat_type}}{As in \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{discard}}{As in \code{set_object()}}
+      \item{\code{path}}{The project's directory}
+      \item{\code{name}}{Snapshot to show, or \code{NULL} (default) for the start page}
+      \item{\code{spat_unit, feat_type, discard}}{As in \code{checkout()}}
     }
     \if{html}{\out{</div>}}
   }

@@ -208,3 +208,6 @@ ws_url <- function(viewer, token = NULL) {
 # Many tests launch from the fixture's layers on purpose; the deprecation is
 # tested on its own (test-launch.R)
 .lens_warned$layers <- TRUE
+
+# Recent projects go to a file of the test run, not the user's data directory
+options(GiottoLens.recent_projects = tempfile("recent_", fileext = ".json"))

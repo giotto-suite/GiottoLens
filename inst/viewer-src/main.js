@@ -18,6 +18,7 @@ import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initRegistration, onMainView } from './ui/registration.ts';
+import { showStartPage, initProjectButton } from './ui/start.ts';
 import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
 import { initDock, placeControls, refreshBuiltins, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
 import { initPersist } from './core/persist.ts';
@@ -102,7 +103,7 @@ async function main() {
   onMessage('reload', () => location.reload());
   setHello({ load: state.manifest.load });
   if (state.manifest.empty) {
-    showEmpty();
+    showEmpty(state.manifest.project ?? null);
     return;
   }
   // Tile URLs are relative to this page so the viewer works behind a
@@ -181,6 +182,7 @@ async function main() {
   initReleaseGuard();
   initRuleStrip();
   initDock(document.getElementById('dock'));
+  initProjectButton(document.getElementById('btn-project'));
 
   let statsOpen      = true;
   let lastStatsSizes = mainSplit.getSizes();
@@ -242,13 +244,11 @@ async function main() {
   updateTiles(initialViewState);
 }
 
-// No object loaded: say how to load one, and wait for R to
-function showEmpty() {
+// No object loaded: the start page, to open a project and one of its
+// snapshots (`project`: the project R has open), or wait for R to load one
+function showEmpty(project) {
   document.body.classList.add('empty');
-  const note = document.createElement('div');
-  note.id = 'empty-note';
-  note.innerHTML = 'No object loaded.<br>In R: <code>viewer$set_object(g)</code>';
-  document.getElementById('spatial-pane').append(note);
+  showStartPage(document.getElementById('spatial-pane'), project);
   initComms();
   $status('no object');
 }

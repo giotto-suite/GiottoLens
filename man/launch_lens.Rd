@@ -87,7 +87,9 @@ as an H&E to register: a character vector of paths, named by image
 registered with \code{viewer$register_image()}.}
 
 \item{project}{For an \code{x} not in a GiottoDisk project: the directory of
-the project to write it into (created if needed). Its points and polygons
+the project to write it into (created if needed). Without \code{x}: a
+project to open on its start page, which lists its snapshots (see
+\code{LensViewer$open_project()}). Its points and polygons
 are written untiled and read as one tile, which the browser loads whole:
 up to 50,000 polygons and 2,000,000 points, or as set with
 \code{options(GiottoLens.untiled_max = c(polygons = , points = ))}. This is

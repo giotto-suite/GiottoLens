@@ -36,6 +36,8 @@ R/
   rules.R      selection rules: validation, evaluation in R, summaries/code, lens_*() builders
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
+  projects.R   opening projects: path check, snapshot list, default keys, recent projects,
+               the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
@@ -55,7 +57,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
               landmarks.ts (registration pairs)
   ui/         input.js, annotations.js (name popup, sync to R), tooltip.js, rules.js, release.js,
-              dom.js, registration.ts (landmark tool, image pane)
+              dom.js, registration.ts (landmark tool, image pane), start.ts (start page and
+              project dialog, through askR())
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
@@ -199,10 +202,14 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 5)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
+- The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
+  answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
+  `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
+  (adr/0019). An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
