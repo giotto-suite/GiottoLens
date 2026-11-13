@@ -94,9 +94,15 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
 - `pull()` and the catalog panel add columns to the same set. R lists what the object can
   pull (names only, from cell metadata, expression, spatial enrichments and dim reductions)
   from the object it loads anyway, and keeps the list until the next load. A pull is one
-  `spatValues()` call with a key per source over `gobject()`, the snapshot loaded again,
-  so the viewer holds no object; it writes only the pulled columns' files and adds them to
+  `spatValues()` call with a key per source over the snapshot, loaded again in a job, so
+  the viewer holds no object; it writes only the pulled columns' files and adds them to
   the payload, where `push_metadata()` replaces it.
+- Jobs run in a worker process, so R's main thread keeps serving the page. The backend is a
+  local mizu pool of one worker, started by the first job and stopped with the viewer; a remote backend (mirai) goes behind the same interface. A job starts from the
+  project path and a snapshot name, never a serialized object, and its result is applied on
+  the main thread from the `later` loop, unless the object shown changed meanwhile. A
+  worker loading its packages makes the first job about 9 s slower; a pull of a snapshot in a
+  warm worker takes about 0.4 s.
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
 
 Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in

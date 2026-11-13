@@ -246,6 +246,16 @@ test_that("the catalog panel lists the object and pulls the items queued", {
     expect_true(browser_wait(br, sprintf("!!%s", q(".catalog-item.loaded[data-item=g1]"))))
     priv <- get("private", v$.__enclos_env__)
     expect_setequal(priv$meta_names(), c("half", "array_row", "g1"))
+
+    # Cancelled while it waits for the worker, which a slow job holds
+    priv$start_job("slow", quote({ Sys.sleep(3); 1 }), list(), apply = identity)
+    br$js(sprintf("%s.click()", q(".catalog-item[data-item=g2]")))
+    br$js(sprintf("%s.click()", q(".catalog-pull")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancel' && !%s.disabled",
+        q(".catalog-clear"), q(".catalog-clear"))))
+    br$js(sprintf("%s.click()", q(".catalog-clear")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancelled'", q(".catalog-status"))))
+    expect_false("g2" %in% priv$meta_names())
     expect_identical(br$errors(), character())
 })
 

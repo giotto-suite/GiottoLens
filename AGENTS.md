@@ -41,6 +41,7 @@ R/
   metadata.R   prep_meta(), .write_metadata()
   catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
                spatValues() call over it (.pull_items(), .pull_plan())
+  jobs.R       the jobs' worker (a mizu pool) and job expressions (.pull_job)
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -183,6 +184,12 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   columns the same way, so change both together. Payload entries are read with `$`, which
   partial-matches: no new field may start with an existing one's name (`number_text`, not
   `numeric_text`).
+- Work that would block R's main thread runs as a job (`private$start_job()`, R/jobs.R):
+  a quoted expression run in the worker from the project path and a snapshot name, never a
+  serialized object; its result is applied from the `later` loop only if `load_seq` is
+  unchanged. Job expressions call installed packages only (the worker loads the library,
+  not a development copy of this package) and start with `.job_prelude`, which loads arrow
+  before GDAL. `load()` cancels running jobs and `close()` stops the worker.
 - In the browser `state.metaInfo` lists every column and `state.meta` holds the loaded ones.
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
@@ -212,7 +219,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
@@ -220,7 +227,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
   (adr/0019); the catalog panel's: `catalog`, `pull`, answered only to a page showing the
-  current load (`.lens_object_ops`). An ask is never queued while disconnected.
+  current load (`.lens_object_ops`), and `cancel_job`. `pull` is answered when its job ends
+  (`ask()` returns NULL and calls `reply` later); R broadcasts a `job` message, carrying the
+  page's `ref`, as each job starts and ends. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
@@ -337,7 +346,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
 `set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
-`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`, `jobs()`, `cancel_job()`,
 `push_panel()`, `remove_panel()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
