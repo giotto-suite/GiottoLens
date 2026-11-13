@@ -24,6 +24,8 @@
 * Protocol 6: `ready` carries the page's load, R sends `reload`, and the page asks R with
   `ask`, answered with `answer`.
 
+* The selection color can be set: `viewer$set_selection_color("#00e5ff")`, `NULL` for the
+  default yellow. It is part of the saved config (`state()$config$selectionColor`).
 * A light theme for the panels and controls: `viewer$set_theme("light")`. The spatial view
   and scatter plots stay dark. The theme is part of the saved config (`state()$config$theme`).
 * Opening a panel group's "+" menu closes any other one that is open.
