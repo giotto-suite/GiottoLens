@@ -97,6 +97,11 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
   `spatValues()` call with a key per source over the snapshot, loaded again in a job, so
   the viewer holds no object; it writes only the pulled columns' files and adds them to
   the payload, where `push_metadata()` replaces it.
+- The cell table draws only the rows in view, from the same typed arrays; past about 400k
+  rows its scroll range is scaled so any number of rows scrolls end to end. Its rows are
+  the other sources' selection, as the histogram's counts are in cross-filter mode, and the
+  cell IDs it shows are asked of R a screen at a time, so the page holds no ID list
+  (adr/0002).
 - Jobs run in a worker process, so R's main thread keeps serving the page. The backend is a
   local mizu pool of one worker, started by the first job and stopped with the viewer; a remote backend (mirai) goes behind the same interface. A job starts from the
   project path and a snapshot name, never a serialized object, and its result is applied on

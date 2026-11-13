@@ -487,3 +487,19 @@ test_that("R evaluates rules on the cells of the object shown", {
     expect_true(all(startsWith(v$selection, "bin_")))
     expect_length(list.files(get("private", v$.__enclos_env__)$session, "^cells-"), 1L)
 })
+
+test_that("the cell table asks for the IDs of cell indices, and nothing else", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- v$.__enclos_env__$private
+    ask <- function(cells) priv$ask(list(op = "cell_ids", cells = cells), NULL)
+    expect_identical(unlist(ask(list(0, 899, 5))$data$ids), priv$cell_ids[c(1, 900, 6)])
+    expect_match(ask(list(900))$error, "cell indices")
+    expect_match(ask(list(-1))$error, "cell indices")
+    expect_match(ask(list(1.5))$error, "cell indices")
+    expect_match(ask(list("a"))$error, "cell indices")
+    expect_match(ask(NULL)$error, "cell indices")
+    expect_match(ask(as.list(seq_len(5001)))$error, "cell indices")
+    expect_true("cell_ids" %in% .lens_object_ops)
+})

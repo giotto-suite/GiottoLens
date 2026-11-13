@@ -65,6 +65,7 @@ viewer$set_column_type("leiden_clus", "categorical")       # numeric column show
 viewer$catalog()                                  # what the object holds that can be pulled
 viewer$pull(c("CD3E", "leiden_clus"), types = list(leiden_clus = "categorical"))
                                                   # adds them to the metadata; or rows of catalog()
+viewer$select(lens_cells(ids), source = "table")  # pick rows in the cell table
 viewer$jobs()                                     # pulls running in the viewer's worker process
 viewer$cancel_job(id)
 viewer$set_color_scale("nr_feats", preset = "magma")        # continuous scale: preset, or

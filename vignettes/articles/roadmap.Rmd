@@ -52,16 +52,12 @@ The catalog and pull are in place (design.Rmd "Cells"): the catalog panel lists 
 pulls the items queued in one `spatValues()` call over the snapshot, run as a job in a
 worker process, adding columns to the viewer's metadata, not the object. `viewer$catalog()`
 and `viewer$pull()` are the same from R. This is the first form of the per-cell store in
-"Panels from GiottoVisuals specs", item 4, and the pull the first job. Next:
+"Panels from GiottoVisuals specs", item 4, and the pull the first job. The cell table is in
+place too: rows are the other sources' selection, drawn from the page's typed arrays a
+screen at a time, with cell IDs asked of R for the rows in view, and picked rows are the
+`table` source's rule. Next:
 
-1. **Cell table.** Rows are the cells in the current selection (all cells when there is
-   none), columns are the loaded metadata. It is drawn from the typed arrays the page
-   already holds, rendering only the visible rows, so a million rows scroll without paging
-   from R. Cell IDs are one more column file, written when the table first opens
-   (adr/0002). Rows picked in the table become the `table` source's `ids` rule and combine
-   with the other sources like any rule. In cross-filter mode the table shows the other
-   sources only, as the histogram does, so picking rows does not collapse it.
-2. **Change history.** The last 20 view changes (rules, colour-by, column types, pulls) with
+1. **Change history.** The last 20 view changes (rules, colour-by, column types, pulls) with
    undo, kept with the config R holds (adr/0009). This is the list of changes the editing
    core's undo builds on ("Plugins", item 1). It records the view, not the data: snapshots
    do that.
