@@ -16,8 +16,6 @@ import { landmarkLayers } from './landmarks.ts';
 import { landmarkHover, renderRegPane, registering } from '../ui/registration.ts';
 import { DataFilterExtension } from '@deck.gl/extensions';
 
-const SEL = [255, 220, 50, 255];
-
 // deck.gl compares `data` by reference: a new object each render means
 // re-triangulating every polygon and re-uploading every buffer. Build each
 // binary data object once per underlying array.
@@ -93,7 +91,8 @@ export function renderLayers(viewState) {
     const lineColor = [...s.outline.color, Math.round(s.outline.alpha * 255)];
     const lineWidth = s.outline.width;
     const selWidth  = lineWidth + 1;
-    const lineKey   = lineColor.join(',');
+    const selColor  = [...s.selectionColor, 255];
+    const lineKey   = lineColor.join(',') + ';' + selColor.join(',');
 
     for (const [t, d] of loaded) {
       const off = d.offset;
@@ -114,7 +113,7 @@ export function renderLayers(viewState) {
       }));
       layers.push(new PathLayer({
         id: `poly-line-${t.index}`, data: lineData,
-        getColor: (_, { index }) => mask && mask[off + index] ? SEL : lineColor,
+        getColor: (_, { index }) => mask && mask[off + index] ? selColor : lineColor,
         getWidth: (_, { index }) => mask && mask[off + index] ? selWidth : lineWidth,
         widthUnits: 'pixels', widthMinPixels: Math.min(1, lineWidth),
         opacity: s.layers.poly.alpha,
@@ -137,7 +136,7 @@ export function renderLayers(viewState) {
     }
 
     const selStyle = {
-      getFillColor: [255, 220, 50, 180], getLineColor: SEL,
+      getFillColor: [...s.selectionColor, 180], getLineColor: selColor,
       stroked: !outlines, getLineWidth: 1, lineWidthUnits: 'pixels',
       getRadius: outlines ? 1.5 : 3, radiusUnits: 'pixels', radiusMinPixels: 1,
     };

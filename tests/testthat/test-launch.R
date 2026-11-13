@@ -69,6 +69,17 @@ test_that("set_outline checks its arguments before sending", {
     expect_error(v$set_outline(width = 0.01), "no viewer connected")
 })
 
+test_that("set_selection_color checks its argument before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_selection_color(c("red", "blue")), "one color name or hex string")
+    expect_error(v$set_selection_color(1), "one color name or hex string")
+    expect_error(v$set_selection_color("notacolour"), "invalid color name")
+    expect_error(v$set_selection_color("red"), "no viewer connected")
+    expect_error(v$set_selection_color(), "no viewer connected")
+})
+
 test_that("set_theme checks its argument before sending", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)

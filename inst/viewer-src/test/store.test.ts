@@ -38,6 +38,14 @@ describe('store', () => {
     expect(store.getState().outline).toEqual({ color: [0, 0, 0], width: 1, alpha: 0.8 });
   });
 
+  it('sets and resets the selection color', () => {
+    expect(store.getState().selectionColor).toEqual([255, 220, 50]);
+    actions.setSelectionColor([0, 229, 255]);
+    expect(getConfig().selectionColor).toEqual([0, 229, 255]);
+    actions.setSelectionColor(null);
+    expect(store.getState().selectionColor).toEqual([255, 220, 50]);
+  });
+
   it('patches and resets category styles per column', () => {
     actions.setCategoryStyles('ct', { A: { color: [1, 2, 3] }, B: { show: false } });
     actions.setCategoryStyles('ct', { A: { alpha: 0.5 } });

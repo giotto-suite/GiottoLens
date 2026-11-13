@@ -135,6 +135,13 @@ export function initRemote() {
       ...(alpha != null && { alpha }) });
   });
 
+  onMessage('set_selection_color', ({ color, reset }) => {
+    if (!reset && !(Array.isArray(color) && color.length === 3 &&
+        color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+      throw new Error('color must be three integers 0-255');
+    actions.setSelectionColor(reset ? null : color);
+  });
+
   onMessage('set_theme', ({ theme }) => {
     if (!THEMES.includes(theme)) throw new Error(`theme must be one of ${THEMES.join(', ')}`);
     actions.setTheme(theme);

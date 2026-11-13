@@ -56,6 +56,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
+    \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
@@ -586,6 +587,28 @@ sets the same values.
       \item{\code{color}}{Colour, as a name or hex string (\code{"#3d7dff"})}
       \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
       \item{\code{alpha}}{Opacity, in [0, 1]}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_selection_color"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_selection_color}{}}}
+\subsection{\code{LensViewer$set_selection_color()}}{
+  Set the color selected cells draw in, in the spatial
+view (dots, and outlines once zoomed in) and in scatter panels.
+Part of the saved config (\code{state()$config$selectionColor}).
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_selection_color(color = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#00e5ff"});
+\code{NULL} goes back to the default yellow}
     }
     \if{html}{\out{</div>}}
   }

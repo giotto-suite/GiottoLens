@@ -406,6 +406,11 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     br$js("document.querySelector('[data-panel=cells] .outline-reset').click()")
     expect_true(browser_wait(br,
         "window.__giottolens.store.getState().outline.alpha === 0.8"))
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
+    v$set_selection_color("#00e5ff")
+    expect_identical(unlist(v$state()$config$selectionColor), c(0L, 229L, 255L))
+    v$set_selection_color()
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
     # Light panels, the spatial view still dark
     expect_identical(v$state()$config$theme, "dark")
     v$set_theme("light")

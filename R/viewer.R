@@ -815,6 +815,24 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Set the color selected cells draw in, in the spatial
+        #'   view (dots, and outlines once zoomed in) and in scatter panels.
+        #'   Part of the saved config (`state()$config$selectionColor`).
+        #' @param color Colour, as a name or hex string (`"#00e5ff"`);
+        #'   `NULL` goes back to the default yellow
+        set_selection_color = function(color = NULL) {
+            if (is.null(color)) {
+                private$request("set_selection_color", list(reset = TRUE))
+                return(invisible(self))
+            }
+            if (!is.character(color) || length(color) != 1L)
+                stop("[LensViewer] `color` must be one color name or hex string",
+                    call. = FALSE)
+            color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            private$request("set_selection_color", list(color = as.list(color)))
+            invisible(self)
+        },
+
         #' @description Show the viewer's panels and controls dark or light.
         #'   The spatial view and scatter plots stay dark in both: their
         #'   colors (the selection, uncolored cells, image channels) are
