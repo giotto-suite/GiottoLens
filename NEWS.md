@@ -11,6 +11,12 @@
   The worker starts with the first job and stops with the viewer.
 * Protocol 7: the page's `pull` ask is answered when its job ends, and R sends `job`
   messages as jobs start and end.
+* A cell table panel, a tab behind the histogram: one row per cell in the other sources'
+  selection (all cells when there is none), one column per metadata column, with the cell
+  IDs from R. Only the rows in view are drawn, so large tables scroll smoothly. Rows picked
+  in it (click, ⌘/Ctrl-click to toggle, Shift-click for a range) are the `table` source's
+  rule: they add to the selection, or narrow it in cross-filter mode.
+  `viewer$select(lens_cells(ids), source = "table")` picks rows from R.
 * A text column whose values are all numbers can be shown as a continuous scale
   (`set_column_type()` and the "treat as" menu).
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs

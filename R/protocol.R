@@ -17,7 +17,7 @@
 
 # `ask` ops about the object a page shows, refused to a page that has not
 # reloaded since the last load
-.lens_object_ops <- c("catalog", "pull")
+.lens_object_ops <- c("catalog", "pull", "cell_ids")
 
 # Parse and validate one WebSocket text frame.
 # Returns list(type, data), or NULL with a warning when the frame is invalid.

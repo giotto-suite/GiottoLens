@@ -63,7 +63,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               dom.js, registration.ts (landmark tool, image pane), start.ts (start page and
               project dialog, through askR())
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
-              density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
+              density.ts (2D bins as one image), table.ts (the cell table), spec.js (pushed
+              Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
               catalog.ts (what to pull from the object, through askR()), images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
@@ -170,6 +171,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `r`), combined with OR, or AND in cross-filter mode. Rules evaluate to `Uint8Array` masks
   over all cells, never only loaded tiles; masks are a cache keyed by rule object (rules are
   never mutated). Selections cross the socket as base64 bitmasks (LSB first).
+- The cell table's rows are the other sources' selection (`maskExcept()`), never its own
+  rule, so picking rows does not change them; its picks are an `ids` rule (source `table`,
+  or `table:<id>`). It asks R for the IDs of the rows in view only (`cell_ids`, at most
+  5000): the page keeps them for display, bounded, and keys nothing by them.
 - `R/rules.R` and `selection/rules.ts` implement the same evaluation; change both together
   (the e2e tests compare them). `lens_cells()` is R-only and resolves to an `ids` rule.
 - Metadata is written in cell order; categorical columns as 0-based codes (-1 = NA) with levels.
@@ -229,7 +234,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (adr/0019); the catalog panel's: `catalog`, `pull`, answered only to a page showing the
   current load (`.lens_object_ops`), and `cancel_job`. `pull` is answered when its job ends
   (`ask()` returns NULL and calls `reply` later); R broadcasts a `job` message, carrying the
-  page's `ref`, as each job starts and ends. An ask is never queued while disconnected.
+  page's `ref`, as each job starts and ends. The cell table's: `cell_ids` (also refused to a
+  page on an earlier load). An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an

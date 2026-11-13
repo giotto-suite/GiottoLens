@@ -183,6 +183,28 @@
     .catalog-status.error { color: #fca5a5; }
     :root[data-theme="light"] .catalog-status.error { color: #b91c1c; }
 
+    /* The cell table (panels/table.ts) */
+    .table-bar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+      font-size: 11px; color: var(--fg-3); border-bottom: 1px solid var(--bg-2); }
+    .table-bar button { padding: 2px 8px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 4px;
+      color: var(--fg-2); font-size: 11px; font-family: monospace; cursor: pointer; }
+    .table-bar button:disabled { opacity: 0.4; cursor: default; }
+    .table-count, .table-bar button { flex-shrink: 0; white-space: nowrap; }
+    .table-hint { margin-left: auto; color: var(--fg-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .table-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+    .table-inner { position: relative; min-width: 100%; }
+    .table-rows { position: absolute; left: 0; right: 0; }
+    .table-row { display: flex; height: 20px; line-height: 20px; font-size: 11px; font-family: monospace;
+      color: var(--fg-2); cursor: pointer; user-select: none; }
+    .table-row.picked { background: var(--row-sel); color: var(--fg-0); }
+    .table-header { position: sticky; top: 0; z-index: 1; background: var(--bg-1); color: var(--fg-3);
+      border-bottom: 1px solid var(--bg-3); cursor: default; }
+    .table-cell { flex: 0 0 110px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .table-cell.table-id { flex-basis: 150px; position: sticky; left: 0; background: inherit; }
+    .table-rows .table-row { background: var(--bg-0); }
+    .table-rows .table-row:hover { background: var(--bg-2); }
+    .table-rows .table-row.picked { background: var(--row-sel); }
+
     .annot-list { padding: 6px 0; }
     .annot-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; cursor: pointer; user-select: none; }
     .annot-row:hover { background: var(--bg-2); }
