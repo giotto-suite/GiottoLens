@@ -5,6 +5,12 @@
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
   do the same from R. Pulls read the object's snapshot and add columns to the viewer, not
   the object.
+* A pull runs as a job in a worker process (mizu), so the viewer and the R console stay
+  free meanwhile. The panel can cancel it; `viewer$jobs()` lists running jobs,
+  `viewer$cancel_job(id)` cancels one, and `viewer$pull(wait = FALSE)` returns at once.
+  The worker starts with the first job and stops with the viewer.
+* Protocol 7: the page's `pull` ask is answered when its job ends, and R sends `job`
+  messages as jobs start and end.
 * A text column whose values are all numbers can be shown as a continuous scale
   (`set_column_type()` and the "treat as" menu).
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs

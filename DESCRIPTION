@@ -19,6 +19,8 @@ Imports:
     jsonlite,
     later,
     methods,
+    mizu,
+    promises,
     R6,
     stats,
     tools,

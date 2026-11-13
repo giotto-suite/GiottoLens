@@ -2,9 +2,9 @@
 # GiottoClass::spatValues(), one source per slot item (cell metadata of a
 # feature type, an expression matrix, a spatial enrichment, a dim reduction)
 # with the names it holds. Built at load from the object shown, so it lists
-# the snapshot's contents; kept until the next load. Pulls go through
-# viewer$gobject() (the snapshot loaded again) and add columns to the
-# viewer's metadata, not to the object.
+# the snapshot's contents; kept until the next load. A pull reads the
+# snapshot again in a job worker (R/jobs.R) and adds columns to the viewer's
+# metadata, not to the object.
 
 # Sources for spatial unit `spat_unit` of giotto object `x`: a list of
 # list(id, slot, feat_type, name, method, items). Names only: nothing here
@@ -103,11 +103,12 @@
     out[!duplicated(out[c("source", "item")]), , drop = FALSE]
 }
 
-# One svkey per source in `items` (from .pull_items()) and the viewer column
-# each item becomes. spatValues() prefixes an item pulled from more than one
-# source with its key's label; dim reduction axes are named
-# <reduction>_<axis>, as push_metadata() names them, since every reduction
-# calls its axes Dim.1, Dim.2, ...
+# The svkey() arguments for each source in `items` (from .pull_items()), by
+# label, and the viewer column each item becomes. Arguments, not svkeys: the
+# job builds the keys in its worker (R/jobs.R). spatValues() prefixes an item
+# pulled from more than one source with its key's label; dim reduction axes
+# are named <reduction>_<axis>, as push_metadata() names them, since every
+# reduction calls its axes Dim.1, Dim.2, ...
 .pull_plan <- function(cat, items) {
     ids <- unique(items$source)
     srcs <- cat$sources[ids]
@@ -128,7 +129,7 @@
             spatial_enrichment  = list(spat_enr_name = s$name),
             dimension_reduction = list(dim_reduction_to_use = s$method,
                 dim_reduction_name = s$name)))
-        keys[[labels[[k]]]] <- do.call(GiottoClass::svkey, args)
+        keys[[labels[[k]]]] <- args
         result <- ifelse(rows$item %in% shared, paste0(labels[[k]], "_", rows$item), rows$item)
         column <- if (s$slot == "dimension_reduction")
             paste0(s$name, "_", match(rows$item, s$items)) else result

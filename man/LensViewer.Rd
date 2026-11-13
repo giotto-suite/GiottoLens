@@ -48,6 +48,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
     \item \href{#method-LensViewer-catalog}{\code{LensViewer$catalog()}}
     \item \href{#method-LensViewer-pull}{\code{LensViewer$pull()}}
+    \item \href{#method-LensViewer-jobs}{\code{LensViewer$jobs()}}
+    \item \href{#method-LensViewer-cancel_job}{\code{LensViewer$cancel_job()}}
     \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
     \item \href{#method-LensViewer-select}{\code{LensViewer$select()}}
     \item \href{#method-LensViewer-state}{\code{LensViewer$state()}}
@@ -355,17 +357,18 @@ for cell metadata) and \code{item}.
 \subsection{\code{LensViewer$pull()}}{
   Add values from the object shown to the viewer's
 metadata: one \code{\link[GiottoClass:spatValues]{GiottoClass::spatValues()}} call over the
-snapshot, loaded again with \code{gobject()}. Pulled columns are
-added to the metadata already shown, replacing a column of the
-same name; they belong to the viewer, not to the object. The
-viewer's catalog panel pulls the same way.
+snapshot, run as a job in a worker process (see \code{jobs()}), so the
+viewer keeps working meanwhile. Pulled columns are added to the
+metadata already shown, replacing a column of the same name;
+they belong to the viewer, not to the object. The viewer's
+catalog panel pulls the same way.
 
 An item pulled from two sources at once is named
 \verb{<source>_<item>}; dim reduction axes are named
 \verb{<reduction>_<axis>}, as \code{push_metadata()} names them.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$pull(x, types = NULL)}
+    \preformatted{LensViewer$pull(x, types = NULL, wait = TRUE)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
@@ -376,8 +379,54 @@ An item pulled from two sources at once is named
       \item{\code{types}}{How the viewer treats each item: a named list or
 vector, item -> \code{"categorical"} or \code{"continuous"} (see
 \code{set_column_type()}). Left out, as the values are.}
+      \item{\code{wait}}{Whether to wait for the pull to finish}
     }
     \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The columns added, invisibly; with \code{wait = FALSE}, the
+job's id
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-jobs"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-jobs}{}}}
+\subsection{\code{LensViewer$jobs()}}{
+  Jobs running in the viewer's worker process: pulls,
+started from R or the page. The worker starts with the first job,
+which waits several seconds while it loads its packages, and
+stops with the viewer.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$jobs()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with columns \code{id}, \code{label} and \code{started}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-cancel_job"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-cancel_job}{}}}
+\subsection{\code{LensViewer$cancel_job()}}{
+  Cancel a job. One not started yet is skipped; one
+running finishes in its worker, and its result is dropped.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$cancel_job(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Job id, as \code{jobs()} lists it}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    Whether the job was cancelled, invisibly
   }
 }
 

@@ -1,13 +1,15 @@
 // The catalog panel: what the object shown holds that is not in the
 // metadata yet (cell metadata columns, expression, spatial enrichments, dim
 // reductions), listed by R from the object at load (R/catalog.R). Items are
-// queued, each with how to treat it, and pulled together: R makes one
-// spatValues() call over the snapshot and sends the metadata again with the
-// pulled columns added. viewer$catalog() and viewer$pull() are the same from R.
+// queued, each with how to treat it, and pulled together: R runs one
+// spatValues() call over the snapshot as a job in its worker and sends the
+// metadata again with the pulled columns added. The ask is answered when the
+// job ends; its `job` messages carry the panel's `ref` and the id to cancel
+// it with. viewer$catalog() and viewer$pull() are the same from R.
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 // @ts-ignore: plain JS module
-import { askR, onConnect } from '../core/comms.js';
+import { askR, onConnect, onMessage } from '../core/comms.js';
 // @ts-ignore: plain JS module
 import { MAX_LIST_ROWS } from '../core/constants.js';
 import type { PanelHandle } from './dock.ts';
@@ -76,6 +78,7 @@ export function createCatalogPanel(body: HTMLElement): PanelHandle {
   let sources: CatalogSource[] = [];
   let queue: Queued[] = [];
   let pulling = false;
+  let jobId: number | null = null;   // the running pull's, from its `job` message
   const key = (q: { source: number; item: string }) => `${q.source}\u0000${q.item}`;
 
   const note   = el('div', { className: 'panel-note', textContent: 'waiting for R…' });
@@ -140,7 +143,8 @@ export function createCatalogPanel(body: HTMLElement): PanelHandle {
     }));
     pull.textContent = pulling ? 'pulling…' : queue.length ? `pull ${queue.length}` : 'pull';
     pull.disabled = pulling || !queue.length;
-    clear.disabled = pulling || !queue.length;
+    clear.textContent = pulling ? 'cancel' : 'clear';
+    clear.disabled = pulling ? jobId == null : !queue.length;
   }
 
   function toggle(src: number, item: string) {
@@ -159,14 +163,21 @@ export function createCatalogPanel(body: HTMLElement): PanelHandle {
     status.textContent = '';
     status.classList.remove('error');
     renderQueue();
+    const ref = `pull-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const offJob = onMessage('job', (j: { id: number; ref?: string }) => {
+      if (j.ref === ref && jobId == null) { jobId = j.id; renderQueue(); }
+    });
     try {
-      const res = await askR('pull', { keys: pullKeys(queue) }) as { columns: string[] };
+      const res = await askR('pull', { keys: pullKeys(queue), ref }) as { columns: string[] };
       queue = [];
       status.textContent = `pulled ${res.columns.length}: ${res.columns.join(', ')}`;
     } catch (e) {
-      status.textContent = String((e as Error).message ?? e);
-      status.classList.add('error');
+      const cancelled = (e as { code?: string }).code === 'cancelled';
+      status.textContent = cancelled ? 'cancelled' : String((e as Error).message ?? e);
+      status.classList.toggle('error', !cancelled);
     } finally {
+      offJob();
+      jobId = null;
       pulling = false;
       renderQueue();
       renderList();
@@ -195,7 +206,10 @@ export function createCatalogPanel(body: HTMLElement): PanelHandle {
   source.addEventListener('change', () => { search.value = ''; renderList(); });
   search.addEventListener('input', renderList);
   pull.addEventListener('click', doPull);
-  clear.addEventListener('click', () => { if (!pulling) { queue = []; renderQueue(); renderList(); } });
+  clear.addEventListener('click', () => {
+    if (pulling) { if (jobId != null) void askR('cancel_job', { id: jobId }).catch(() => {}); return; }
+    queue = []; renderQueue(); renderList();
+  });
   renderQueue();
   void load();
   const offConnect = onConnect(() => void load());
