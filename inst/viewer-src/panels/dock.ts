@@ -7,8 +7,8 @@
 // layout is config (store `layout`): it is saved through R and restored after
 // a reload. Charts (scatter, histogram, density) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// Controls (cells, transcripts, images, annotations, register, layers) are one
-// per viewer, with their kind as id, and keep their own state in the store
+// Controls (cells, transcripts, catalog, images, annotations, register, layers)
+// are one per viewer, with their kind as id, and keep their own state in the store
 // (adr/0016).
 // Why dockview-core 4, and why R holds the saved config: adr/0009.
 import {
@@ -32,6 +32,7 @@ import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createCellsPanel } from './cells.ts';
 import { createTranscriptsPanel } from './transcripts.ts';
+import { createCatalogPanel } from './catalog.ts';
 import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
@@ -60,6 +61,9 @@ const TYPES = {
   cells:       { create: createCellsPanel, single: true, slot: 'data', available: () => !!state.cells },
   transcripts: { create: createTranscriptsPanel, single: true, slot: 'data',
                  available: () => !!state.manifest?.layers?.transcripts },
+  // A giotto object shown: R has a catalog to pull from
+  catalog:     { create: createCatalogPanel, single: true, slot: 'catalog',
+                 available: () => !!state.cells && !!state.manifest?.catalog },
   images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
   annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },

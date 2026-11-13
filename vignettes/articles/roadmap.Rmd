@@ -42,6 +42,34 @@ fastplotR and GiottoLens and a brush on it crossfilters the other views.
 The viewer's state (layout, panels, settings, rules) is kept by R while it runs; saving it to
 a file and restoring it in a later session is issue #21.
 
+## Data panel
+
+A dock panel for what the object shown holds beyond the metadata already pushed, and for the
+cells themselves as rows.
+
+The catalog and pull are in place (design.Rmd "Cells"): the catalog panel lists what
+`spatValues()` can return for the spatial unit shown, from the object R loads anyway, and
+pulls the items queued in one `spatValues()` call over `gobject()`, adding columns to the
+viewer's metadata, not the object. `viewer$catalog()` and `viewer$pull()` are the same from
+R. This is the first form of the per-cell store in "Panels from GiottoVisuals specs", item 4.
+Next:
+
+1. **The pull as a job.** It runs in the R session now and blocks it for the snapshot load
+   and the read (about 2 s for the load once GiottoDisk's VRT fix lands). It moves to a
+   worker with the jobs interface, with progress in the panel; holding the object instead
+   of loading it changes only `gobject()`.
+2. **Cell table.** Rows are the cells in the current selection (all cells when there is
+   none), columns are the loaded metadata. It is drawn from the typed arrays the page
+   already holds, rendering only the visible rows, so a million rows scroll without paging
+   from R. Cell IDs are one more column file, written when the table first opens
+   (adr/0002). Rows picked in the table become the `table` source's `ids` rule and combine
+   with the other sources like any rule. In cross-filter mode the table shows the other
+   sources only, as the histogram does, so picking rows does not collapse it.
+3. **Change history.** The last 20 view changes (rules, colour-by, column types, pulls) with
+   undo, kept with the config R holds (adr/0009). This is the list of changes the editing
+   core's undo builds on ("Plugins", item 1). It records the view, not the data: snapshots
+   do that.
+
 ## The large-data path
 
 Selections over cells stay in the browser up to about 10–20M cells; beyond that, and for

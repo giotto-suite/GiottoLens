@@ -15,6 +15,10 @@
 .lens_object_types <- c("cell_selection", "annotations_update", "config",
     "panel_closed", "registration_update", "set_column_type")
 
+# `ask` ops about the object a page shows, refused to a page that has not
+# reloaded since the last load
+.lens_object_ops <- c("catalog", "pull")
+
 # Parse and validate one WebSocket text frame.
 # Returns list(type, data), or NULL with a warning when the frame is invalid.
 .parse_ws_message <- function(msg) {

@@ -213,6 +213,42 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     expect_identical(br$errors(), character())
 })
 
+test_that("the catalog panel lists the object and pulls the items queued", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    dock_tab(br, "catalog")
+    q <- function(sel) sprintf("document.querySelector('[data-panel=catalog] %s')", sel)
+    items <- sprintf("[...document.querySelectorAll('[data-panel=catalog] .catalog-item')].map(e => e.dataset.item)")
+    expect_true(browser_wait(br, sprintf("%s.join() === 'array_row,array_col,half'", items)))
+
+    # Queue from two sources, one with a type, and pull them together
+    br$js(sprintf("%s.click()", q(".catalog-item[data-item=half]")))
+    br$js(sprintf("%s.click()", q(".catalog-item[data-item=array_row]")))
+    br$js(sprintf("(() => { const t = [...document.querySelectorAll('[data-panel=catalog] .catalog-type')][1]; t.value = 'categorical'; t.dispatchEvent(new Event('change')); })()"))
+    br$js(sprintf("(() => { const s = %s; s.value = [...s.options].find(o => o.textContent.startsWith('expression')).value; s.dispatchEvent(new Event('change')); })()",
+        q(".catalog-source")))
+    expect_true(browser_wait(br, sprintf("%s.join() === 'g1,g2'", items)))
+    br$js(sprintf("%s.click()", q(".catalog-item[data-item=g1]")))
+    expect_identical(br$js(sprintf("%s.textContent", q(".catalog-pull"))), "pull 3")
+    suppressMessages({
+        br$js(sprintf("%s.click()", q(".catalog-pull")))
+        expect_true(browser_wait(br, "['half', 'array_row', 'g1'].every(c => window.__giottolens.state.metaInfo?.has(c))"))
+    })
+    expect_identical(br$js("window.__giottolens.state.metaInfo.get('array_row').kind"), "categorical")
+    expect_true(browser_wait(br, sprintf("%s.textContent.startsWith('pulled 3')", q(".catalog-status"))))
+    expect_identical(br$js(sprintf("%s.textContent", q(".catalog-pull"))), "pull")
+    # Pulled items are marked
+    expect_true(browser_wait(br, sprintf("!!%s", q(".catalog-item.loaded[data-item=g1]"))))
+    priv <- get("private", v$.__enclos_env__)
+    expect_setequal(priv$meta_names(), c("half", "array_row", "g1"))
+    expect_identical(br$errors(), character())
+})
+
 test_that("the cell mark is set from R, survives a reload, and resets", {
     fx <- lens_bins_fixture()
     v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)

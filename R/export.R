@@ -22,12 +22,13 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
 # the previous one's from its cache. Cells come from the polygon tiles,
 # or without polygons from `locations` (from .spat_locations()) (adr/0010).
 # `mark`: a user mark (.check_mark()). `images`: manifest entries from
-# .image_entries(). Returns the cell IDs in the viewer's cell order
+# .image_entries(). `catalog`: whether R has a catalog to pull from
+# (R/catalog.R). Returns the cell IDs in the viewer's cell order
 # (`cell_ids`, NULL without cells) and the cell layer's `source`, `mark` and
 # `marks` (whether the mark is drawn by default).
 .export_session <- function(gpoints, gpolygons, output, transfer = "auto",
                             images = list(), locations = NULL, mark = NULL,
-                            load = 1L, cells_file = "cells.parquet") {
+                            load = 1L, cells_file = "cells.parquet", catalog = FALSE) {
     layers <- list()
     extent <- NULL
     cells  <- NULL
@@ -66,6 +67,7 @@ export_manifest <- function(gpoints = NULL, gpolygons = NULL, output) {
     manifest <- list(version = "0.5.0", load = load, extent = extent,
         transfer = transfer, layers = layers)
     if (length(images)) manifest$images <- images
+    if (catalog) manifest$catalog <- TRUE
     jsonlite::write_json(manifest, output, auto_unbox = TRUE, digits = NA)
     list(
         cell_ids = cells$table$cell_ID,

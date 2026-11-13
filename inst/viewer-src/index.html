@@ -167,6 +167,22 @@
     .gene-row:not(.selected) .gene-name { color: var(--fg-3); }
     .list-overflow { padding: 6px 12px; color: var(--fg-4); font-size: 11px; }
 
+    /* The catalog panel (panels/catalog.ts) */
+    .catalog { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* A short panel scrolls as a whole rather than squeezing the list away */
+    .catalog-list { min-height: 96px; }
+    .catalog-item.loaded .gene-name { font-style: italic; }
+    .catalog-mark { flex-shrink: 0; color: var(--fg-4); font-size: 10px; }
+    .catalog-queue { flex-shrink: 0; max-height: 140px; overflow-y: auto; border-top: 1px solid var(--bg-2); }
+    .catalog-queued { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+    .catalog-queued-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-1); }
+    .catalog-type { flex: 0 0 96px; }
+    .catalog .ctl-actions button:disabled { opacity: 0.4; cursor: default; }
+    .catalog-status { margin-top: 6px; font-size: 11px; color: var(--fg-3); overflow-wrap: anywhere; }
+    .catalog-status:empty { display: none; }
+    .catalog-status.error { color: #fca5a5; }
+    :root[data-theme="light"] .catalog-status.error { color: #b91c1c; }
+
     .annot-list { padding: 6px 0; }
     .annot-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; cursor: pointer; user-select: none; }
     .annot-row:hover { background: var(--bg-2); }

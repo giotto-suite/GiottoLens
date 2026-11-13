@@ -15,6 +15,7 @@ export interface MetaInfo {
   kind: 'categorical' | 'continuous';
   levels?: string[];
   numeric?: boolean;                   // a numeric column in R (type can change)
+  numberText?: boolean;                // text whose values are all numbers (can go continuous)
   url: string;                         // its file, named by its content
 }
 
@@ -38,7 +39,7 @@ let payloadGen = 0;
 // Adopt a load_metadata payload. Loaded columns whose file is unchanged are
 // kept. Returns false for the payload already adopted (a reconnect re-sends it).
 let payloadKey: string | null = null;
-export function setMetaInfo(columns: MetaInfo[]): boolean {
+export function setMetaInfo(columns: (MetaInfo & { number_text?: boolean })[]): boolean {
   const key = JSON.stringify(columns);
   if (key === payloadKey) return false;
   payloadKey = key;
@@ -47,7 +48,8 @@ export function setMetaInfo(columns: MetaInfo[]): boolean {
   const info = new Map<string, MetaInfo>();
   const meta: Meta = new Map();
   for (const c of columns) {
-    const m: MetaInfo = { name: c.name, kind: c.kind, levels: c.levels, numeric: !!c.numeric, url: c.url };
+    const m: MetaInfo = { name: c.name, kind: c.kind, levels: c.levels, numeric: !!c.numeric,
+      numberText: !!c.number_text, url: c.url };
     info.set(c.name, m);
     const prev = [...old.values()].find(o => o.url === c.url);
     if (prev) meta.set(c.name, sameInfo(prev, m) ? prev : { ...prev, ...m });

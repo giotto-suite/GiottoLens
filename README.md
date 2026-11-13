@@ -62,6 +62,9 @@ viewer$set_theme("light")                         # light panels; the spatial vi
 viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
                         alpha = c(0.2, Myeloid = 1))
 viewer$set_column_type("leiden_clus", "categorical")       # numeric column shown as categories
+viewer$catalog()                                  # what the object holds that can be pulled
+viewer$pull(c("CD3E", "leiden_clus"), types = list(leiden_clus = "categorical"))
+                                                  # adds them to the metadata; or rows of catalog()
 viewer$set_color_scale("nr_feats", preset = "magma")        # continuous scale: preset, or
 viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors
 viewer$set_layer("tx", show = TRUE)
