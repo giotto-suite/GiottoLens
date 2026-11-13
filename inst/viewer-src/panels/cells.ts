@@ -1,5 +1,6 @@
 // The cells panel: color the cells by a metadata column (store `colorBy`,
-// also set from R by color_by()), "treat as" for numeric columns, and its
+// also set from R by color_by()), "treat as" for numeric columns (and text
+// whose values are all numbers, to continuous), and its
 // legend. A continuous column's legend edits its color scale: a preset menu
 // (or custom colors, 2 to 9, each editable), reverse and reset. A categorical
 // column's legend edits each category's color, visibility and fill opacity.
@@ -252,13 +253,15 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
   body.append(note, root, outline.el);
   select.addEventListener('change', () => actions.setColorBy(select.value || null));
 
-  // "treat as": numeric columns only; R sends the metadata again with the new type
+  // "treat as": numeric columns, and text whose values are all numbers; R
+  // sends the metadata again with the new type
   let typeTimer: ReturnType<typeof setTimeout> | undefined;
   const syncType = () => {
     const col = store.getState().colorBy;
     const m = col ? state.metaInfo?.get(col) : null;
-    typeRow.style.display = m?.numeric ? '' : 'none';
-    if (m?.numeric) { typeSel.value = m.kind; typeSel.disabled = false; }
+    const can = !!(m?.numeric || m?.numberText);
+    typeRow.style.display = can ? '' : 'none';
+    if (can) { typeSel.value = m!.kind; typeSel.disabled = false; }
   };
   typeSel.addEventListener('change', () => {
     const column = store.getState().colorBy;

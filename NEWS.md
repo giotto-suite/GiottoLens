@@ -1,5 +1,12 @@
 # GiottoLens (development version)
 
+* A catalog panel lists what the object shown holds beyond the metadata already pushed
+  (cell metadata, expression, spatial enrichments, dim reductions) and pulls the items
+  queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
+  do the same from R. Pulls read the object's snapshot and add columns to the viewer, not
+  the object.
+* A text column whose values are all numbers can be shown as a continuous scale
+  (`set_column_type()` and the "treat as" menu).
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See

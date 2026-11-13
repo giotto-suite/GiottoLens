@@ -552,7 +552,10 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Show a numeric metadata column as categories (one
         #'   per distinct value, at most 1000) or as a continuous scale.
-        #'   Integer and double columns are continuous by default. The
+        #'   Integer and double columns are continuous by default. A text
+        #'   column whose values are all numbers can be shown as continuous;
+        #'   it is numeric from then on, so shown as categories again its
+        #'   labels are the numbers. The
         #'   viewer's "treat as" menu in the cells panel sets the same. Rules
         #'   on the column are dropped, and the metadata is sent again.
         #'   The setting is kept for later `push_metadata()` calls, unless
@@ -569,9 +572,9 @@ LensViewer <- R6::R6Class("LensViewer",
             entry <- private$meta_entry(column)
             if (is.null(entry))
                 stop("[LensViewer] no metadata column '", column, "'", call. = FALSE)
-            if (!isTRUE(entry$numeric))
-                stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
-                    "change type", call. = FALSE)
+            if (!isTRUE(entry$numeric) && !(isTRUE(entry$number_text) && type == "continuous"))
+                stop("[LensViewer] '", column, "' is not numeric; only numeric columns, ",
+                    "and text columns whose values are all numbers, change type", call. = FALSE)
             if (entry$kind != type) {
                 re <- .retype_meta(private$meta_dir(), entry, type,
                     private$meta_values[[column]])
@@ -581,6 +584,39 @@ LensViewer <- R6::R6Class("LensViewer",
                 private$publish_meta(list(msg = msg), drop_rules_on = column)
             }
             private$col_types[[column]] <- type
+            invisible(self)
+        },
+
+        #' @description What the object shown holds that `pull()` can add to
+        #'   the viewer's metadata: one row per source and item, from the
+        #'   cell metadata, expression matrices, spatial enrichments and dim
+        #'   reductions of the spatial unit shown. Listed when the object is
+        #'   loaded; the viewer's catalog panel shows the same.
+        #' @returns A data.frame with columns `source` (an id), `slot`,
+        #'   `feat_type`, `name` (the matrix, enrichment or reduction; `NA`
+        #'   for cell metadata) and `item`.
+        catalog = function() {
+            .catalog_table(private$need_catalog("LensViewer$catalog"))
+        },
+
+        #' @description Add values from the object shown to the viewer's
+        #'   metadata: one [GiottoClass::spatValues()] call over the
+        #'   snapshot, loaded again with `gobject()`. Pulled columns are
+        #'   added to the metadata already shown, replacing a column of the
+        #'   same name; they belong to the viewer, not to the object. The
+        #'   viewer's catalog panel pulls the same way.
+        #'
+        #'   An item pulled from two sources at once is named
+        #'   `<source>_<item>`; dim reduction axes are named
+        #'   `<reduction>_<axis>`, as `push_metadata()` names them.
+        #' @param x Item names, each in one source only, or rows of
+        #'   `catalog()`, with a `type` column if wanted
+        #' @param types How the viewer treats each item: a named list or
+        #'   vector, item -> `"categorical"` or `"continuous"` (see
+        #'   `set_column_type()`). Left out, as the values are.
+        pull = function(x, types = NULL) {
+            cat <- private$need_catalog("LensViewer$pull")
+            private$pull_items(.pull_items(cat, x, types))
             invisible(self)
         },
 
@@ -1286,6 +1322,7 @@ LensViewer <- R6::R6Class("LensViewer",
         cached_meta = NULL,     # the load_metadata payload: columns, types, levels, files
         meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
+        catalog_data = NULL,    # what the object shown can pull (.lens_catalog())
 
         meta_entry = function(name) {
             for (cl in private$cached_meta$columns) if (identical(cl$name, name)) return(cl)
@@ -1298,17 +1335,58 @@ LensViewer <- R6::R6Class("LensViewer",
             if (is.null(entry)) return(NULL)
             .read_meta_column(private$meta_dir(), entry)
         },
+        need_catalog = function(site) {
+            private$need_object(site)
+            if (is.null(private$catalog_data))
+                stop("[", site, "] the viewer shows layers, not a giotto object: ",
+                    "there is nothing to pull from", call. = FALSE)
+            private$catalog_data
+        },
+        # Pull `items` (from .pull_items()) with one spatValues() call and add
+        # them to the metadata shown. Returns the columns added.
+        pull_items = function(items) {
+            site <- "LensViewer$pull"
+            plan <- .pull_plan(private$catalog_data, items)
+            vals <- suppressMessages(GiottoClass::spatValues(self$gobject(),
+                svkey = plan$keys, verbose = FALSE))
+            vals <- as.data.frame(vals)
+            got <- plan$cols$result %in% names(vals)
+            if (!all(got))
+                warning("[", site, "] not found in the object: ",
+                    paste(plan$cols$result[!got], collapse = ", "), call. = FALSE)
+            cols <- plan$cols[got, , drop = FALSE]
+            if (!nrow(cols)) stop("[", site, "] nothing was pulled", call. = FALSE)
+            vals <- vals[c("cell_ID", cols$result)]
+            names(vals) <- c("cell_ID", cols$column)
+            # A type given here applies over one kept from set_column_type()
+            given <- stats::setNames(cols$type, cols$column)
+            types <- c(unlist(private$col_types), given[!is.na(given)])
+            types <- types[!duplicated(names(types), fromLast = TRUE)]
+            out <- .write_metadata(vals, private$meta_dir(), private$cell_ids,
+                types = types, site = site)
+            rm(vals)
+            added <- vapply(out$msg$columns, `[[`, "", "name")
+            replaced <- intersect(added, private$meta_names())
+            private$col_types[out$dropped] <- NULL
+            for (cn in added) private$meta_values[cn] <- list(out$values[[cn]])
+            private$publish_meta(list(msg = .merge_meta(private$cached_meta, out$msg)),
+                drop_rules_on = replaced)
+            private$add_log("pull", paste(added, collapse = ", "))
+            message("[LensViewer] pulled ", length(added), " column(s): ",
+                paste(added, collapse = ", "))
+            added
+        },
 
         # The column files (one per column: the only copy of the metadata)
         meta_dir = function() file.path(private$session, "metadata"),
         # Adopt a payload (from .write_metadata(), or with a column rewritten
         # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
-        # rules on that column first. Files neither it nor the previous
+        # rules on those columns first. Files neither it nor the previous
         # payload points to are deleted.
         publish_meta = function(out, drop_rules_on = NULL) {
             if (!is.null(drop_rules_on) && length(private$rule_set)) {
                 on_col <- vapply(private$rule_set, function(r)
-                    identical(r$space, drop_rules_on), logical(1L))
+                    isTRUE(r$space %in% drop_rules_on), logical(1L))
                 if (any(on_col)) {
                     for (src in names(private$rule_set)[on_col])
                         private$broadcast(private$rule_message(
@@ -1396,13 +1474,15 @@ LensViewer <- R6::R6Class("LensViewer",
         # it has (adr/0017).
         load = function(object) {
             if (!is.null(object$x)) object <- private$handover(object)
+            catalog <- if (!is.null(object$x)) .lens_catalog(object$x, object$spat_unit)
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
             cl <- .export_session(object$layers$gpoints, object$layers$gpolygons,
                 output = file.path(private$session, "manifest.json"),
                 transfer = private$transfer, images = imgs$entries,
                 locations = object$layers$locations, mark = object$mark,
-                load = private$load_seq + 1L, cells_file = cells_file)
+                load = private$load_seq + 1L, cells_file = cells_file,
+                catalog = !is.null(catalog))
             old <- setdiff(list.files(private$session, "^cells-[0-9]+\\.parquet$"), cells_file)
             unlink(file.path(private$session, old))
             private$clear_object()
@@ -1415,6 +1495,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cells       <- if (!is.null(cl$source)) cl[c("source", "mark", "marks")]
             private$spat_unit   <- object$spat_unit
             private$feat_type   <- object$feat_type
+            private$catalog_data <- catalog
             private$loaded      <- TRUE
             if (!is.null(private$project)) .add_recent(private$project@path)
             private$reload_tabs()
@@ -1512,10 +1593,16 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # A request from the page (`ask`), answered to that page only with
         # `answer` {id, data, error, code}. The start page lists projects and
-        # their snapshots and opens one (adr/0019).
+        # their snapshots and opens one (adr/0019); the catalog panel lists
+        # what can be pulled and pulls it, which only a page showing the
+        # current object may do (adr/0017).
         answer = function(ws, id, dat) {
-            res <- tryCatch(private$ask(dat), error = function(e)
-                list(error = .console_text(conditionMessage(e))))
+            res <- if (isTRUE(dat$op %in% .lens_object_ops) && !private$conn_current(ws)) {
+                list(error = "the page shows an earlier object; reload it", code = "stale")
+            } else {
+                tryCatch(private$ask(dat), error = function(e)
+                    list(error = .console_text(conditionMessage(e))))
+            }
             try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
         },
 
@@ -1553,6 +1640,25 @@ LensViewer <- R6::R6Class("LensViewer",
                     message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
                     list(data = list(snapshot = private$snapshot))
                 },
+                catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
+                # keys: [{source, items: [...], types: [...]}], a type per item
+                # ("auto" for as the values are)
+                pull = {
+                    cat <- private$need_catalog("LensViewer")
+                    keys <- dat$keys
+                    if (!is.list(keys) || !length(keys))
+                        return(list(error = "nothing to pull"))
+                    rows <- do.call(rbind, lapply(keys, function(k) {
+                        items <- as.character(unlist(k$items))
+                        types <- as.character(unlist(k$types) %||% rep("auto", length(items)))
+                        if (length(types) != length(items))
+                            stop("[LensViewer] a type per item", call. = FALSE)
+                        data.frame(source = rep(as.integer(k$source %||% NA), length(items)),
+                            item = items, type = types)
+                    }))
+                    added <- private$pull_items(.pull_items(cat, rows, site = "LensViewer"))
+                    list(data = list(columns = as.list(added)))
+                },
                 list(error = "unknown request")
             )
         },
@@ -1585,6 +1691,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cached_meta  <- NULL
             private$meta_values  <- list()
             private$col_types    <- list()
+            private$catalog_data <- NULL
             private$cells_xy     <- NULL
             self$annotations     <- list()
             self$registration    <- NULL
@@ -1816,7 +1923,7 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("scatter", "histogram", "density", "cells", "transcripts",
-    "images", "register", "annotations", "layers")
+    "catalog", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

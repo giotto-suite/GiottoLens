@@ -46,6 +46,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
     \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
+    \item \href{#method-LensViewer-catalog}{\code{LensViewer$catalog()}}
+    \item \href{#method-LensViewer-pull}{\code{LensViewer$pull()}}
     \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
     \item \href{#method-LensViewer-select}{\code{LensViewer$select()}}
     \item \href{#method-LensViewer-state}{\code{LensViewer$state()}}
@@ -303,7 +305,10 @@ also sets each column's type; see \code{\link[=prep_meta]{prep_meta()}}}
 \subsection{\code{LensViewer$set_column_type()}}{
   Show a numeric metadata column as categories (one
 per distinct value, at most 1000) or as a continuous scale.
-Integer and double columns are continuous by default. The
+Integer and double columns are continuous by default. A text
+column whose values are all numbers can be shown as continuous;
+it is numeric from then on, so shown as categories again its
+labels are the numbers. The
 viewer's "treat as" menu in the cells panel sets the same. Rules
 on the column are dropped, and the metadata is sent again.
 The setting is kept for later \code{push_metadata()} calls, unless
@@ -318,6 +323,59 @@ one sets the column's type through \code{cols}.
     \describe{
       \item{\code{column}}{Column name, as pushed}
       \item{\code{type}}{\code{"categorical"} or \code{"continuous"}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-catalog"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-catalog}{}}}
+\subsection{\code{LensViewer$catalog()}}{
+  What the object shown holds that \code{pull()} can add to
+the viewer's metadata: one row per source and item, from the
+cell metadata, expression matrices, spatial enrichments and dim
+reductions of the spatial unit shown. Listed when the object is
+loaded; the viewer's catalog panel shows the same.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$catalog()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with columns \code{source} (an id), \code{slot},
+\code{feat_type}, \code{name} (the matrix, enrichment or reduction; \code{NA}
+for cell metadata) and \code{item}.
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-pull"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-pull}{}}}
+\subsection{\code{LensViewer$pull()}}{
+  Add values from the object shown to the viewer's
+metadata: one \code{\link[GiottoClass:spatValues]{GiottoClass::spatValues()}} call over the
+snapshot, loaded again with \code{gobject()}. Pulled columns are
+added to the metadata already shown, replacing a column of the
+same name; they belong to the viewer, not to the object. The
+viewer's catalog panel pulls the same way.
+
+An item pulled from two sources at once is named
+\verb{<source>_<item>}; dim reduction axes are named
+\verb{<reduction>_<axis>}, as \code{push_metadata()} names them.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$pull(x, types = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{x}}{Item names, each in one source only, or rows of
+\code{catalog()}, with a \code{type} column if wanted}
+      \item{\code{types}}{How the viewer treats each item: a named list or
+vector, item -> \code{"categorical"} or \code{"continuous"} (see
+\code{set_column_type()}). Left out, as the values are.}
     }
     \if{html}{\out{</div>}}
   }

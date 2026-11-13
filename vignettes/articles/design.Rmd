@@ -91,6 +91,12 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
   to 23 ms; in the browser a column decodes in 25 to 35 ms. Single-column parquet over raw
   typed arrays: raw saves that decode but is up to 12 times larger for codes and integer
   columns (0.6 MB against 7.6 MB), which costs more over a remote link.
+- `pull()` and the catalog panel add columns to the same set. R lists what the object can
+  pull (names only, from cell metadata, expression, spatial enrichments and dim reductions)
+  from the object it loads anyway, and keeps the list until the next load. A pull is one
+  `spatValues()` call with a key per source over `gobject()`, the snapshot loaded again,
+  so the viewer holds no object; it writes only the pulled columns' files and adds them to
+  the payload, where `push_metadata()` replaces it.
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
 
 Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in

@@ -124,34 +124,35 @@ prep_meta <- function(
 # with their levels in the payload; continuous columns as doubles.
 # Factor, character and logical columns are categorical; integer and double
 # columns are continuous unless `types` (column -> "categorical") names them.
-# Numeric columns carry `numeric = TRUE` in the payload.
+# A text or logical column `types` names "continuous" is, when every value
+# reads as a number. Numeric columns carry `numeric = TRUE` in the payload;
+# text columns whose labels all read as numbers `number_text = TRUE`.
 # The files are the only copy: R reads columns back from them
 # (.read_meta_column()) and changes a column's type by rewriting its file
 # (.retype_meta()). `values` keeps the numbers behind each numeric column
 # shown as categories, so it can go back to continuous exactly. A `types`
 # entry over the level limit is not applied; its column is in `dropped`.
-.write_metadata <- function(meta, dir, cell_ids, types = NULL) {
+.write_metadata <- function(meta, dir, cell_ids, types = NULL, site = "push_metadata") {
     if (!"cell_ID" %in% names(meta))
-        stop("[push_metadata] metadata needs a `cell_ID` column matching the ",
+        stop("[", site, "] metadata needs a `cell_ID` column matching the ",
             "cell IDs", call. = FALSE)
     if (is.null(cell_ids))
-        stop("[push_metadata] the viewer has no cells to attach metadata to",
+        stop("[", site, "] the viewer has no cells to attach metadata to",
             call. = FALSE)
-    # Dots and other characters break identifiers downstream; sanitising can
-    # merge names, so make them unique again
-    names(meta) <- make.unique(gsub("[^A-Za-z0-9_]", "_", names(meta)), sep = "_")
+    # Sanitising can merge names, so make them unique again
+    names(meta) <- make.unique(.meta_name(names(meta)), sep = "_")
     row <- match(cell_ids, as.character(meta$cell_ID))
     unmatched <- nrow(meta) - sum(!is.na(row))
     if (all(is.na(row)))
-        stop("[push_metadata] no cell_ID matches a cell in the viewer",
+        stop("[", site, "] no cell_ID matches a cell in the viewer",
             call. = FALSE)
     if (unmatched > 0L)
-        message("[push_metadata] ", unmatched, " metadata row(s) have no cell ",
+        message("[", site, "] ", unmatched, " metadata row(s) have no cell ",
             "in the viewer and are not shown")
 
     data_cols <- setdiff(names(meta), "cell_ID")
     if (!length(data_cols))
-        stop("[push_metadata] metadata has no columns besides cell_ID", call. = FALSE)
+        stop("[", site, "] metadata has no columns besides cell_ID", call. = FALSE)
     columns <- list()
     values  <- list()
     dropped <- character()
@@ -166,16 +167,32 @@ prep_meta <- function(
                 entry <- c(enc$entry, url = .write_meta_column(dir, cn, enc$codes))
                 values[[cn]] <- lv
             } else {
-                warning("[push_metadata] `", cn, "` has ", length(lv), " distinct values, ",
+                warning("[", site, "] `", cn, "` has ", length(lv), " distinct values, ",
                     "more than the ", .max_numeric_levels, " that can be shown as ",
                     "categories; it is continuous", call. = FALSE)
                 dropped <- c(dropped, cn)
             }
         }
+        if (!numeric && identical(unname(types[cn]), "continuous")) {
+            x <- .parse_numbers(v)
+            if (!is.null(x)) {
+                entry <- list(name = cn, kind = "continuous", numeric = TRUE,
+                    url = .write_meta_column(dir, cn, x))
+            } else {
+                warning("[", site, "] `", cn, "` has values that are not numbers; ",
+                    "it is categorical", call. = FALSE)
+                dropped <- c(dropped, cn)
+            }
+        }
         if (is.null(entry)) entry <- if (is.factor(v) || is.character(v) || is.logical(v)) {
             f <- if (is.factor(v)) droplevels(v) else factor(v)
-            list(name = cn, kind = "categorical", levels = as.list(levels(f)),
+            e <- list(name = cn, kind = "categorical", levels = as.list(levels(f)),
                 url = .write_meta_column(dir, cn, .category_codes(f)))
+            # Text that reads as numbers can be shown as a continuous scale.
+            # Not numeric_*: `entry$numeric` would partial-match it
+            if (!is.logical(v) && nlevels(f) && !is.null(.parse_numbers(levels(f))))
+                e$number_text <- TRUE
+            e
         } else {
             list(name = cn, kind = "continuous", numeric = TRUE,
                 url = .write_meta_column(dir, cn, as.double(v)))
@@ -189,10 +206,19 @@ prep_meta <- function(
 # Rewrite one numeric column (`entry`, from the payload) as `type`; only its
 # file changes. `values`: the numbers behind the column's categories, when it
 # is categorical now. Returns the new entry and its `values` (NULL when
-# continuous).
+# continuous). A text column whose labels are numbers (`number_text`) goes
+# to continuous and is numeric from then on: back to categorical, its labels
+# are the numbers' (.numeric_labels()), not the text it had.
 .retype_meta <- function(dir, entry, type, values = NULL) {
     cn <- entry$name
     v  <- arrow::read_parquet(.meta_column_path(dir, entry), mmap = FALSE)$value
+    if (!isTRUE(entry$numeric)) {
+        lv <- .parse_numbers(unlist(entry$levels))
+        if (type != "continuous" || is.null(lv))
+            stop("[LensViewer] `", cn, "` has values that are not numbers", call. = FALSE)
+        return(list(entry = list(name = cn, kind = "continuous", numeric = TRUE,
+            url = .write_meta_column(dir, cn, lv[ifelse(v < 0L, NA, v + 1L)])), values = NULL))
+    }
     if (type == "categorical") {
         lv <- .numeric_levels(v)
         if (length(lv) > .max_numeric_levels)
@@ -235,6 +261,29 @@ prep_meta <- function(
 .prune_meta_files <- function(dir, keep) {
     files <- list.files(dir, pattern = "\\.parquet$")
     unlink(file.path(dir, setdiff(files, basename(keep))))
+}
+
+# Column names as the viewer keeps them: dots and other characters break
+# identifiers downstream
+.meta_name <- function(x) gsub("[^A-Za-z0-9_]", "_", x)
+
+# `v` as doubles when every value that is not NA reads as a number, else NULL
+.parse_numbers <- function(v) {
+    if (is.logical(v)) return(as.double(v))
+    s <- as.character(v)
+    x <- suppressWarnings(as.numeric(s))
+    if (any(is.na(x) & !is.na(s))) NULL else x
+}
+
+# Payload `new`'s columns added to `old`'s, a column of the same name
+# replaced where it was
+.merge_meta <- function(old, new) {
+    cols <- old$columns %||% list()
+    for (cl in new$columns) {
+        i <- match(cl$name, vapply(cols, `[[`, "", "name"))
+        if (is.na(i)) cols[[length(cols) + 1L]] <- cl else cols[[i]] <- cl
+    }
+    list(n = new$n, columns = cols)
 }
 
 .category_codes <- function(f) {

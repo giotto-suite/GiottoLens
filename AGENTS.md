@@ -39,6 +39,8 @@ R/
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
                the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
+  catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
+               spatValues() call over it (.pull_items(), .pull_plan())
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -62,7 +64,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
-              images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
+              catalog.ts (what to pull from the object, through askR()), images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -129,7 +131,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `private$routes`, read per request; never capture them in a closure.
 - Everything that belongs to the object shown is reset by `load()` through `clear_object()`
   (config, rules, combine, pushed panels and their files, metadata and its files, column
-  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
+  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes,
+  the catalog).
   A new per-object field goes there, or a switch leaks it into the next object. Nothing is
   kept for an object not shown: keeping Lens work is a save's job.
 - A giotto object is shown from a snapshot in its project (adr/0018): `handover()` runs
@@ -173,6 +176,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   named by content; the payload gives each column its `url`. The files are the only copy: R
   keeps the payload (`cached_meta`) and reads columns through `private$meta_column()`; never
   hold the pushed data.frame. Files of the current and the previous payload are kept.
+- Pulled columns (`pull()`, the catalog panel) come from one `spatValues()` call over
+  `gobject()`, never an object the viewer holds, and are added to the payload
+  (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
+  `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `panels/catalog.ts` names
+  columns the same way, so change both together. Payload entries are read with `$`, which
+  partial-matches: no new field may start with an existing one's name (`number_text`, not
+  `numeric_text`).
 - In the browser `state.metaInfo` lists every column and `state.meta` holds the loaded ones.
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
@@ -209,7 +219,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
   answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
-  (adr/0019). An ask is never queued while disconnected.
+  (adr/0019); the catalog panel's: `catalog`, `pull`, answered only to a page showing the
+  current load (`.lens_object_ops`). An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
@@ -326,7 +337,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
 `set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
-`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
+`push_panel()`, `remove_panel()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

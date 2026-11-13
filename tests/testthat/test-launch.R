@@ -98,6 +98,14 @@ test_that("set_column_type switches numeric columns and keeps the setting", {
     v$set_column_type("score", "continuous")
     expect_identical(kind("score"), "continuous")
     expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
+    # Text whose values are numbers goes to continuous, not the other way
+    suppressMessages(v$push_metadata(data.frame(cell_ID = fx$meta$cell_ID,
+        txt = as.character(seq_along(fx$meta$cell_ID)))))
+    expect_true(priv$meta_entry("txt")$number_text)
+    expect_error(v$set_column_type("txt", "categorical"), "is not numeric")
+    v$set_column_type("txt", "continuous")
+    expect_identical(kind("txt"), "continuous")
+    expect_identical(priv$meta_column("txt"), as.double(match(priv$cell_ids, fx$meta$cell_ID)))
     expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
     expect_error(v$set_column_type("score", "other"), "should be one of")
 })
