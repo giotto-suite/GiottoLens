@@ -5,7 +5,7 @@
 // Each panel has a stable id: R's selection rules, push_panel(id =) and the
 // saved layout all refer to it, so moving a panel changes nothing else. The
 // layout is config (store `layout`): it is saved through R and restored after
-// a reload. Charts (scatter, histogram, density) are rebuilt from metadata;
+// a reload. Charts (scatter, histogram, density, table) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
 // Controls (cells, transcripts, data, images, annotations, register, layers)
 // are one per viewer, with their kind as id, and keep their own state in the store
@@ -35,6 +35,7 @@ import { createDensityPanel } from './density.ts';
 import { createCellsPanel } from './cells.ts';
 import { createTranscriptsPanel } from './transcripts.ts';
 import { createDataPanel } from './data.ts';
+import { createTablePanel } from './table.ts';
 import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
@@ -69,6 +70,7 @@ const TYPES = {
   scatter:     { create: createScatterPanel, meta: true },
   histogram:   { create: createHistogramPanel, meta: true },
   density:     { create: createDensityPanel, meta: true },
+  table:       { create: createTablePanel, meta: true },
   // Two tabs at most per slot: more do not fit the column's tab bar
   cells:       { create: createCellsPanel, single: true, slot: 'data', available: () => !!state.cells },
   transcripts: { create: createTranscriptsPanel, single: true, slot: 'data',
@@ -344,6 +346,8 @@ function defaultLayout(host: HTMLElement): void {
   const tabs = host.clientHeight > 0 && host.clientHeight < 420;
   dock.addPanel({ id: 'histogram', component: 'histogram', title: 'histogram',
     position: { referencePanel: 'scatter', direction: tabs ? 'within' : 'below' }, inactive: tabs });
+  dock.addPanel({ id: 'table', component: 'table', title: 'table',
+    position: { referencePanel: 'histogram', direction: 'within' }, inactive: true });
   placeControls();
   placeFixed(host, true);
 }

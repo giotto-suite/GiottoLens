@@ -163,7 +163,7 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "transcripts", "annotations", "layers"))
+    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "annotations", "layers"))
     expect_identical(br$errors(), character())
 })
 
@@ -296,6 +296,57 @@ test_that("the picker colors cells by an item without adding it to the metadata"
     expect_error(v$color_by(.item_key("expression", "rna", "nope", name = "raw")), "has no 'nope'")
     v$color_by(NULL)
     expect_null(br$js("window.__giottolens.store.getState().colorBy"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the cell table shows the other sources' cells, and picks rows into the selection", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    suppressMessages(v$push_metadata(fx$meta[, c("cell_ID", "half", "array_row")]))
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    priv <- get("private", v$.__enclos_env__)
+    dock_tab(br, "table")
+    q <- function(sel) sprintf("document.querySelector('[data-panel=table] %s')", sel)
+    count <- function(text) browser_wait(br, sprintf("%s.textContent === '%s'", q(".table-count"), text))
+    row_ids <- sprintf("[...document.querySelectorAll('[data-panel=table] .table-rows .table-row')].map(r => r.firstChild.textContent)")
+    click <- function(k, mods = "") br$js(sprintf(
+        "%s.dispatchEvent(new MouseEvent('click', {bubbles: true%s}))", q(sprintf('.table-rows .table-row[data-row="%d"]', k)), mods))
+
+    # All cells, IDs from R for the rows in view
+    expect_true(count("900 cells"))
+    expect_true(browser_wait(br, sprintf("%s[0] === '%s'", row_ids, priv$cell_ids[1])))
+
+    # Another source's selection sets the rows
+    v$select(lens_categories("half", "left"))
+    expect_true(count("450 cells"))
+    left <- priv$cell_ids[priv$cell_ids %in% fx$meta$cell_ID[fx$meta$half == "left"]]
+    expect_true(browser_wait(br, sprintf("%s[0] === '%s'", row_ids, left[1])))
+
+    # Picks are the table's rule: in "or" mode added to the selection, the rows unchanged
+    br$js("window.__giottolens.actions.setCombine('or')")
+    click(0)
+    click(2, ", shiftKey: true")
+    expect_true(count("450 cells \u00b7 3 picked"))
+    expect_true(pump_until(function() "table" %in% vapply(v$selection_rules, `[[`, "", "source")))
+    expect_identical(length(v$selection), 450L)
+    # Cross-filter: the selection narrows to the picks, the rows still the other sources'
+    br$js("window.__giottolens.actions.setCombine('and')")
+    expect_true(pump_until(function() setequal(v$selection, left[1:3])))
+    expect_true(count("450 cells \u00b7 3 picked"))
+    click(1, ", metaKey: true")
+    expect_true(pump_until(function() setequal(v$selection, left[c(1, 3)])))
+
+    # Scrolled to the end, the last row is the last cell
+    br$js(sprintf("(() => { const s = %s; s.scrollTop = s.scrollHeight; s.dispatchEvent(new Event('scroll')); })()",
+        q(".table-scroll")))
+    expect_true(browser_wait(br, sprintf("%s.at(-1) === '%s'", row_ids, left[450])))
+
+    br$js(sprintf("%s.click()", q(".table-clear")))
+    expect_true(pump_until(function() !"table" %in% vapply(v$selection_rules, `[[`, "", "source")))
     expect_identical(br$errors(), character())
 })
 
@@ -534,7 +585,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))
+    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; the charts in view
@@ -580,7 +631,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers"))))
     expect_identical(br$errors(), character())
 })
 
@@ -594,17 +645,18 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
     expect_true(pump_until(function() v$connected()))
 
-    # The tools bar at the left edge, the spatial view, the charts, then the
-    # controls in a column of their own on the right: cells and transcripts
-    # as tabs, then annotations, then layers (images and register come
-    # between them when there are images)
+    # The tools bar at the left edge, the spatial view, the charts with the
+    # table a tab behind the histogram, then the controls in a column of their
+    # own on the right: cells and transcripts as tabs, then annotations, then
+    # layers (images and register come between them when there are images)
     p <- v$panels()
-    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "cells", "transcripts", "annotations", "layers"))
+    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "table", "cells", "transcripts", "annotations", "layers"))
     expect_identical(p$kind, p$id)
     expect_identical(length(unique(p$group[1:3])), 3L)
-    expect_false(any(p$group[5:8] %in% p$group[3:4]))
-    expect_identical(p$group[5], p$group[6])
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, TRUE))
+    expect_identical(p$group[4], p$group[5])
+    expect_false(any(p$group[6:9] %in% p$group[3:5]))
+    expect_identical(p$group[6], p$group[7])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE))
     width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
 

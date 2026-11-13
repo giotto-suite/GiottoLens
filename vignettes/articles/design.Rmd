@@ -102,6 +102,11 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
   item into `session/items/` on request (the `item` ask), once per object, and never adds it
   to the metadata; the page keeps the last ones used within 128 MB and never drops the one
   colouring the cells. Items are chosen in a picker popover by source and search.
+- The cell table draws only the rows in view, from the same typed arrays; past about 400k
+  rows its scroll range is scaled so any number of rows scrolls end to end. Its rows are
+  the other sources' selection, as the histogram's counts are in cross-filter mode, and the
+  cell IDs it shows are asked of R a screen at a time, so the page holds no ID list
+  (adr/0002).
 - Selections cross the socket as bitmasks over this order: N/8 bytes whatever is selected.
 
 Cells without polygons are drawn as a **mark**: a circle, square or hexagon with a size in

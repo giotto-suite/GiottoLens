@@ -1779,6 +1779,16 @@ LensViewer <- R6::R6Class("LensViewer",
                 # A job the page started (its `job` messages carry the id)
                 cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
                     private$cancel(dat$id))),
+                # The cell table's rows in view: IDs of cell indices (0-based).
+                # The page keys nothing by ID (adr/0002).
+                cell_ids = {
+                    i <- unlist(dat$cells)
+                    n <- length(private$cell_ids)
+                    if (!is.numeric(i) || !length(i) || length(i) > 5000L || anyNA(i) ||
+                            any(i != round(i) | i < 0 | i >= n))
+                        return(list(error = "`cells` must be up to 5000 cell indices"))
+                    list(data = list(ids = as.list(private$cell_ids[i + 1L])))
+                },
                 list(error = "unknown request")
             )
         },
@@ -2166,7 +2176,7 @@ print.lens_description <- function(x, ...) {
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
-.lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "cells",
+.lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
     "transcripts", "data", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
