@@ -18,6 +18,7 @@ import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initSelectionBar } from './ui/selbar.js';
+import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
 import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
@@ -142,6 +143,7 @@ async function main() {
   initReleaseGuard();
   initRuleStrip();
   initSelectionBar();
+  initJobs();
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));

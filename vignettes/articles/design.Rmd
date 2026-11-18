@@ -94,8 +94,8 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
 - `pull()` and the Data panel add columns to the same set. R lists what the object can
   pull (names only, from cell metadata, expression, spatial enrichments and dim reductions)
   from the object it loads anyway, and keeps the list until the next load. A pull is one
-  `spatValues()` call with a key per source over `gobject()`, the snapshot loaded again,
-  so the viewer holds no object; it writes only the pulled columns' files and adds them to
+  `spatValues()` call with a key per source, run as a job over the object the jobs' daemon
+  holds (adr/0025), so the R session holds no second copy; it writes only the pulled columns' files and adds them to
   the payload, where `push_metadata()` replaces it.
 - A field that shows one value (colour-by) holds a column name or an **item key**, which
   names one item of the object by slot, feature type, source and name (adr/0024). R reads an

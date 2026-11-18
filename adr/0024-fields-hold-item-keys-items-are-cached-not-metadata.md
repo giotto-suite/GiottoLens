@@ -26,7 +26,8 @@ column. `.item_key()` in R and `itemKey()` in the page write the same string; a 
 never starts with `@`.
 
 The page gets an item's values with the `item` ask. R reads it with one `spatValues()` call
-into `session/items/`, once per object, and never into the metadata. The page keeps the
+in a job (adr/0025), over the object the jobs' daemon holds, into `session/items/`, once per
+object, and never into the metadata. The page keeps the
 items it was given, least recently used first out, while they fit 128 MB, and never drops the
 one that colours the cells. Picking means choosing: a **picker** popover from the field's
 button lists the metadata and then each catalog source, with a search. Choosing the raw or the
@@ -49,9 +50,9 @@ own.
 - The charts, rules and the cell table still take metadata columns only. Moving them to
   fields (and so to items) is the next step. A rule on an item will have to pin it in the
   cache.
-- Each read loads the snapshot again in the R session (`gobject()`) until reads move to a
-  job worker. `color_by()` with an item reads it before asking the page, so the page's
-  request does not wait on that load.
+- Reads and pulls run as jobs, so they show in the jobs popover and can be cancelled. The
+  first one starts the daemon and loads the snapshot; after that a gene reads in about half
+  a second on Atera. `color_by()` with an item waits for its read before asking the page.
 
 ## Alternatives considered
 

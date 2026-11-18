@@ -98,6 +98,7 @@ viewer without seeing the screen.
 ```r
 viewer$describe(by = "leiden_clus")   # what is on screen and what is selected, as text
 viewer$log()                          # what the user did, and any browser errors
+viewer$jobs()                         # work running in the background; cancel_job(id) stops one
 
 # Ask the user to draw, then work with what they chose
 sel <- viewer$wait_for_selection()    # returns once the user lassos or brushes

@@ -137,6 +137,27 @@ test_that("an item is read on its own into items/, never into the metadata", {
     expect_length(list.files(priv$items_dir()), 0L)
 })
 
+test_that("asks for an item being read share its job, and are answered if the object changes", {
+    cv <- catalog_viewer()
+    on.exit(cv$done(), add = TRUE)
+    priv <- cv$priv
+    tbl <- cv$v$catalog()
+    key <- tbl$key[tbl$item == "g1" & tbl$name %in% "normalized"]
+    got <- list()
+    priv$need_item(key, "t", function(r) got$a <<- r)
+    priv$need_item(key, "t", function(r) got$b <<- r)
+    expect_identical(cv$v$jobs()$label, "read g1")
+    expect_true(pump_until(function() length(got) == 2L, timeout = 60))
+    expect_identical(got$a, got$b)
+    expect_identical(got$a$data$name, key)
+
+    key2 <- tbl$key[tbl$item == "g2" & tbl$name %in% "normalized"]
+    got <- NULL
+    priv$need_item(key2, "t", function(r) got <<- r)
+    priv$clear_object()
+    expect_identical(got$error, "the object shown changed")
+})
+
 test_that("pull() adds columns to the metadata shown and replaces one of the same name", {
     cv <- catalog_viewer()
     on.exit(cv$done(), add = TRUE)
@@ -166,6 +187,11 @@ test_that("pull() adds columns to the metadata shown and replaces one of the sam
     expect_null(priv$meta_values$T)
     expect_length(priv$rule_set, 0L)
     expect_identical(match("T", priv$meta_names()), at)
+
+    # Without waiting: the job's id, the columns added when it ends
+    id <- v$pull("array_row", wait = FALSE)
+    expect_identical(v$jobs()$id, id)
+    expect_true(pump_until(function() "array_row" %in% priv$meta_names(), timeout = 60))
 
     # push_metadata() still replaces the whole set
     suppressMessages(v$push_metadata(catalog_object(), spat_unit = "bin", cols = "half"))
@@ -218,6 +244,10 @@ test_that("the page asks for the catalog and pulls, from the current object only
     key <- .item_key("expression", "rna", "g2", name = "raw")
     send("5", op = "item", key = key)
     r <- answer("5")$data
+    # Read by a job, which the page hears of
+    expect_true(got(a, "job"))
+    read <- Filter(function(m) m$type == "job" && identical(m$data$label, "read g2"), a$state$msgs)
+    expect_identical(read[[length(read)]]$data$state, "done")
     expect_identical(r$name, key)
     expect_match(r$url, "^session/items/")
     expect_false("g2" %in% cv$priv$meta_names())

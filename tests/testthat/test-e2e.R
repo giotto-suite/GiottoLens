@@ -250,6 +250,16 @@ test_that("the Data panel lists the object and pulls the items queued", {
     expect_true(browser_wait(br, sprintf("!!%s", q(".data-item.loaded[data-item=g1]"))))
     priv <- get("private", v$.__enclos_env__)
     expect_setequal(priv$meta_names(), c("half", "array_row", "g1"))
+
+    # A pull is a job: cancelled from the panel while a slow job holds the daemon
+    priv$start_job("slow", function(g) { Sys.sleep(3); 1 })
+    br$js(sprintf("%s.click()", q(".data-item[data-item=g2]")))
+    br$js(sprintf("%s.click()", q(".data-pull")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancel' && !%s.disabled",
+        q(".data-clear"), q(".data-clear"))))
+    br$js(sprintf("%s.click()", q(".data-clear")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancelled'", q(".data-status"))))
+    expect_false("g2" %in% priv$meta_names())
     expect_identical(br$errors(), character())
 })
 
@@ -1517,5 +1527,36 @@ test_that("an object in memory is written into a project and drawn from untiled 
     v$set_layer("tx", show = TRUE)
     v$set_view(x = 50, y = -50, zoom = 3)
     expect_true(browser_wait(br, "window.__giottolens.state.cache.has('polygons:1') && window.__giottolens.state.cache.has('transcripts:1')"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the jobs button lists running jobs, cancels one, and keeps the finished", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    priv <- get("private", v$.__enclos_env__)
+    btn <- "document.querySelector('[data-panel=tools] [data-act=jobs]')"
+    badge <- sprintf("%s.querySelector('.jobs-badge').textContent", btn)
+    expect_identical(br$js(badge), "")
+
+    end <- NULL
+    id <- priv$start_job("long wait", function(g) { Sys.sleep(60); 1 }, on_end = function(r) end <<- r)
+    expect_true(browser_wait(br, sprintf("%s === '1'", badge)))
+    expect_true(br$js(sprintf("%s.classList.contains('busy')", btn)))
+    br$js(sprintf("%s.click()", btn))
+    expect_true(browser_wait(br, "!!document.querySelector('.jobs-popover .job-row.state-running')"))
+    expect_identical(br$js("document.querySelector('.jobs-popover .job-label').textContent"), "long wait")
+
+    later::run_now(0.5)
+    br$js("document.querySelector('.jobs-popover .job-cancel').click()")
+    expect_true(pump_until(function() identical(end$state, "cancelled"), timeout = 15))
+    expect_true(browser_wait(br, "!!document.querySelector('.jobs-popover .job-row.state-cancelled')"))
+    expect_identical(br$js(badge), "")
+    expect_false(br$js(sprintf("%s.classList.contains('busy')", btn)))
+    expect_length(v$jobs()$id, 0L)
     expect_identical(br$errors(), character())
 })

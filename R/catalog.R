@@ -141,6 +141,11 @@
     list(keys = keys, cols = do.call(rbind, cols))
 }
 
+# A job's `fun` (R/jobs.R): a plan's values, read in the jobs' daemon
+.plan_values <- function(g, keys) {
+    as.data.frame(suppressMessages(GiottoClass::spatValues(g, svkey = keys, verbose = FALSE)))
+}
+
 # An item's key: `@` and slot, feature type, source name, method and item,
 # each percent-encoded (every byte but letters, digits and `_.~-`) and joined
 # by `/`. itemKey() in data/items.ts writes the same; change both together.

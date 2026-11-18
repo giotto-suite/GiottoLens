@@ -2,9 +2,10 @@
 // yet (cell metadata columns, expression, spatial enrichments, dim
 // reductions), from the catalog R lists at load (data/catalog.ts). Items are
 // queued, each with how to treat it, and pulled together into the metadata:
-// R makes one spatValues() call over the snapshot and sends the metadata
-// again with the pulled columns added. viewer$catalog() and viewer$pull() are
-// the same from R. A field that shows one item (color-by) takes it with the
+// R makes one spatValues() call, as a job, and sends the metadata again with
+// the pulled columns added. The ask is answered when the job ends; the job
+// carries the panel's `ref`, by which the panel finds it to cancel it.
+// viewer$catalog() and viewer$pull() are the same from R. A field that shows one item (color-by) takes it with the
 // picker instead (panels/picker.ts), without adding a column.
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
@@ -13,6 +14,7 @@ import { askR, onConnect } from '../core/comms.js';
 // @ts-ignore: plain JS module
 import { MAX_LIST_ROWS } from '../core/constants.js';
 import type { PanelHandle } from './dock.ts';
+import { onJobs, runningJobs } from '../ui/jobs.ts';
 import { loadCatalog, sourceLabel, columnFor, pullKeys, type CatalogSource, type ItemType, type Queued } from '../data/catalog.ts';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: object = {}): HTMLElementTagNameMap[K] =>
@@ -22,7 +24,7 @@ const TYPES: ItemType[] = ['auto', 'categorical', 'continuous'];
 export function createDataPanel(body: HTMLElement): PanelHandle {
   let sources: CatalogSource[] = [];
   let queue: Queued[] = [];
-  let pulling = false;
+  let pulling: string | null = null;   // the running pull's ref
   const key = (q: { source: number; item: string }) => `${q.source}\u0000${q.item}`;
 
   const note   = el('div', { className: 'panel-note', textContent: 'waiting for R…' });
@@ -86,9 +88,11 @@ export function createDataPanel(body: HTMLElement): PanelHandle {
       return row;
     }));
     pull.textContent = pulling ? 'pulling…' : queue.length ? `pull ${queue.length}` : 'pull';
-    pull.disabled = pulling || !queue.length;
-    clear.disabled = pulling || !queue.length;
+    pull.disabled = !!pulling || !queue.length;
+    clear.textContent = pulling ? 'cancel' : 'clear';
+    clear.disabled = pulling ? pullJob() == null : !queue.length;
   }
+  const pullJob = () => runningJobs().find(j => j.ref === pulling)?.id;
 
   function toggle(src: number, item: string) {
     if (pulling) return;
@@ -102,19 +106,20 @@ export function createDataPanel(body: HTMLElement): PanelHandle {
 
   async function doPull() {
     if (!queue.length || pulling) return;
-    pulling = true;
+    const ref = pulling = `pull-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     status.textContent = '';
     status.classList.remove('error');
     renderQueue();
     try {
-      const res = await askR('pull', { keys: pullKeys(queue) }) as { columns: string[] };
+      const res = await askR('pull', { keys: pullKeys(queue), ref }) as { columns: string[] };
       queue = [];
       status.textContent = `pulled ${res.columns.length}: ${res.columns.join(', ')}`;
     } catch (e) {
-      status.textContent = String((e as Error).message ?? e);
-      status.classList.add('error');
+      const cancelled = (e as { code?: string }).code === 'cancelled';
+      status.textContent = cancelled ? 'cancelled' : String((e as Error).message ?? e);
+      status.classList.toggle('error', !cancelled);
     } finally {
-      pulling = false;
+      pulling = null;
       renderQueue();
       renderList();
     }
@@ -142,12 +147,18 @@ export function createDataPanel(body: HTMLElement): PanelHandle {
   source.addEventListener('change', () => { search.value = ''; renderList(); });
   search.addEventListener('input', renderList);
   pull.addEventListener('click', doPull);
-  clear.addEventListener('click', () => { if (!pulling) { queue = []; renderQueue(); renderList(); } });
+  clear.addEventListener('click', () => {
+    if (!pulling) { queue = []; renderQueue(); renderList(); return; }
+    const id = pullJob();
+    if (id != null) void askR('cancel_job', { id }).catch(() => {});
+  });
+  // The cancel button needs the pull's job, which R reports as it starts
+  const offJobs = onJobs(() => { if (pulling) renderQueue(); });
   renderQueue();
   void load();
   const offConnect = onConnect(() => void load());
   // Loaded marks follow the metadata
   const unsub = store.subscribe(s => s.metaVersion, renderList);
 
-  return { destroy: () => { destroyed = true; unsub(); offConnect?.(); } };
+  return { destroy: () => { destroyed = true; unsub(); offJobs(); offConnect?.(); } };
 }

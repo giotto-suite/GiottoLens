@@ -1,5 +1,12 @@
 # GiottoLens (development version)
 
+* Work the viewer does for the page can run as jobs in a background R process that keeps the
+  object shown loaded, so R and the page stay free. The jobs button in the tools bar shows how
+  many are running; its popover lists them with their progress, cancels one, and keeps the
+  last few finished. `viewer$jobs()` and `viewer$cancel_job()` do the same from R. The
+  protocol is 7. See adr/0025.
+* Hand-over snapshots are written with qs2 when it is installed, which saves several seconds
+  on large objects.
 * Cross-filter mode is on by default: the selection is the cells every source selects.
   `set_selection()` still turns it off.
 * The spatial view is a panel: move, split, or close it, and add it back from a `+` menu.
@@ -11,8 +18,8 @@
 * A Data panel lists what the object shown holds beyond the metadata already pushed
   (cell metadata, expression, spatial enrichments, dim reductions) and pulls the items
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
-  do the same from R. Pulls read the object's snapshot and add columns to the viewer, not
-  the object.
+  do the same from R. Pulls run as jobs, which the panel can cancel, and add columns to the
+  viewer, not the object; `pull(wait = FALSE)` returns at once with the job's id.
 * Color cells by one gene, enrichment or dim reduction axis without adding it to the
   metadata: the button next to "color by" opens a searchable picker, and picked items stay
   in the menu's "recent" group. `viewer$color_by()` takes a row of `catalog()` or its `key`.

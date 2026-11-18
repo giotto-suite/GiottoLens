@@ -601,8 +601,8 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Add values from the object shown to the viewer's
-        #'   metadata: one [GiottoClass::spatValues()] call over the
-        #'   snapshot, loaded again with `gobject()`. Pulled columns are
+        #'   metadata: one [GiottoClass::spatValues()] call, run as a job (see
+        #'   `jobs()`) over the object the jobs' process holds. Pulled columns are
         #'   added to the metadata already shown, replacing a column of the
         #'   same name; they belong to the viewer, not to the object. The
         #'   viewer's Data panel pulls the same way.
@@ -615,9 +615,19 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param types How the viewer treats each item: a named list or
         #'   vector, item -> `"categorical"` or `"continuous"` (see
         #'   `set_column_type()`). Left out, as the values are.
-        pull = function(x, types = NULL) {
-            cat <- private$need_catalog("LensViewer$pull")
-            private$pull_items(.pull_items(cat, x, types))
+        #' @param wait Whether to wait for the pull to end. `FALSE` returns
+        #'   at once with the job's id (for `cancel_job()`); the columns are
+        #'   added when it ends.
+        #' @returns The viewer, invisibly; with `wait = FALSE`, the job's id
+        pull = function(x, types = NULL, wait = TRUE) {
+            site <- "LensViewer$pull"
+            items <- .pull_items(private$need_catalog(site), x, types)
+            if (!isTRUE(wait)) return(invisible(private$pull_items(items, function(r)
+                if (r$state == "error") warning("[", site, "] ", r$message, call. = FALSE))))
+            out <- NULL
+            private$pull_items(items, function(r) out <<- r)
+            while (is.null(out)) later::run_now(0.05)
+            if (out$state != "done") stop("[", site, "] ", out$message, call. = FALSE)
             invisible(self)
         },
 
@@ -1277,8 +1287,31 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Jobs running in the viewer's background R process
+        #'   (adr/0025), one row each. The process starts with the first job,
+        #'   which waits while it loads its packages and the object shown, and
+        #'   stops with the viewer; later jobs on the same object start at once.
+        #' @returns A data.frame with columns `id`, `label`, `started`, and
+        #'   `done` and `total` (progress; `NA` for a job that reports none)
+        jobs = function() {
+            js <- unname(as.list(private$running_jobs))
+            num <- function(f) vapply(js, function(j) as.numeric(j$progress[[f]] %||% NA), 0)
+            data.frame(id = vapply(js, function(j) j$id, 0L),
+                label = vapply(js, function(j) j$label, ""),
+                started = .POSIXct(vapply(js, function(j) as.numeric(j$started), 0)),
+                done = num("done"), total = num("total"), row.names = NULL)
+        },
+
+        #' @description Cancel a job. One not started yet is dropped; one
+        #'   running is interrupted (compiled code may finish its current call
+        #'   first). Its result is never applied.
+        #' @param id Job id, as `jobs()` lists it
+        #' @returns Whether the job was cancelled, invisibly
+        cancel_job = function(id) invisible(private$cancel(id)),
+
         #' @description Stop the server and remove this viewer's temp files
         close = function() {
+            private$stop_jobs()
             if (!is.null(private$server)) {
                 private$server$stop()
                 private$server <- NULL
@@ -1356,14 +1389,18 @@ LensViewer <- R6::R6Class("LensViewer",
                     "there is nothing to pull from", call. = FALSE)
             private$catalog_data
         },
-        # Pull `items` (from .pull_items()) with one spatValues() call and add
-        # them to the metadata shown. Returns the columns added.
-        pull_items = function(items) {
-            site <- "LensViewer$pull"
+        # Pull `items` (from .pull_items()) with one spatValues() call, in a
+        # job, and add them to the metadata shown. `done` gets the job's end
+        # (R/jobs.R), its result the columns added. Returns the job's id.
+        pull_items = function(items, done, ref = NULL) {
             plan <- .pull_plan(private$catalog_data, items)
-            vals <- suppressMessages(GiottoClass::spatValues(self$gobject(),
-                svkey = plan$keys, verbose = FALSE))
-            vals <- as.data.frame(vals)
+            n <- nrow(plan$cols)
+            private$start_job(paste("pull", n, if (n == 1L) "item" else "items"), .plan_values,
+                list(keys = plan$keys), apply = function(vals) private$add_pulled(vals, plan),
+                ref = ref, on_end = done)
+        },
+        add_pulled = function(vals, plan) {
+            site <- "LensViewer$pull"
             got <- plan$cols$result %in% names(vals)
             if (!all(got))
                 warning("[", site, "] not found in the object: ",
@@ -1397,25 +1434,51 @@ LensViewer <- R6::R6Class("LensViewer",
         # file each, kept for the object shown; their entries by item key
         items_dir = function() file.path(private$session, "items"),
         item_files = list(),
-        read_item = function(key, site) {
+        item_reads = list(),    # by key: the job reading it and who waits for it
+        # An item's file entry for `done()` as list(data =) or list(error =):
+        # at once if it was read, else once a job has read it. A second ask
+        # for an item being read waits for the same job.
+        need_item = function(key, site, done) {
             hit <- private$item_files[[key]]
-            if (!is.null(hit)) return(hit)
+            if (!is.null(hit)) return(done(list(data = hit)))
+            if (!is.null(private$item_reads[[key]])) {
+                private$item_reads[[key]]$waits <- c(private$item_reads[[key]]$waits, done)
+                return(invisible())
+            }
             cat <- private$need_catalog(site)
             ref <- .parse_item_key(key, site)
             src <- .catalog_source_for(cat, ref, site)
             plan <- .pull_plan(cat, data.frame(source = src$id, item = ref$item,
                 type = NA_character_))
-            vals <- as.data.frame(suppressMessages(GiottoClass::spatValues(self$gobject(),
-                svkey = plan$keys, verbose = FALSE)))
             res <- plan$cols$result
-            if (!res %in% names(vals))
-                stop("[", site, "] '", ref$item, "' was not found in the object", call. = FALSE)
-            out <- .write_metadata(data.frame(cell_ID = vals$cell_ID, item = vals[[res]]),
-                private$items_dir(), private$cell_ids, site = site, served = "items")
-            entry <- out$msg$columns[[1L]]
-            entry$name <- key
-            private$item_files[[key]] <- entry
-            entry
+            id <- private$start_job(paste("read", ref$item), .plan_values, list(keys = plan$keys),
+                apply = function(vals) {
+                    if (!res %in% names(vals))
+                        stop("'", ref$item, "' was not found in the object", call. = FALSE)
+                    out <- .write_metadata(data.frame(cell_ID = vals$cell_ID, item = vals[[res]]),
+                        private$items_dir(), private$cell_ids, site = site, served = "items")
+                    entry <- out$msg$columns[[1L]]
+                    entry$name <- key
+                    private$item_files[[key]] <- entry
+                    entry
+                },
+                on_end = function(r) {
+                    read <- private$item_reads[[key]]
+                    if (!identical(read$job, id)) return()
+                    private$item_reads[[key]] <- NULL
+                    ans <- .job_answer(r)
+                    for (w in read$waits) w(ans)
+                })
+            private$item_reads[[key]] <- list(job = id, waits = list(done))
+            invisible()
+        },
+        # need_item() for R, waiting
+        read_item = function(key, site) {
+            out <- NULL
+            private$need_item(key, site, function(r) out <<- r)
+            while (is.null(out)) later::run_now(0.05)
+            if (!is.null(out$error)) stop("[", site, "] ", out$error, call. = FALSE)
+            out$data
         },
         # Adopt a payload (from .write_metadata(), or with a column rewritten
         # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
@@ -1512,6 +1575,9 @@ LensViewer <- R6::R6Class("LensViewer",
         # it has (adr/0017).
         load = function(object) {
             if (!is.null(object$x)) object <- private$handover(object)
+            # Their results would land on the next object; the daemon keeps
+            # the old object until a job asks for another
+            for (id in names(private$running_jobs)) private$cancel(id, "the object shown changed")
             catalog <- if (!is.null(object$x)) .lens_catalog(object$x, object$spat_unit)
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
@@ -1633,18 +1699,23 @@ LensViewer <- R6::R6Class("LensViewer",
         # `answer` {id, data, error, code}. The start page lists projects and
         # their snapshots and opens one (adr/0019); the Data panel lists
         # what can be pulled and pulls it, which only a page showing the
-        # current object may do (adr/0017).
+        # current object may do (adr/0017). An op that runs a job (an item,
+        # a pull) returns NULL and answers through `reply` when it ends.
         answer = function(ws, id, dat) {
+            reply <- function(res) {
+                if (!is.null(res$error)) res$error <- .console_text(res$error)
+                try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
+            }
             res <- if (isTRUE(dat$op %in% .lens_object_ops) && !private$conn_current(ws)) {
                 list(error = "the page shows an earlier object; reload it", code = "stale")
             } else {
-                tryCatch(private$ask(dat), error = function(e)
-                    list(error = .console_text(conditionMessage(e))))
+                tryCatch(private$ask(dat, reply), error = function(e)
+                    list(error = conditionMessage(e)))
             }
-            try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
+            if (!is.null(res)) reply(res)
         },
 
-        ask = function(dat) {
+        ask = function(dat, reply) {
             str1 <- function(v) if (is.character(v) && length(v) == 1L && !is.na(v)) v
             switch(str1(dat$op) %||% "",
                 projects = {
@@ -1680,7 +1751,10 @@ LensViewer <- R6::R6Class("LensViewer",
                 },
                 catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
                 # One item's file, for a field that shows it (data/items.ts)
-                item = list(data = private$read_item(str1(dat$key) %||% "", "LensViewer")),
+                item = {
+                    private$need_item(str1(dat$key) %||% "", "LensViewer", reply)
+                    NULL
+                },
                 # keys: [{source, items: [...], types: [...]}], a type per item
                 # ("auto" for as the values are)
                 pull = {
@@ -1696,17 +1770,138 @@ LensViewer <- R6::R6Class("LensViewer",
                         data.frame(source = rep(as.integer(k$source %||% NA), length(items)),
                             item = items, type = types)
                     }))
-                    added <- private$pull_items(.pull_items(cat, rows, site = "LensViewer"))
-                    list(data = list(columns = as.list(added)))
+                    # `ref` names the job in its `job` messages, for the page to cancel it
+                    private$pull_items(.pull_items(cat, rows, site = "LensViewer"), function(r)
+                        reply(.job_answer(r, function(added) list(columns = as.list(added)))),
+                        ref = str1(dat$ref))
+                    NULL
                 },
+                # A job the page started (its `job` messages carry the id)
+                cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
+                    private$cancel(dat$id))),
                 list(error = "unknown request")
             )
         },
 
         save_snapshot = function(src, x, keep) {
+            # qs2 when installed: on the Atera section it writes in 0.4 to 1 s
+            # where gzip RDS takes 5.4 s, and reads faster
             suppressMessages(GiottoDisk::snapshotSave(src, x, name = .lens_snapshot_name(src),
                 keep = keep, creator = "GiottoLens", session = private$session_id,
+                method = if (requireNamespace("qs2", quietly = TRUE)) "qs2" else "rds",
                 verbose = FALSE))
+        },
+
+        # Jobs (R/jobs.R, adr/0025)
+        job_profile  = NULL,     # the jobs' mirai compute profile, from the first job
+        running_jobs = list(),   # by id: an environment per job
+        job_seq      = 0L,
+
+        # Run `fun(g, ...)` (`args`) over the object shown in the jobs'
+        # daemon. On the main thread when it ends: `apply(value)` if it
+        # succeeded and the object shown is still the one it started from,
+        # then `on_end(list(state, result, message))` whatever happened
+        # (`state`: done, error or cancelled). Every tab hears of it as a
+        # `job` message carrying `ref`, the page's name for it, and with
+        # `progress = TRUE` how far it is (.lens_progress()). Returns its id.
+        start_job = function(label, fun, args = list(), apply = identity, ref = NULL,
+                             on_end = NULL, progress = FALSE) {
+            private$need_object("LensViewer")
+            if (is.null(private$project))
+                stop("[LensViewer] jobs need an object shown from a snapshot", call. = FALSE)
+            if (is.null(private$job_profile))
+                private$job_profile <- .job_daemon(paste0("giottolens-", self$port, "-", .rand_id(6L)))
+            id <- private$job_seq <- private$job_seq + 1L
+            job <- new.env(parent = emptyenv())
+            job$id <- id
+            job$label <- label
+            job$ref <- ref
+            job$load <- private$load_seq
+            job$started <- Sys.time()
+            job$cancelled <- FALSE
+            job$file <- if (isTRUE(progress)) {
+                dir.create(file.path(private$session, "jobs"), showWarnings = FALSE)
+                file.path(private$session, "jobs", paste0(id, ".progress"))
+            }
+            # .args, not `...`: kept out of the daemon's global environment,
+            # which keeps the object between jobs
+            job$m <- mirai::mirai(.jw_run(fun, args, path, name, progress), .args = list(
+                fun = .job_fun(fun), args = args, path = private$project@path,
+                name = private$snapshot_name(), progress = job$file), .compute = private$job_profile)
+            private$running_jobs[[as.character(id)]] <- job
+            private$job_message(job, "running")
+            if (!is.null(job$file)) private$poll_progress(job)
+            end <- function(state, result = NULL, msg = NULL) {
+                private$running_jobs[[as.character(id)]] <- NULL
+                if (!is.null(job$file)) unlink(paste0(job$file, c("", ".tmp")))
+                private$job_message(job, state, msg)
+                if (!is.null(on_end)) on_end(list(state = state, result = result, message = msg))
+            }
+            promises::then(job$m,
+                onFulfilled = function(value) {
+                    if (!identical(private$load_seq, job$load))
+                        return(end("cancelled", msg = "the object shown changed"))
+                    res <- tryCatch(list(ok = apply(value)), error = function(e) e)
+                    if (inherits(res, "error")) end("error", msg = conditionMessage(res))
+                    else end("done", result = res$ok)
+                },
+                # A cancel rejects too ("Operation canceled"): told apart by
+                # the job's own flag
+                onRejected = function(e) {
+                    if (job$cancelled) end("cancelled", msg = job$why)
+                    else end("error", msg = .job_error_text(e))
+                })
+            id
+        },
+        # start_job() and wait for it, pumping the event loop: its result, or
+        # an error naming `site`. Cancelled after `timeout` seconds.
+        run_job = function(site, label, fun, args = list(), apply = identity, timeout = Inf) {
+            out <- NULL
+            id <- private$start_job(label, fun, args, apply, on_end = function(r) out <<- r)
+            t0 <- Sys.time()
+            while (is.null(out)) {
+                if (as.numeric(Sys.time() - t0, units = "secs") > timeout)
+                    private$cancel(id, paste("timed out after", timeout, "s"))
+                later::run_now(0.05)
+            }
+            if (out$state != "done")
+                stop("[", site, "] ", label, " ", out$state, ": ", out$message, call. = FALSE)
+            out$result
+        },
+        # The job's progress file, while it runs
+        poll_progress = function(job) {
+            later::later(function() {
+                if (is.null(private$running_jobs[[as.character(job$id)]])) return()
+                p <- .read_progress(job$file)
+                if (!is.null(p) && !identical(p, job$progress)) {
+                    job$progress <- p
+                    private$job_message(job, "running")
+                }
+                private$poll_progress(job)
+            }, 0.25)
+        },
+        cancel = function(id, why = "cancelled") {
+            job <- private$running_jobs[[as.character(id)]]
+            if (is.null(job) || job$cancelled) return(FALSE)
+            job$cancelled <- TRUE
+            job$why <- why
+            isTRUE(mirai::stop_mirai(job$m))
+        },
+        job_message = function(job, state, msg = NULL) {
+            if (self$connected()) private$broadcast(private$job_json(job, state, msg))
+        },
+        # `started` in seconds since the epoch, so a page that connects later
+        # shows how long a job has run
+        job_json = function(job, state, msg = NULL) {
+            .encode_ws_message("job", Filter(Negate(is.null), list(id = job$id, label = job$label,
+                ref = job$ref, state = state, message = msg, progress = job$progress,
+                started = as.numeric(job$started))))
+        },
+        stop_jobs = function() {
+            for (id in names(private$running_jobs)) private$cancel(id, "the viewer was closed")
+            .job_stop_daemon(private$job_profile)
+            private$job_profile <- NULL
+            private$running_jobs <- list()
         },
 
         snapshot_name = function() {
@@ -1726,6 +1921,11 @@ LensViewer <- R6::R6Class("LensViewer",
             .prune_meta_files(private$meta_dir(), character())
             .prune_meta_files(private$items_dir(), character())
             private$item_files   <- list()
+            # Their jobs were cancelled by load(); answered here, as the
+            # cancels end after the next object's reads may have started
+            for (read in private$item_reads)
+                for (w in read$waits) w(list(error = "the object shown changed"))
+            private$item_reads   <- list()
             private$config_json  <- NULL
             private$rule_set     <- list()
             private$combine      <- "and"
@@ -1846,6 +2046,8 @@ LensViewer <- R6::R6Class("LensViewer",
                             else ws$send(.encode_ws_message("rule_seq", list(seq = priv$rule_seq)))
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                            # Jobs already running: a reload or a new tab lists them too
+                            for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
                         },
                         ask = priv$answer(ws, parsed$id, dat),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)

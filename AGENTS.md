@@ -42,6 +42,8 @@ R/
   catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
                spatValues() call over it (.pull_items(), .pull_plan()); item keys
                (.item_key(), .parse_item_key(), adr/0024)
+  jobs.R       jobs: the viewer's mirai daemon holding the object shown, its helpers
+               (.jw_object(), .jw_run(), .lens_progress()), adr/0025
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -65,7 +67,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               (spatialView(): the open view, or null)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
-              (landmark tool, image pane), start.ts (start page and project dialog, through askR())
+              (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
+              jobs.ts (the tools bar's jobs button and popover; the page's list of jobs)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
               scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
@@ -184,8 +187,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   named by content; the payload gives each column its `url`. The files are the only copy: R
   keeps the payload (`cached_meta`) and reads columns through `private$meta_column()`; never
   hold the pushed data.frame. Files of the current and the previous payload are kept.
-- Pulled columns (`pull()`, the Data panel) come from one `spatValues()` call over
-  `gobject()`, never an object the viewer holds, and are added to the payload
+- Pulled columns (`pull()`, the Data panel) and items come from one `spatValues()` call
+  (`.plan_values()`) run as a job over the daemon's object, never `gobject()` on the main
+  thread. The `item` and `pull` asks answer when their job ends (`ask()` returns NULL and
+  calls `reply`); asks for an item being read share its job (`need_item()`). and are added to the payload
   (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
   `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `data/catalog.ts` names
   columns the same way, so change both together. Payload entries are read with `$`, which
@@ -235,7 +240,22 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
+### Jobs (adr/0025)
+
+- Work R does for the page that takes more than a moment runs as a job: private
+  `start_job(label, fun, args, apply, ref, on_end, progress)` (or `run_job()` to wait),
+  never on the main thread. `fun(g, ...)` runs in the viewer's mirai daemon over the object
+  shown, which the daemon loads from the project path and snapshot name once and keeps
+  (`cleanup = FALSE`); `apply()` runs on the main thread, and only if the object shown has not
+  changed (`load_seq`). `load()` cancels running jobs; `close()` stops the daemon.
+- The daemon runs installed packages only: `fun` and the helpers run there as plain functions
+  (`.job_fun()`), calling packages by `pkg::`. arrow loads first (`.job_packages`). Never
+  `library()` in a job.
+- A job writes to the project's vault (the daemon's artifact dump); never a temp source.
+- Cancelling interrupts (`stop_mirai()`, dispatcher on); a cancel rejects the job's promise
+  like an error, so it is told apart by the job's own flag.
+
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
@@ -250,6 +270,11 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
+- Jobs: R broadcasts `job` `{id, label, ref, state, message?, progress?}` as each starts, reports
+  progress and ends (`running`, `done`, `error`, `cancelled`), and sends the running ones to a
+  tab on `ready`; the page cancels one with the `cancel_job` ask. The page keeps the running
+  jobs and the last few finished ones (`ui/jobs.ts`), shown in the tools bar's jobs popover
+  only, never the status line.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
   the number), and a connecting tab with no rules to re-send gets `rule_seq`. A
@@ -375,7 +400,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
 `set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
-`push_panel()`, `remove_panel()`,
+`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
