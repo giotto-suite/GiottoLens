@@ -9,12 +9,17 @@ import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
 import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
+import { isItemKey, parseItemKey, needItems, primeItem, scaleKey, itemColumn } from '../data/items.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
 import { THEMES } from '../ui/theme.ts';
 import { spatialView, needView } from '../spatial/current.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
+
+// A field's kind and levels: a metadata column's from the payload, an item's
+// once it is loaded (one that is not yet has none)
+const fieldInfo = name => isItemKey(name) ? itemColumn(name) : state.metaInfo?.get(name);
 
 // Camera plus the data-space box on screen (xmin, xmax, ymin, ymax)
 function viewInfo(vs) {
@@ -60,8 +65,12 @@ export function initRemote() {
     return viewInfo(vs);
   });
 
-  onMessage('set_color_by', ({ column }) => {
-    if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
+  // A metadata column or an item key; R sends an item's file with it
+  onMessage('set_color_by', async ({ column, item }) => {
+    if (column != null && isItemKey(column)) {
+      if (!parseItemKey(column)) throw new Error(`'${column}' is not an item key`);
+      await (item ? primeItem(column, item) : needItems([column]));
+    } else if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
     actions.setColorBy(column ?? null);
   });
 
@@ -73,7 +82,7 @@ export function initRemote() {
   onMessage('set_category_style', ({ column, all, styles, reset }) => {
     const name = column ?? store.getState().colorBy;
     if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.metaInfo?.get(name);   // kind and levels: no need to load it
+    const col = fieldInfo(name);   // kind and levels: no need to load it
     if (!col) throw new Error(`no metadata column '${name}'`);
     if (col.kind !== 'categorical') throw new Error(`'${name}' is not categorical`);
     const levels = col.levels ?? [];
@@ -102,11 +111,13 @@ export function initRemote() {
   });
 
   onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
-    const name = column ?? store.getState().colorBy;
-    if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.metaInfo?.get(name);
-    if (!col) throw new Error(`no metadata column '${name}'`);
-    if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
+    const field = column ?? store.getState().colorBy;
+    if (field == null) throw new Error('no column given and cells are not colored by one');
+    const col = fieldInfo(field);
+    if (!col) throw new Error(`no metadata column '${field}'`);
+    if (col.kind !== 'continuous') throw new Error(`'${field}' is not continuous`);
+    // Expression items share one scale
+    const name = scaleKey(field);
     if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))
       throw new Error(`preset must be one of ${Object.keys(SCALE_PRESETS).join(', ')}`);
     if (colors != null && !(Array.isArray(colors) && colors.length >= 2 && colors.length <= MAX_SCALE_COLORS &&

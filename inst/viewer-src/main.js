@@ -5,7 +5,8 @@ import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
-import { setMetaInfo, needColumns, prefetchColumns } from './data/meta.ts';
+import { setMetaInfo, prefetchColumns } from './data/meta.ts';
+import { fieldColumn, fieldExists, needFields, isItemKey, scaleKey, setItemPins } from './data/items.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, setViewState, onSetView } from './data/schedule.js';
@@ -33,17 +34,26 @@ createIcons({ icons });
 const $status = msg => { document.getElementById('status').textContent = msg; };
 
 // ── Cell colours ──────────────────────────────────────────────────────────────
+// The colour-by field is a metadata column or an item (data/items.ts);
+// expression items share one scale (scaleKey()), which their legend edits
 function recolorCells() {
   if (!state.cells) return;
   const s = store.getState();
   const col = s.colorBy;
-  // Keep the current colours while the column loads
-  if (col && !state.meta?.has(col) && state.metaInfo?.has(col)) {
-    needColumns([col]).then(() => { if (store.getState().colorBy === col && state.meta?.has(col)) recolorCells(); });
+  const data = col ? fieldColumn(col) : undefined;
+  // Keep the current colours while the field loads
+  if (col && !data && fieldExists(col)) {
+    needFields([col]).then(() => { if (store.getState().colorBy === col) recolorCells(); }, err => {
+      if (store.getState().colorBy !== col) return;
+      reportError(err, `cannot color by ${col}`);
+      actions.setColorBy(null);
+    });
     return;
   }
-  const { colors, fill, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
-    col ? s.categoryStyles[col] : undefined, col ? s.colorScales[col] : undefined);
+  const scale = col ? scaleKey(col) : null;
+  const { colors, fill, legend } = cellColorBuffer(state.cells.n, data ?? null,
+    col ? s.categoryStyles[col] : undefined, scale ? s.colorScales[scale] : undefined);
+  if (legend?.type === 'continuous') legend.column = scale;
   state.cellColors  = colors;
   state.cellFill    = fill;
   state.colorLegend = legend;
@@ -116,6 +126,10 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
+  // The item colouring the cells stays loaded, and goes to the front of the
+  // colour-by menu's recent group
+  setItemPins(() => [store.getState().colorBy].filter(isItemKey));
+  store.subscribe(s => s.colorBy, c => { if (isItemKey(c)) actions.noteItem(c); });
   store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(spatialView()?.viewState); });
@@ -137,7 +151,7 @@ async function main() {
     // A reconnect re-sends the current metadata; keep the panels as they are
     if (!state.cells || !setMetaInfo(columns ?? [])) return;
     const colorBy = store.getState().colorBy;
-    if (colorBy && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
+    if (colorBy && !isItemKey(colorBy) && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
     else recolorCells();
     // Rules on metadata columns re-evaluate against the new columns
     recompute({ reset: true });

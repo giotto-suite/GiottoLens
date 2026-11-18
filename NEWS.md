@@ -8,11 +8,15 @@
   rules are in a bar along the bottom. The view no longer shows a "GiottoLens" label. With
   no spatial view open, `set_view()`, `zoom_to()`, `screenshot()` and `view_bounds()` stop
   with an error. `panels()` lists `tools` and `spatial`. See adr/0023.
-* A catalog panel lists what the object shown holds beyond the metadata already pushed
+* A Data panel lists what the object shown holds beyond the metadata already pushed
   (cell metadata, expression, spatial enrichments, dim reductions) and pulls the items
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
   do the same from R. Pulls read the object's snapshot and add columns to the viewer, not
   the object.
+* Color cells by one gene, enrichment or dim reduction axis without adding it to the
+  metadata: the button next to "color by" opens a searchable picker, and picked items stay
+  in the menu's "recent" group. `viewer$color_by()` takes a row of `catalog()` or its `key`.
+  Genes share one color scale. See adr/0024.
 * A text column whose values are all numbers can be shown as a continuous scale
   (`set_column_type()` and the "treat as" menu).
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs

@@ -40,7 +40,8 @@ R/
                the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
   catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
-               spatValues() call over it (.pull_items(), .pull_plan())
+               spatValues() call over it (.pull_items(), .pull_plan()); item keys
+               (.item_key(), .parse_item_key(), adr/0024)
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -51,6 +52,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   core/       state.js (runtime), store.ts (config + selection), persist.ts (config saved
               through R), comms.js (protocol), remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
+              catalog.ts (the object's sources, fetched once), items.ts (item keys, the
+              item cache, fields: a column or an item),
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts,
               registration.ts (affines, landmark fit, flips and turns)
@@ -67,7 +70,9 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
-              catalog.ts (what to pull from the object, through askR()), images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
+              data.ts (the Data panel: what to pull from the object, through askR()),
+              picker.ts (the popover a field picks a column or an item with), images.ts,
+              register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -179,13 +184,23 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   named by content; the payload gives each column its `url`. The files are the only copy: R
   keeps the payload (`cached_meta`) and reads columns through `private$meta_column()`; never
   hold the pushed data.frame. Files of the current and the previous payload are kept.
-- Pulled columns (`pull()`, the catalog panel) come from one `spatValues()` call over
+- Pulled columns (`pull()`, the Data panel) come from one `spatValues()` call over
   `gobject()`, never an object the viewer holds, and are added to the payload
   (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
-  `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `panels/catalog.ts` names
+  `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `data/catalog.ts` names
   columns the same way, so change both together. Payload entries are read with `$`, which
   partial-matches: no new field may start with an existing one's name (`number_text`, not
   `numeric_text`).
+- A field that shows one value (store `colorBy`) holds a metadata column name or an item
+  key (adr/0024): `@` and slot, feature type, source name, method and item, percent-encoded
+  and joined by `/`. `.item_key()` (R) and `itemKey()` (`data/items.ts`) write the same
+  string; change both together (the tests check one key on each side). Items never enter
+  the metadata: R reads one into `session/items/` once per object (`read_item()`, cleared by
+  `clear_object()`), and the page keeps them in its item cache (128 MB, least recently used
+  out, the colour-by item pinned). Read a field's values with `fieldColumn()` /
+  `needFields()`, which take either. Expression items share one colour scale
+  (`scaleKey()`). `color_by()` reads an item before its request, so the page does not ask
+  back while R waits.
 - In the browser `state.metaInfo` lists every column and `state.meta` holds the loaded ones.
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
@@ -227,7 +242,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
   answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
-  (adr/0019); the catalog panel's: `catalog`, `pull`, answered only to a page showing the
+  (adr/0019); the Data panel's `catalog`, `pull`, and the item cache's `item`, answered only to a page showing the
   current load (`.lens_object_ops`). An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.

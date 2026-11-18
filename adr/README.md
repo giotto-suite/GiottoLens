@@ -71,3 +71,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0018](0018-object-shown-from-a-snapshot.md) | The viewer shows a snapshot of the object, in the object's project | Proposed | 2026-11-12 |
 | [0019](0019-projects-opened-from-the-page.md) | Projects are opened from the page, and R does the opening | Proposed | 2026-11-12 |
 | [0023](0023-spatial-view-docks-one-deck-per-view.md) | The spatial view docks, one Deck per view; page controls move to a tools bar and a selection bar | Proposed | 2026-11-17 |
+| [0024](0024-fields-hold-item-keys-items-are-cached-not-metadata.md) | A field holds an item key; items are cached by the page, not added to the metadata | Proposed | 2026-11-18 |

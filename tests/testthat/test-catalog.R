@@ -52,7 +52,7 @@ test_that("the catalog lists each source's names, and the page's copy shares rep
     expect_null(ex[[2]]$items)
 
     tbl <- .catalog_table(cat)
-    expect_identical(names(tbl), c("source", "slot", "feat_type", "name", "item"))
+    expect_identical(names(tbl), c("source", "slot", "feat_type", "name", "item", "key"))
     expect_identical(nrow(tbl), 3L + 2L + 2L + 1L + 2L)
 })
 
@@ -84,6 +84,57 @@ test_that("a plan names repeated items by source and dim reduction axes by reduc
     vals <- suppressMessages(GiottoClass::spatValues(catalog_object(), svkey = plan$keys,
         verbose = FALSE))
     expect_true(all(plan$cols$result %in% names(vals)))
+})
+
+test_that("item keys encode as the page does and name one catalog item", {
+    # The same key is checked in inst/viewer-src/test/items.test.ts
+    key <- "@expression/rna/normalized//CD3E%2F%CE%B1%20b"
+    expect_identical(.item_key("expression", "rna", "CD3E/\u03b1 b", name = "normalized"), key)
+    ref <- .parse_item_key(key, "t")
+    expect_identical(ref$item, "CD3E/\u03b1 b")
+    expect_identical(ref$name, "normalized")
+    expect_null(ref$method)
+    dr <- .item_key("dimension_reduction", "rna", "Dim.1", name = "umap", method = "umap")
+    expect_identical(.parse_item_key(dr, "t")[c("slot", "method", "item")],
+        list(slot = "dimension_reduction", method = "umap", item = "Dim.1"))
+    expect_error(.parse_item_key("half", "t"), "not an item key")
+    expect_error(.parse_item_key("@expression/rna/raw/g1", "t"), "not an item key")
+    expect_error(.parse_item_key("@counts/rna/raw//g1", "t"), "not an item key")
+
+    cat <- .lens_catalog(catalog_object(), "bin")
+    tbl <- .catalog_table(cat)
+    expect_identical(tbl$key, .item_keys(cat, tbl))
+    s <- .catalog_source_for(cat, .parse_item_key(tbl$key[tbl$item == "Dim.2"], "t"), "t")
+    expect_identical(s$slot, "dimension_reduction")
+    expect_error(.catalog_source_for(cat, .parse_item_key(
+        .item_key("expression", "rna", "nope", name = "raw"), "t"), "t"), "has no 'nope'")
+})
+
+test_that("an item is read on its own into items/, never into the metadata", {
+    cv <- catalog_viewer()
+    on.exit(cv$done(), add = TRUE)
+    priv <- cv$priv
+    tbl <- cv$v$catalog()
+    key <- tbl$key[tbl$item == "g1" & tbl$name %in% "normalized"]
+    e <- priv$read_item(key, "t")
+    expect_identical(e$name, key)
+    expect_identical(e$kind, "continuous")
+    expect_match(e$url, "^session/items/")
+    expect_true(file.exists(file.path(priv$items_dir(), basename(e$url))))
+    expect_equal(.read_meta_column(priv$items_dir(), e),
+        GiottoClass::getExpression(catalog_object(), spat_unit = "bin", feat_type = "rna",
+            values = "normalized", output = "matrix")["g1", priv$cell_ids], ignore_attr = TRUE)
+    expect_false("g1" %in% priv$meta_names())
+    # Read once per object
+    expect_identical(priv$read_item(key, "t"), e)
+    half <- priv$read_item(tbl$key[tbl$item == "half"], "t")
+    expect_identical(half$kind, "categorical")
+    expect_error(priv$read_item(.item_key("expression", "rna", "nope", name = "raw"), "t"),
+        "has no 'nope'")
+    # The object's items go with it
+    priv$clear_object()
+    expect_length(priv$item_files, 0L)
+    expect_length(list.files(priv$items_dir()), 0L)
 })
 
 test_that("pull() adds columns to the metadata shown and replaces one of the same name", {
@@ -164,6 +215,14 @@ test_that("the page asks for the catalog and pulls, from the current object only
     expect_identical(cv$priv$meta_entry("array_row")$kind, "categorical")
     send("3", op = "pull", keys = list(list(source = meta$id, items = list("nope"))))
     expect_match(answer("3")$error, "not in the catalog: nope")
+    key <- .item_key("expression", "rna", "g2", name = "raw")
+    send("5", op = "item", key = key)
+    r <- answer("5")$data
+    expect_identical(r$name, key)
+    expect_match(r$url, "^session/items/")
+    expect_false("g2" %in% cv$priv$meta_names())
+    send("6", op = "item", key = "g2")
+    expect_match(answer("6")$error, "not an item key")
 
     # A page still on an earlier load is refused
     b <- ws_client(ws_url(v), load = cv$priv$load_seq - 1L)

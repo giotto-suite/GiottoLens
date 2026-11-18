@@ -62,7 +62,7 @@ a file and restoring it in a later session is issue #21.
 A dock panel for what the object shown holds beyond the metadata already pushed, and for the
 cells themselves as rows.
 
-The catalog and pull are in place (design.Rmd "Cells"): the catalog panel lists what
+The catalog and pull are in place (design.Rmd "Cells"): the Data panel lists what
 `spatValues()` can return for the spatial unit shown, from the object R loads anyway, and
 pulls the items queued in one `spatValues()` call over `gobject()`, adding columns to the
 viewer's metadata, not the object. `viewer$catalog()` and `viewer$pull()` are the same from
@@ -84,6 +84,10 @@ Next:
    undo, kept with the config R holds (adr/0009). This is the list of changes the editing
    core's undo builds on ("Plugins", item 1). It records the view, not the data: snapshots
    do that.
+4. **Fields everywhere.** Colour-by holds an item key and takes items from the picker
+   without adding columns (adr/0024). The histogram and scatter axes, rules and the cell
+   table take metadata columns only; they move to fields next, with a rule on an item
+   pinning it in the page's item cache.
 
 ## The large-data path
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { expandCatalog, sourceLabel, columnFor, pullKeys } from '../panels/catalog.ts';
-import type { CatalogSource } from '../panels/catalog.ts';
+import { expandCatalog, sourceLabel, columnFor, pullKeys } from '../data/catalog.ts';
+import type { CatalogSource } from '../data/catalog.ts';
 
 const payload = {
   spat_unit: 'cell',

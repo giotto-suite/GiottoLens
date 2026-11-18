@@ -53,7 +53,8 @@ export interface Config {
   txPalette: number;
   colorAll: boolean;
   genes: string[];              // selected genes, by name
-  colorBy: string | null;       // metadata column colouring the cells
+  colorBy: string | null;       // field colouring the cells: a metadata column or an item key (data/items.ts)
+  recentItems: string[];        // item keys picked, newest first (RECENT_ITEMS at most): the color-by menu's recent group
   // per categorical column, per category: color, visibility, fill opacity
   categoryStyles: Record<string, Record<string, CategoryStyle>>;
   colorScales: Record<string, ColorScale>;   // per continuous column
@@ -80,6 +81,8 @@ export interface Runtime {
 
 export type LensState = Config & Runtime;
 
+export const RECENT_ITEMS = 8;
+
 export const initialConfig = (): Config => ({
   layers: {
     poly:        { show: true,  alpha: 0.6 },
@@ -93,6 +96,7 @@ export const initialConfig = (): Config => ({
   colorAll: false,
   genes: [],
   colorBy: null,
+  recentItems: [],
   categoryStyles: {},
   colorScales: {},
   cellMark: {},
@@ -193,6 +197,10 @@ export const actions = {
   clearGenes() { set({ genes: [] }); },
   setView(view: SavedView | null) { set({ view }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  // An item to the front of the recent list
+  noteItem(key: string) {
+    set(s => ({ recentItems: [key, ...s.recentItems.filter(k => k !== key)].slice(0, RECENT_ITEMS) }));
+  },
   // patch the styles of some categories of `column`
   setCategoryStyles(column: string, patch: Record<string, Partial<CategoryStyle>>) {
     set(s => {

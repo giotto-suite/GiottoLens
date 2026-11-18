@@ -132,7 +132,8 @@ prep_meta <- function(
 # (.retype_meta()). `values` keeps the numbers behind each numeric column
 # shown as categories, so it can go back to continuous exactly. A `types`
 # entry over the level limit is not applied; its column is in `dropped`.
-.write_metadata <- function(meta, dir, cell_ids, types = NULL, site = "push_metadata") {
+.write_metadata <- function(meta, dir, cell_ids, types = NULL, site = "push_metadata",
+                            served = "metadata") {
     if (!"cell_ID" %in% names(meta))
         stop("[", site, "] metadata needs a `cell_ID` column matching the ",
             "cell IDs", call. = FALSE)
@@ -164,7 +165,7 @@ prep_meta <- function(
             lv <- .numeric_levels(v)
             if (length(lv) <= .max_numeric_levels) {
                 enc <- .encode_numeric_categories(v, cn, lv)
-                entry <- c(enc$entry, url = .write_meta_column(dir, cn, enc$codes))
+                entry <- c(enc$entry, url = .write_meta_column(dir, cn, enc$codes, served))
                 values[[cn]] <- lv
             } else {
                 warning("[", site, "] `", cn, "` has ", length(lv), " distinct values, ",
@@ -177,7 +178,7 @@ prep_meta <- function(
             x <- .parse_numbers(v)
             if (!is.null(x)) {
                 entry <- list(name = cn, kind = "continuous", numeric = TRUE,
-                    url = .write_meta_column(dir, cn, x))
+                    url = .write_meta_column(dir, cn, x, served))
             } else {
                 warning("[", site, "] `", cn, "` has values that are not numbers; ",
                     "it is categorical", call. = FALSE)
@@ -187,7 +188,7 @@ prep_meta <- function(
         if (is.null(entry)) entry <- if (is.factor(v) || is.character(v) || is.logical(v)) {
             f <- if (is.factor(v)) droplevels(v) else factor(v)
             e <- list(name = cn, kind = "categorical", levels = as.list(levels(f)),
-                url = .write_meta_column(dir, cn, .category_codes(f)))
+                url = .write_meta_column(dir, cn, .category_codes(f), served))
             # Text that reads as numbers can be shown as a continuous scale.
             # Not numeric_*: `entry$numeric` would partial-match it
             if (!is.logical(v) && nlevels(f) && !is.null(.parse_numbers(levels(f))))
@@ -195,7 +196,7 @@ prep_meta <- function(
             e
         } else {
             list(name = cn, kind = "continuous", numeric = TRUE,
-                url = .write_meta_column(dir, cn, as.double(v)))
+                url = .write_meta_column(dir, cn, as.double(v), served))
         }
         columns[[length(columns) + 1L]] <- entry
     }
@@ -247,12 +248,14 @@ prep_meta <- function(
 # A column's file is named by its content, so the same values keep the same
 # URL across pushes (the browser keeps a column it has) and changed values
 # never reuse a cached one. Returns the URL, relative to the page.
-.write_meta_column <- function(dir, name, x) {
+# `served`: the session folder the file is served from (metadata/, or items/
+# for items read on their own)
+.write_meta_column <- function(dir, name, x, served = "metadata") {
     tmp <- tempfile("col", tmpdir = dir, fileext = ".tmp")
     arrow::write_parquet(data.frame(value = x), tmp)
     path <- file.path(dir, sprintf("%s-%s.parquet", name, unname(tools::md5sum(tmp))))
     if (file.exists(path)) unlink(tmp) else file.rename(tmp, path)
-    paste0("session/metadata/", basename(path))
+    paste0("session/", served, "/", basename(path))
 }
 
 # Files no payload in `keep` points to. The viewer keeps the previous

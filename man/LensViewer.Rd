@@ -336,7 +336,7 @@ one sets the column's type through \code{cols}.
 the viewer's metadata: one row per source and item, from the
 cell metadata, expression matrices, spatial enrichments and dim
 reductions of the spatial unit shown. Listed when the object is
-loaded; the viewer's catalog panel shows the same.
+loaded; the viewer's Data panel shows the same.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$catalog()}
@@ -345,7 +345,8 @@ loaded; the viewer's catalog panel shows the same.
   \subsection{Returns}{
     A data.frame with columns \code{source} (an id), \code{slot},
 \code{feat_type}, \code{name} (the matrix, enrichment or reduction; \code{NA}
-for cell metadata) and \code{item}.
+for cell metadata), \code{item} and \code{key} (the item's key, which
+\code{color_by()} takes).
   }
 }
 
@@ -358,7 +359,7 @@ metadata: one \code{\link[GiottoClass:spatValues]{GiottoClass::spatValues()}} ca
 snapshot, loaded again with \code{gobject()}. Pulled columns are
 added to the metadata already shown, replacing a column of the
 same name; they belong to the viewer, not to the object. The
-viewer's catalog panel pulls the same way.
+viewer's Data panel pulls the same way.
 
 An item pulled from two sources at once is named
 \verb{<source>_<item>}; dim reduction axes are named
@@ -479,7 +480,10 @@ config (layers, colouring, rules, mode), view and counts.
 \if{html}{\out{<a id="method-LensViewer-color_by"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-color_by}{}}}
 \subsection{\code{LensViewer$color_by()}}{
-  Colour cells by a pushed metadata column (\code{NULL} for none)
+  Colour cells by a metadata column, or by one item of
+the object shown (a gene, an enrichment or dim reduction column,
+a cell metadata column of the object) without adding it to the
+metadata. \code{NULL} for none.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$color_by(column = NULL)}
@@ -488,7 +492,8 @@ config (layers, colouring, rules, mode), view and counts.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{column}}{Column name}
+      \item{\code{column}}{A metadata column name; an item key (the \code{key}
+column of \code{catalog()}); or one row of \code{catalog()}}
     }
     \if{html}{\out{</div>}}
   }

@@ -121,8 +121,9 @@ function load(m: MetaInfo): Promise<void> {
   return p;
 }
 
-// One column file, whole: the files are small and served without R
-async function readColumn(m: MetaInfo): Promise<Pick<MetaColumn, 'values' | 'min' | 'max'>> {
+// One column file, whole: the files are small and served without R. Item
+// files (data/items.ts) are read the same way.
+export async function readColumn(m: Pick<MetaInfo, 'kind' | 'url'>): Promise<Pick<MetaColumn, 'values' | 'min' | 'max'>> {
   const r = await fetch(new URL(m.url, document.baseURI).href);
   if (!r.ok) throw new Error(`${m.url}: HTTP ${r.status}`);
   const raw = (await readColumns(await r.arrayBuffer(), ['value'])).value ?? [];

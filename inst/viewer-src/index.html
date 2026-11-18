@@ -167,21 +167,34 @@
     .gene-row:not(.selected) .gene-name { color: var(--fg-3); }
     .list-overflow { padding: 6px 12px; color: var(--fg-4); font-size: 11px; }
 
-    /* The catalog panel (panels/catalog.ts) */
-    .catalog { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* The Data panel (panels/data.ts) */
+    .data-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* A short panel scrolls as a whole rather than squeezing the list away */
-    .catalog-list { min-height: 96px; }
-    .catalog-item.loaded .gene-name { font-style: italic; }
-    .catalog-mark { flex-shrink: 0; color: var(--fg-4); font-size: 10px; }
-    .catalog-queue { flex-shrink: 0; max-height: 140px; overflow-y: auto; border-top: 1px solid var(--bg-2); }
-    .catalog-queued { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-    .catalog-queued-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-1); }
-    .catalog-type { flex: 0 0 96px; }
-    .catalog .ctl-actions button:disabled { opacity: 0.4; cursor: default; }
-    .catalog-status { margin-top: 6px; font-size: 11px; color: var(--fg-3); overflow-wrap: anywhere; }
-    .catalog-status:empty { display: none; }
-    .catalog-status.error { color: #fca5a5; }
-    :root[data-theme="light"] .catalog-status.error { color: #b91c1c; }
+    .data-list { min-height: 96px; }
+    .data-item.loaded .gene-name { font-style: italic; }
+    .data-mark { flex-shrink: 0; color: var(--fg-4); font-size: 10px; }
+    .data-queue { flex-shrink: 0; max-height: 140px; overflow-y: auto; border-top: 1px solid var(--bg-2); }
+    .data-queued { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+    .data-queued-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-1); }
+    .data-type { flex: 0 0 96px; }
+    .data-panel .ctl-actions button:disabled { opacity: 0.4; cursor: default; }
+    .data-status { margin-top: 6px; font-size: 11px; color: var(--fg-3); overflow-wrap: anywhere; }
+    .data-status:empty { display: none; }
+    .data-status.error { color: #fca5a5; }
+    :root[data-theme="light"] .data-status.error { color: #b91c1c; }
+    /* The picker (panels/picker.ts): a popover over the page */
+    .picker { position: fixed; z-index: 1000; width: 280px; max-height: min(420px, 70vh);
+      display: flex; flex-direction: column; gap: 6px; padding: 8px;
+      background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 6px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.45); font-size: 12px; color: var(--fg-1); }
+    .picker .picker-list { min-height: 60px; padding: 0; }
+    .picker .gene-row:not(.selected) .gene-name { color: var(--fg-1); }
+    .picker.busy .picker-list { opacity: 0.5; pointer-events: none; }
+    .picker-status { font-size: 11px; color: var(--fg-3); overflow-wrap: anywhere; }
+    .picker-status:empty { display: none; }
+    .picker-status.error { color: #fca5a5; }
+    :root[data-theme="light"] .picker-status.error { color: #b91c1c; }
+    .color-by-browse { flex-shrink: 0; }
 
     .annot-list { padding: 6px 0; }
     .annot-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; cursor: pointer; user-select: none; }

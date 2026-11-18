@@ -1,6 +1,8 @@
-// The cells panel: color the cells by a metadata column (store `colorBy`,
-// also set from R by color_by()), "treat as" for numeric columns (and text
-// whose values are all numbers, to continuous), and its
+// The cells panel: color the cells by a field (store `colorBy`, also set
+// from R by color_by()): a metadata column, or an item of the object chosen
+// with the picker (panels/picker.ts) and kept in the menu's "recent" group,
+// so genes never crowd the metadata list. "Treat as" for numeric columns
+// (and text whose values are all numbers, to continuous), and the
 // legend. A continuous column's legend edits its color scale: a preset menu
 // (or custom colors, 2 to 9, each editable), reverse and reset. A categorical
 // column's legend edits each category's color, visibility and fill opacity.
@@ -14,6 +16,8 @@ import { escapeHtml } from '../ui/dom.js';
 import { SCALE_PRESETS, DEFAULT_SCALE, MAX_SCALE_COLORS, continuousColor } from '../render/colors.ts';
 import type { Legend } from '../render/colors.ts';
 import type { PanelHandle } from './dock.ts';
+import { isItemKey, fieldLabel } from '../data/items.ts';
+import { openPicker } from './picker.ts';
 
 const LEGEND_MAX = 30;
 const TYPE_TIMEOUT_MS = 5000;
@@ -239,19 +243,23 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
     className: 'panel-note', textContent: 'Push metadata from R to color the cells: viewer$push_metadata(g)' });
   const row = Object.assign(document.createElement('div'), { className: 'alpha-row' });
   const select = Object.assign(document.createElement('select'), { className: 'ctl-select color-by' });
+  const browse = Object.assign(document.createElement('button'), { className: 'scale-btn color-by-browse',
+    textContent: '…', title: 'pick a column or an item of the object (a gene, an enrichment, …)' });
   const typeRow = Object.assign(document.createElement('div'), { className: 'alpha-row cells-type' });
   const typeSel = Object.assign(document.createElement('select'), {
     className: 'ctl-select type-select', title: 'show this numeric column as a continuous scale or as categories' });
   typeSel.append(...['continuous', 'categorical'].map(t =>
     Object.assign(document.createElement('option'), { value: t, textContent: t })));
   const legend = Object.assign(document.createElement('div'), { className: 'cells-legend' });
-  row.append(Object.assign(document.createElement('label'), { textContent: 'color by' }), select);
+  row.append(Object.assign(document.createElement('label'), { textContent: 'color by' }), select, browse);
   typeRow.append(Object.assign(document.createElement('label'), { textContent: 'treat as' }), typeSel);
   root.append(row, typeRow, legend);
   const outline = createOutlineSection();
   outline.el.style.display = state.manifest?.layers?.cells?.geometry ? '' : 'none';
   body.append(note, root, outline.el);
   select.addEventListener('change', () => actions.setColorBy(select.value || null));
+  browse.addEventListener('click', () => openPicker({ anchor: browse, current: store.getState().colorBy,
+    onPick: field => actions.setColorBy(field) }));
 
   // "treat as": numeric columns, and text whose values are all numbers; R
   // sends the metadata again with the new type
@@ -291,26 +299,36 @@ export function createCellsPanel(body: HTMLElement): PanelHandle {
     syncRows(legend, lg);
   };
 
-  // Options follow the metadata columns, the legend the coloring; both bump
-  // metaVersion
-  let metaFor: unknown;
+  // Options follow the metadata columns and the recent items (with the item
+  // shown, set from R, if it is not among them), the legend the coloring;
+  // metadata and coloring bump metaVersion
+  let optsFor = '';
+  const option = (value: string, text: string) =>
+    Object.assign(document.createElement('option'), { value, textContent: text });
   const update = () => {
-    if (state.metaInfo !== metaFor) {
-      metaFor = state.metaInfo;
-      const cols = [...(state.metaInfo?.keys() ?? [])] as string[];
-      select.replaceChildren(...['', ...cols].map(c =>
-        Object.assign(document.createElement('option'), { value: c, textContent: c || 'none' })));
-      note.style.display = cols.length ? 'none' : '';
-      root.style.display = cols.length ? '' : 'none';
+    const { recentItems, colorBy } = store.getState();
+    const items = isItemKey(colorBy) && !recentItems.includes(colorBy) ? [colorBy, ...recentItems] : recentItems;
+    const cols = [...(state.metaInfo?.keys() ?? [])] as string[];
+    const key = JSON.stringify([cols, items]);
+    if (key !== optsFor) {
+      optsFor = key;
+      const recent = document.createElement('optgroup');
+      recent.label = 'recent';
+      recent.append(...items.map(k => option(k, fieldLabel(k))));
+      select.replaceChildren(option('', 'none'), ...cols.map(c => option(c, c)), ...(items.length ? [recent] : []));
+      const any = cols.length > 0 || !!state.manifest?.catalog;
+      note.style.display = any ? 'none' : '';
+      root.style.display = any ? '' : 'none';
     }
-    select.value = store.getState().colorBy ?? '';
+    select.value = colorBy ?? '';
     syncType();
     renderLegend();
   };
   update();
   const unsub = [
     store.subscribe(s => s.metaVersion, update),
-    store.subscribe(s => s.colorBy, c => { select.value = c ?? ''; syncType(); }),
+    store.subscribe(s => s.colorBy, update),
+    store.subscribe(s => s.recentItems, update),
   ];
 
   return { destroy() { clearTimeout(typeTimer); outline.destroy(); unsub.forEach(u => u()); } };

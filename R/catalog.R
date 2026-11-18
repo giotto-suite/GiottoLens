@@ -4,7 +4,9 @@
 # with the names it holds. Built at load from the object shown, so it lists
 # the snapshot's contents; kept until the next load. Pulls go through
 # viewer$gobject() (the snapshot loaded again) and add columns to the
-# viewer's metadata, not to the object.
+# viewer's metadata, not to the object. A field that shows one item (the
+# page's color-by) names it by its item key instead (.item_key()); its values
+# are read on their own into the session's items/ folder (adr/0024).
 
 # Sources for spatial unit `spat_unit` of giotto object `x`: a list of
 # list(id, slot, feat_type, name, method, items). Names only: nothing here
@@ -58,10 +60,12 @@
 # One row per source and item, as viewer$catalog() returns it
 .catalog_table <- function(cat) {
     rows <- lapply(cat$sources, function(s) data.frame(source = s$id, slot = s$slot,
-        feat_type = s$feat_type, name = s$name %||% NA_character_, item = s$items))
+        feat_type = s$feat_type, name = s$name %||% NA_character_, item = s$items,
+        key = vapply(s$items, function(i) .item_key(s$slot, s$feat_type, i, name = s$name,
+            method = s$method), "", USE.NAMES = FALSE)))
     if (!length(rows))
         return(data.frame(source = integer(), slot = character(), feat_type = character(),
-            name = character(), item = character()))
+            name = character(), item = character(), key = character()))
     do.call(rbind, rows)
 }
 
@@ -135,4 +139,55 @@
         cols[[k]] <- data.frame(result = result, column = .meta_name(column), type = rows$type)
     }
     list(keys = keys, cols = do.call(rbind, cols))
+}
+
+# An item's key: `@` and slot, feature type, source name, method and item,
+# each percent-encoded (every byte but letters, digits and `_.~-`) and joined
+# by `/`. itemKey() in data/items.ts writes the same; change both together.
+# Metadata column names never start with `@` (.meta_name()).
+.item_key <- function(slot, feat_type, item, name = NULL, method = NULL) {
+    enc <- function(s) {
+        b <- as.integer(charToRaw(enc2utf8(as.character(s %||% ""))))
+        keep <- (b >= 48L & b <= 57L) | (b >= 65L & b <= 90L) | (b >= 97L & b <= 122L) |
+            b %in% c(45L, 46L, 95L, 126L)
+        paste(ifelse(keep, vapply(b, intToUtf8, ""), sprintf("%%%02X", b)), collapse = "")
+    }
+    paste0("@", paste(vapply(list(slot, feat_type, name, method, item), enc, ""), collapse = "/"))
+}
+
+.is_item_key <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && startsWith(x, "@")
+
+# list(slot, feat_type, name, method, item) from a key; NULL parts are empty
+.parse_item_key <- function(key, site) {
+    bad <- function() stop("[", site, "] '", key, "' is not an item key", call. = FALSE)
+    if (!.is_item_key(key)) bad()
+    p <- strsplit(substring(key, 2L), "/", fixed = TRUE)[[1L]]
+    if (length(p) != 5L) bad()
+    p <- vapply(p, function(x) {
+        x <- utils::URLdecode(x)
+        Encoding(x) <- "UTF-8"
+        x
+    }, "", USE.NAMES = FALSE)
+    slots <- c("cell_metadata", "expression", "spatial_enrichment", "dimension_reduction")
+    if (!p[[1L]] %in% slots || !nzchar(p[[5L]])) bad()
+    list(slot = p[[1L]], feat_type = p[[2L]], name = if (nzchar(p[[3L]])) p[[3L]],
+        method = if (nzchar(p[[4L]])) p[[4L]], item = p[[5L]])
+}
+
+# The catalog source an item key names, with the item in it
+.catalog_source_for <- function(cat, ref, site) {
+    s <- Find(function(s) identical(s$slot, ref$slot) && identical(s$feat_type, ref$feat_type) &&
+        identical(s$name, ref$name) && identical(s$method, ref$method), cat$sources)
+    if (is.null(s) || !ref$item %in% s$items)
+        stop("[", site, "] the object has no '", ref$item, "' in ",
+            paste(c(ref$slot, ref$feat_type, ref$name, ref$method), collapse = " "), call. = FALSE)
+    s
+}
+
+# Item keys for rows of the catalog table (`source` and `item` columns)
+.item_keys <- function(cat, rows) {
+    vapply(seq_len(nrow(rows)), function(i) {
+        s <- cat$sources[[as.integer(rows$source[[i]])]]
+        .item_key(s$slot, s$feat_type, rows$item[[i]], name = s$name, method = s$method)
+    }, "")
 }

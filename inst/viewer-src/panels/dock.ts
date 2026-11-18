@@ -7,7 +7,7 @@
 // layout is config (store `layout`): it is saved through R and restored after
 // a reload. Charts (scatter, histogram, density) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// Controls (cells, transcripts, catalog, images, annotations, register, layers)
+// Controls (cells, transcripts, data, images, annotations, register, layers)
 // are one per viewer, with their kind as id, and keep their own state in the store
 // (adr/0016). So are the spatial view, which can be closed and opened again
 // from a "+" menu, and the tools bar, which cannot be closed.
@@ -34,7 +34,7 @@ import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createCellsPanel } from './cells.ts';
 import { createTranscriptsPanel } from './transcripts.ts';
-import { createCatalogPanel } from './catalog.ts';
+import { createDataPanel } from './data.ts';
 import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
@@ -74,7 +74,7 @@ const TYPES = {
   transcripts: { create: createTranscriptsPanel, single: true, slot: 'data',
                  available: () => !!state.manifest?.layers?.transcripts },
   // A giotto object shown: R has a catalog to pull from
-  catalog:     { create: createCatalogPanel, single: true, slot: 'catalog',
+  data:        { create: createDataPanel, single: true, slot: 'sources',
                  available: () => !!state.cells && !!state.manifest?.catalog },
   images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },

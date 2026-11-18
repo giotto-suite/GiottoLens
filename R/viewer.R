@@ -404,8 +404,8 @@ LensViewer <- R6::R6Class("LensViewer",
             private$routes$images <- list()
             private$session   <- file.path(tempdir(), "giottolens",
                 paste0(port, "-", .rand_id(8L)))
-            dir.create(file.path(private$session, "metadata"),
-                recursive = TRUE, showWarnings = FALSE)
+            for (d in c("metadata", "items"))
+                dir.create(file.path(private$session, d), recursive = TRUE, showWarnings = FALSE)
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host)
             assign(as.character(port), self, envir = .lens_registry)
@@ -591,10 +591,11 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   the viewer's metadata: one row per source and item, from the
         #'   cell metadata, expression matrices, spatial enrichments and dim
         #'   reductions of the spatial unit shown. Listed when the object is
-        #'   loaded; the viewer's catalog panel shows the same.
+        #'   loaded; the viewer's Data panel shows the same.
         #' @returns A data.frame with columns `source` (an id), `slot`,
         #'   `feat_type`, `name` (the matrix, enrichment or reduction; `NA`
-        #'   for cell metadata) and `item`.
+        #'   for cell metadata), `item` and `key` (the item's key, which
+        #'   `color_by()` takes).
         catalog = function() {
             .catalog_table(private$need_catalog("LensViewer$catalog"))
         },
@@ -604,7 +605,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   snapshot, loaded again with `gobject()`. Pulled columns are
         #'   added to the metadata already shown, replacing a column of the
         #'   same name; they belong to the viewer, not to the object. The
-        #'   viewer's catalog panel pulls the same way.
+        #'   viewer's Data panel pulls the same way.
         #'
         #'   An item pulled from two sources at once is named
         #'   `<source>_<item>`; dim reduction axes are named
@@ -685,10 +686,21 @@ LensViewer <- R6::R6Class("LensViewer",
             private$request("set_view", list(target = target, zoom = zoom, bounds = bounds))
         },
 
-        #' @description Colour cells by a pushed metadata column (`NULL` for none)
-        #' @param column Column name
+        #' @description Colour cells by a metadata column, or by one item of
+        #'   the object shown (a gene, an enrichment or dim reduction column,
+        #'   a cell metadata column of the object) without adding it to the
+        #'   metadata. `NULL` for none.
+        #' @param column A metadata column name; an item key (the `key`
+        #'   column of `catalog()`); or one row of `catalog()`
         color_by = function(column = NULL) {
-            private$request("set_color_by", list(column = column))
+            site <- "LensViewer$color_by"
+            if (is.data.frame(column)) {
+                if (nrow(column) != 1L || !all(c("source", "item") %in% names(column)))
+                    stop("[", site, "] `column` must be one row of catalog()", call. = FALSE)
+                column <- .item_keys(private$need_catalog(site), column)
+            }
+            item <- if (.is_item_key(column)) private$read_item(column, site)
+            private$request("set_color_by", Filter(Negate(is.null), list(column = column, item = item)))
             invisible(self)
         },
 
@@ -1381,6 +1393,30 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # The column files (one per column: the only copy of the metadata)
         meta_dir = function() file.path(private$session, "metadata"),
+        # Items read on their own (color_by() an item, the `item` ask): one
+        # file each, kept for the object shown; their entries by item key
+        items_dir = function() file.path(private$session, "items"),
+        item_files = list(),
+        read_item = function(key, site) {
+            hit <- private$item_files[[key]]
+            if (!is.null(hit)) return(hit)
+            cat <- private$need_catalog(site)
+            ref <- .parse_item_key(key, site)
+            src <- .catalog_source_for(cat, ref, site)
+            plan <- .pull_plan(cat, data.frame(source = src$id, item = ref$item,
+                type = NA_character_))
+            vals <- as.data.frame(suppressMessages(GiottoClass::spatValues(self$gobject(),
+                svkey = plan$keys, verbose = FALSE)))
+            res <- plan$cols$result
+            if (!res %in% names(vals))
+                stop("[", site, "] '", ref$item, "' was not found in the object", call. = FALSE)
+            out <- .write_metadata(data.frame(cell_ID = vals$cell_ID, item = vals[[res]]),
+                private$items_dir(), private$cell_ids, site = site, served = "items")
+            entry <- out$msg$columns[[1L]]
+            entry$name <- key
+            private$item_files[[key]] <- entry
+            entry
+        },
         # Adopt a payload (from .write_metadata(), or with a column rewritten
         # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
         # rules on those columns first. Files neither it nor the previous
@@ -1595,7 +1631,7 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # A request from the page (`ask`), answered to that page only with
         # `answer` {id, data, error, code}. The start page lists projects and
-        # their snapshots and opens one (adr/0019); the catalog panel lists
+        # their snapshots and opens one (adr/0019); the Data panel lists
         # what can be pulled and pulls it, which only a page showing the
         # current object may do (adr/0017).
         answer = function(ws, id, dat) {
@@ -1643,6 +1679,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     list(data = list(snapshot = private$snapshot))
                 },
                 catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
+                # One item's file, for a field that shows it (data/items.ts)
+                item = list(data = private$read_item(str1(dat$key) %||% "", "LensViewer")),
                 # keys: [{source, items: [...], types: [...]}], a type per item
                 # ("auto" for as the values are)
                 pull = {
@@ -1686,6 +1724,8 @@ LensViewer <- R6::R6Class("LensViewer",
         clear_object = function() {
             for (id in names(private$pushed)) private$drop_panel_file(id)
             .prune_meta_files(private$meta_dir(), character())
+            .prune_meta_files(private$items_dir(), character())
+            private$item_files   <- list()
             private$config_json  <- NULL
             private$rule_set     <- list()
             private$combine      <- "and"
@@ -1925,7 +1965,7 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "cells",
-    "transcripts", "catalog", "images", "register", "annotations", "layers")
+    "transcripts", "data", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

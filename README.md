@@ -57,6 +57,9 @@ viewer$select(lens_range("nr_feats", 50, 200), source = "hist", replace = FALSE,
 viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
+cat <- viewer$catalog()
+viewer$color_by(cat[cat$item == "CD3E" & cat$name %in% "normalized", ])
+                                                  # one gene, not added to the metadata
 viewer$set_outline(color = "black", width = 2, alpha = 1)  # cell outline color, width (px), opacity
 viewer$set_theme("light")                         # light panels; the spatial view stays dark
 viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
