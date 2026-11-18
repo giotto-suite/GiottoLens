@@ -70,8 +70,6 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
 adr/          decision records
-dev/          development scripts, not in the package (dev/atera_images.R: until GiottoDisk's
-              VRT fix, points the Atera images back at their original OME-TIFFs)
 ```
 
 ## Workflow
