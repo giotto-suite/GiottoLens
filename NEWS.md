@@ -1,5 +1,10 @@
 # GiottoLens (development version)
 
+* Work the viewer does for the page can run as jobs in a background R process that keeps the
+  object shown loaded, so R and the page stay free. `viewer$jobs()` lists them and
+  `viewer$cancel_job()` stops one. The protocol is 7. See adr/0025.
+* Hand-over snapshots are written with qs2 when it is installed, which saves several seconds
+  on large objects.
 * Cross-filter mode is on by default: the selection is the cells every source selects.
   `set_selection()` still turns it off.
 * The spatial view is a panel: move, split, or close it, and add it back from a `+` menu.

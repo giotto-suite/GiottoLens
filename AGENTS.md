@@ -39,6 +39,8 @@ R/
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
                the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
+  jobs.R       jobs: the viewer's mirai daemon holding the object shown, its helpers
+               (.jw_object(), .jw_run(), .lens_progress()), adr/0025
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -210,7 +212,22 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
+### Jobs (adr/0025)
+
+- Work R does for the page that takes more than a moment runs as a job: private
+  `start_job(label, fun, args, apply, ref, on_end, progress)` (or `run_job()` to wait),
+  never on the main thread. `fun(g, ...)` runs in the viewer's mirai daemon over the object
+  shown, which the daemon loads from the project path and snapshot name once and keeps
+  (`cleanup = FALSE`); `apply()` runs on the main thread, and only if the object shown has not
+  changed (`load_seq`). `load()` cancels running jobs; `close()` stops the daemon.
+- The daemon runs installed packages only: `fun` and the helpers run there as plain functions
+  (`.job_fun()`), calling packages by `pkg::`. arrow loads first (`.job_packages`). Never
+  `library()` in a job.
+- A job writes to the project's vault (the daemon's artifact dump); never a temp source.
+- Cancelling interrupts (`stop_mirai()`, dispatcher on); a cancel rejects the job's promise
+  like an error, so it is told apart by the job's own flag.
+
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
@@ -224,6 +241,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
+- Jobs: R broadcasts `job` `{id, label, ref, state, message?, progress?}` as each starts, reports
+  progress and ends (`running`, `done`, `error`, `cancelled`); the page cancels one with the
+  `cancel_job` ask.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
   the number), and a connecting tab with no rules to re-send gets `rule_seq`. A
@@ -348,7 +368,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
 `set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
-`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

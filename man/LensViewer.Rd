@@ -76,6 +76,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
     \item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
     \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
+    \item \href{#method-LensViewer-jobs}{\code{LensViewer$jobs()}}
+    \item \href{#method-LensViewer-cancel_job}{\code{LensViewer$cancel_job()}}
     \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
     \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
     \item \href{#method-LensViewer-clone}{\code{LensViewer$clone()}}
@@ -1063,6 +1065,49 @@ Falls back to an \code{x$name} column if present, else blank.}
       \item{\code{callback}}{Function of one argument, the message data}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-jobs"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-jobs}{}}}
+\subsection{\code{LensViewer$jobs()}}{
+  Jobs running in the viewer's background R process
+(adr/0025), one row each. The process starts with the first job,
+which waits while it loads its packages and the object shown, and
+stops with the viewer; later jobs on the same object start at once.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$jobs()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with columns \code{id}, \code{label}, \code{started}, and
+\code{done} and \code{total} (progress; \code{NA} for a job that reports none)
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-cancel_job"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-cancel_job}{}}}
+\subsection{\code{LensViewer$cancel_job()}}{
+  Cancel a job. One not started yet is dropped; one
+running is interrupted (compiled code may finish its current call
+first). Its result is never applied.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$cancel_job(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Job id, as \code{jobs()} lists it}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    Whether the job was cancelled, invisibly
   }
 }
 

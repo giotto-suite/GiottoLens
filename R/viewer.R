@@ -1229,8 +1229,31 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Jobs running in the viewer's background R process
+        #'   (adr/0025), one row each. The process starts with the first job,
+        #'   which waits while it loads its packages and the object shown, and
+        #'   stops with the viewer; later jobs on the same object start at once.
+        #' @returns A data.frame with columns `id`, `label`, `started`, and
+        #'   `done` and `total` (progress; `NA` for a job that reports none)
+        jobs = function() {
+            js <- unname(as.list(private$running_jobs))
+            num <- function(f) vapply(js, function(j) as.numeric(j$progress[[f]] %||% NA), 0)
+            data.frame(id = vapply(js, function(j) j$id, 0L),
+                label = vapply(js, function(j) j$label, ""),
+                started = .POSIXct(vapply(js, function(j) as.numeric(j$started), 0)),
+                done = num("done"), total = num("total"), row.names = NULL)
+        },
+
+        #' @description Cancel a job. One not started yet is dropped; one
+        #'   running is interrupted (compiled code may finish its current call
+        #'   first). Its result is never applied.
+        #' @param id Job id, as `jobs()` lists it
+        #' @returns Whether the job was cancelled, invisibly
+        cancel_job = function(id) invisible(private$cancel(id)),
+
         #' @description Stop the server and remove this viewer's temp files
         close = function() {
+            private$stop_jobs()
             if (!is.null(private$server)) {
                 private$server$stop()
                 private$server <- NULL
@@ -1398,6 +1421,9 @@ LensViewer <- R6::R6Class("LensViewer",
         # it has (adr/0017).
         load = function(object) {
             if (!is.null(object$x)) object <- private$handover(object)
+            # Their results would land on the next object; the daemon keeps
+            # the old object until a job asks for another
+            for (id in names(private$running_jobs)) private$cancel(id, "the object shown changed")
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
             cl <- .export_session(object$layers$gpoints, object$layers$gpolygons,
@@ -1555,14 +1581,128 @@ LensViewer <- R6::R6Class("LensViewer",
                     message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
                     list(data = list(snapshot = private$snapshot))
                 },
+                # A job the page started (its `job` messages carry the id)
+                cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
+                    private$cancel(dat$id))),
                 list(error = "unknown request")
             )
         },
 
         save_snapshot = function(src, x, keep) {
+            # qs2 when installed: on the Atera section it writes in 0.4 to 1 s
+            # where gzip RDS takes 5.4 s, and reads faster
             suppressMessages(GiottoDisk::snapshotSave(src, x, name = .lens_snapshot_name(src),
                 keep = keep, creator = "GiottoLens", session = private$session_id,
+                method = if (requireNamespace("qs2", quietly = TRUE)) "qs2" else "rds",
                 verbose = FALSE))
+        },
+
+        # Jobs (R/jobs.R, adr/0025)
+        job_profile  = NULL,     # the jobs' mirai compute profile, from the first job
+        running_jobs = list(),   # by id: an environment per job
+        job_seq      = 0L,
+
+        # Run `fun(g, ...)` (`args`) over the object shown in the jobs'
+        # daemon. On the main thread when it ends: `apply(value)` if it
+        # succeeded and the object shown is still the one it started from,
+        # then `on_end(list(state, result, message))` whatever happened
+        # (`state`: done, error or cancelled). Every tab hears of it as a
+        # `job` message carrying `ref`, the page's name for it, and with
+        # `progress = TRUE` how far it is (.lens_progress()). Returns its id.
+        start_job = function(label, fun, args = list(), apply = identity, ref = NULL,
+                             on_end = NULL, progress = FALSE) {
+            private$need_object("LensViewer")
+            if (is.null(private$project))
+                stop("[LensViewer] jobs need an object shown from a snapshot", call. = FALSE)
+            if (is.null(private$job_profile))
+                private$job_profile <- .job_daemon(paste0("giottolens-", self$port, "-", .rand_id(6L)))
+            id <- private$job_seq <- private$job_seq + 1L
+            job <- new.env(parent = emptyenv())
+            job$id <- id
+            job$label <- label
+            job$ref <- ref
+            job$load <- private$load_seq
+            job$started <- Sys.time()
+            job$cancelled <- FALSE
+            job$file <- if (isTRUE(progress)) {
+                dir.create(file.path(private$session, "jobs"), showWarnings = FALSE)
+                file.path(private$session, "jobs", paste0(id, ".progress"))
+            }
+            # .args, not `...`: kept out of the daemon's global environment,
+            # which keeps the object between jobs
+            job$m <- mirai::mirai(.jw_run(fun, args, path, name, progress), .args = list(
+                fun = .job_fun(fun), args = args, path = private$project@path,
+                name = private$snapshot_name(), progress = job$file), .compute = private$job_profile)
+            private$running_jobs[[as.character(id)]] <- job
+            private$job_message(job, "running")
+            if (!is.null(job$file)) private$poll_progress(job)
+            end <- function(state, result = NULL, msg = NULL) {
+                private$running_jobs[[as.character(id)]] <- NULL
+                if (!is.null(job$file)) unlink(paste0(job$file, c("", ".tmp")))
+                private$job_message(job, state, msg)
+                if (!is.null(on_end)) on_end(list(state = state, result = result, message = msg))
+            }
+            promises::then(job$m,
+                onFulfilled = function(value) {
+                    if (!identical(private$load_seq, job$load))
+                        return(end("cancelled", msg = "the object shown changed"))
+                    res <- tryCatch(list(ok = apply(value)), error = function(e) e)
+                    if (inherits(res, "error")) end("error", msg = conditionMessage(res))
+                    else end("done", result = res$ok)
+                },
+                # A cancel rejects too ("Operation canceled"): told apart by
+                # the job's own flag
+                onRejected = function(e) {
+                    if (job$cancelled) end("cancelled", msg = job$why)
+                    else end("error", msg = .job_error_text(e))
+                })
+            id
+        },
+        # start_job() and wait for it, pumping the event loop: its result, or
+        # an error naming `site`. Cancelled after `timeout` seconds.
+        run_job = function(site, label, fun, args = list(), apply = identity, timeout = Inf) {
+            out <- NULL
+            id <- private$start_job(label, fun, args, apply, on_end = function(r) out <<- r)
+            t0 <- Sys.time()
+            while (is.null(out)) {
+                if (as.numeric(Sys.time() - t0, units = "secs") > timeout)
+                    private$cancel(id, paste("timed out after", timeout, "s"))
+                later::run_now(0.05)
+            }
+            if (out$state != "done")
+                stop("[", site, "] ", label, " ", out$state, ": ", out$message, call. = FALSE)
+            out$result
+        },
+        # The job's progress file, while it runs
+        poll_progress = function(job) {
+            later::later(function() {
+                if (is.null(private$running_jobs[[as.character(job$id)]])) return()
+                p <- .read_progress(job$file)
+                if (!is.null(p) && !identical(p, job$progress)) {
+                    job$progress <- p
+                    private$job_message(job, "running")
+                }
+                private$poll_progress(job)
+            }, 0.25)
+        },
+        cancel = function(id, why = "cancelled") {
+            job <- private$running_jobs[[as.character(id)]]
+            if (is.null(job) || job$cancelled) return(FALSE)
+            job$cancelled <- TRUE
+            job$why <- why
+            isTRUE(mirai::stop_mirai(job$m))
+        },
+        job_message = function(job, state, msg = NULL) {
+            if (!self$connected()) return()
+            private$broadcast(.encode_ws_message("job", Filter(Negate(is.null), list(
+                id = job$id, label = job$label, ref = job$ref, state = state, message = msg,
+                progress = job$progress))))
+        },
+        stop_jobs = function() {
+            for (id in names(private$running_jobs)) private$cancel(id, "the viewer was closed")
+            .job_stop_daemon(private$job_profile)
+            private$job_profile <- NULL
+            private$running_jobs <- list()
         },
 
         snapshot_name = function() {
