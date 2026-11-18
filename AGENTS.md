@@ -81,8 +81,6 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
 adr/          decision records
-dev/          development scripts, not in the package (dev/atera_images.R: until GiottoDisk's
-              VRT fix, points the Atera images back at their original OME-TIFFs)
 ```
 
 ## Workflow
@@ -281,6 +279,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   tab on `ready`; the page cancels one with the `cancel_job` ask. The page keeps the running
   jobs and the last few finished ones (`ui/jobs.ts`), shown in the tools bar's jobs popover
   only, never the status line.
+- `close()` sends `closed` to every tab before stopping; a page that has it stops
+  reconnecting (status `closed`). The page's stop button sends `close`, which R handles on
+  the next `later` turn, never inside the server's own callback.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
   the number), and a connecting tab with no rules to re-send gets `rule_seq`. A
@@ -377,7 +378,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `onWillDrop`, since a group lock still shows drop targets). Its group has low layout
   priority through dockview's private `_priority`; recheck these when bumping dockview.
 - The selection bar (`ui/selbar.js`, `ui/rules.js`, static markup with ids in `index.html`,
-  outside the dock) shows R's connection, the page's selection (the rules toggle, the count
+  outside the dock) shows R's connection with the stop button (`close`; also on the start
+  page, `initRStatus()`), the page's selection (the rules toggle, the count
   with a fixed minimum width, the rule chips) and the status line. Keep buttons out of it
   after the count, since they would move as the count changes. The actions on the selection (combine mode, select by
   metadata, invert, clear) are the tools bar's (`panels/tools.ts`). Tools that act in a view

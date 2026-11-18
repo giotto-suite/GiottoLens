@@ -1612,3 +1612,40 @@ test_that("the jobs button lists running jobs, cancels one, and keeps the finish
     expect_length(v$jobs()$id, 0L)
     expect_identical(br$errors(), character())
 })
+
+test_that("the power button stops the viewer, and a stopped viewer's page stops reconnecting", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    stop_btn <- "document.getElementById('btn-close')"
+    expect_true(browser_wait(br, sprintf("!%s.disabled", stop_btn)))
+    expect_true(pump_until(function() v$connected()))
+
+    # One click only arms it
+    br$js(sprintf("%s.click()", stop_btn))
+    expect_true(br$js(sprintf("%s.classList.contains('armed')", stop_btn)))
+    later::run_now(0.3)
+    expect_false(is.null(priv$server))
+    expect_message({
+        br$js(sprintf("%s.click()", stop_btn))
+        expect_true(pump_until(function() is.null(priv$server)))
+    }, "stopped from the viewer")
+    expect_true(browser_wait(br, "document.getElementById('r-status').classList.contains('closed')"))
+    expect_true(br$js(sprintf("%s.disabled", stop_btn)))
+    expect_match(br$js("document.getElementById('status').textContent"), "viewer stopped")
+    expect_identical(br$errors(), character())
+
+    # Closed from R, the same
+    v2 <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v2$close(), add = TRUE)
+    br2 <- lens_browser(v2$url)
+    on.exit(br2$close(), add = TRUE)
+    expect_true(browser_wait(br2, sprintf("!%s.disabled", stop_btn)))
+    expect_true(pump_until(function() v2$connected()))
+    suppressMessages(v2$close())
+    expect_true(browser_wait(br2, "document.getElementById('r-status').classList.contains('closed')"))
+    expect_identical(br2$errors(), character())
+})
