@@ -1,7 +1,6 @@
 // The annotations panel: the drawn and pushed shapes (store `annotations`),
 // each selectable (its name is edited in the popup over the spatial view,
 // ui/annotations.js), zoomed to, or deleted. A note until there are any.
-import { state } from '../core/state.js';
 import { store, actions, type Annotation } from '../core/store.ts';
 // @ts-ignore: plain JS module
 import { fitZoom, escapeHtml, withZoom } from '../ui/dom.js';
@@ -9,16 +8,19 @@ import { fitZoom, escapeHtml, withZoom } from '../ui/dom.js';
 import { setViewState } from '../data/schedule.js';
 import { createIcons, icons } from 'lucide';
 import type { PanelHandle } from './dock.ts';
+import { spatialView } from '../spatial/current.ts';
 
 const TYPE_ABBR: Record<string, string> = { polygon: 'poly', rectangle: 'rect', freehand: 'free' };
 
 function zoomTo(a: Annotation) {
+  const vs = spatialView()?.viewState;
+  if (!vs) return;
   const xs = a.coords.map(p => p[0]), ys = a.coords.map(p => p[1]);
   const xmin = Math.min(...xs), xmax = Math.max(...xs);
   const ymin = Math.min(...ys), ymax = Math.max(...ys);
   const zoom = Math.min(fitZoom(Math.max(xmax - xmin, 1), Math.max(ymax - ymin, 1)) - 0.4,
-                        state.currentViewState.maxZoom);
-  setViewState(withZoom({ ...state.currentViewState, target: [(xmin + xmax) / 2, (ymin + ymax) / 2, 0] }, zoom));
+                        vs.maxZoom);
+  setViewState(withZoom({ ...vs, target: [(xmin + xmax) / 2, (ymin + ymax) / 2, 0] }, zoom));
 }
 
 export function createAnnotationsPanel(body: HTMLElement): PanelHandle {

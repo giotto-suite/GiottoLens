@@ -12,6 +12,7 @@ import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
 import { THEMES } from '../ui/theme.ts';
+import { spatialView, needView } from '../spatial/current.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
 
@@ -29,7 +30,7 @@ export function initRemote() {
   onMessage('get_state', () => ({
     config: { ...getConfig(), annotations: undefined, layout: undefined },
     panels: listPanels(),
-    view: state.currentViewState && viewInfo(state.currentViewState),
+    view: spatialView()?.viewState ? viewInfo(spatialView().viewState) : null,
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,
     metadata: state.metaInfo ? [...state.metaInfo.keys()] : [],
@@ -47,7 +48,7 @@ export function initRemote() {
   onMessage('rule_seq', ({ seq }) => { if (seq != null) syncRuleSeq(seq); });
 
   onMessage('set_view', ({ target, zoom, bounds }) => {
-    let vs = { ...state.currentViewState };
+    let vs = { ...needView().viewState };
     if (bounds) {
       const [xmin, xmax, ymin, ymax] = bounds;
       vs.target = [(xmin + xmax) / 2, (ymin + ymax) / 2, 0];
@@ -192,8 +193,9 @@ export function initRemote() {
   });
 
   onMessage('screenshot', () => {
-    state.deckgl.redraw('screenshot');
-    return { png: document.getElementById('deck-canvas').toDataURL('image/png') };
+    const view = needView();
+    view.deck.redraw('screenshot');
+    return { png: view.canvas.toDataURL('image/png') };
   });
 
   // A short log of what the user did, for R and agents to read back

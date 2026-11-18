@@ -8,51 +8,29 @@ import { setTransfer } from './data/parquet.ts';
 import { setMetaInfo, needColumns, prefetchColumns } from './data/meta.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
-import { updateTiles, scheduleTiles, setViewState, onSetView } from './data/schedule.js';
+import { updateTiles, setViewState, onSetView } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
 import { cellColorBuffer } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
-import { updateRulerLabel, updateTxConnector, initInput } from './ui/input.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
-import { initRegistration, onMainView } from './ui/registration.ts';
-import { showStartPage, initProjectButton } from './ui/start.ts';
-import { updateScalebar, fitZoom, dragPan } from './ui/dom.js';
-import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle, CONTROL_WIDTH } from './panels/dock.ts';
+import { initSelectionBar } from './ui/selbar.js';
+import { initRegistration } from './ui/registration.ts';
+import { showStartPage } from './ui/start.ts';
+import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { spatialView } from './spatial/current.ts';
+import { saveView } from './spatial/view.ts';
 import { applyTheme } from './ui/theme.ts';
 import { initPersist } from './core/persist.ts';
-import { Deck, OrthographicView } from 'deck.gl';
-import Split from 'split.js';
 import { createIcons, icons } from 'lucide';
 
-// Initialise lucide icons for static toolbar elements in the HTML.
+// Initialise lucide icons for the selection bar's buttons in the HTML.
 // ES modules are deferred, so this runs after DOM is parsed.
 createIcons({ icons });
 
 const $status = msg => { document.getElementById('status').textContent = msg; };
-
-// The camera is saved with the config, a moment after it stops moving
-let viewTimer;
-function saveView(viewState) {
-  clearTimeout(viewTimer);
-  viewTimer = setTimeout(() => actions.setView({
-    target: [viewState.target[0], viewState.target[1]], zoom: viewState.zoom,
-  }), 250);
-}
-
-function onViewStateChange({ viewState }) {
-  saveView(viewState);
-  state.currentViewState = viewState;
-  state.deckgl.setProps({ viewState });
-  updateScalebar(viewState);
-  updateRulerLabel();
-  updateTxConnector();
-  onMainView(viewState);
-  requestRender();
-  scheduleTiles(viewState);
-}
 
 // ── Cell colours ──────────────────────────────────────────────────────────────
 function recolorCells() {
@@ -121,8 +99,6 @@ async function main() {
   const txLayer   = state.manifest.layers.transcripts;
   const cellLayer = state.manifest.layers.cells;
   state.geneIndex = new Map((txLayer?.genes ?? []).map((g, i) => [g, i]));
-  // Polygons-only launch: no transcript tools (nor a transcripts panel)
-  if (!txLayer) document.querySelector('[data-mode="txlasso"]')?.remove();
   // Points-only launch: transcripts are all there is to show
   if (txLayer && !cellLayer) actions.setLayer('tx', { show: true });
 
@@ -135,38 +111,6 @@ async function main() {
     recolorCells();
   }
 
-  // Split first so the canvas has its final size when the zoom is fitted. The
-  // charts get 35% of what the controls' column leaves
-  const width = document.getElementById('main-layout').clientWidth || window.innerWidth;
-  const dockPct = Math.min(60, (0.35 * (width - CONTROL_WIDTH) + CONTROL_WIDTH) / width * 100);
-  const mainSplit = Split(['#spatial-pane', '#dock'], {
-    sizes: [100 - dockPct, dockPct], minSize: [150, 0], gutterSize: 5, snapOffset: 40,
-    onDragEnd: () => {
-      window.dispatchEvent(new Event('resize'));
-      if (state.currentViewState) updateTiles(state.currentViewState);
-    },
-  });
-
-  const ext  = state.manifest.extent;
-  const zoom = fitZoom(ext.xmax - ext.xmin, ext.ymax - ext.ymin) - 0.3;
-  const initialViewState = {
-    target: [(ext.xmin + ext.xmax) / 2, (ext.ymin + ext.ymax) / 2, 0],
-    zoom, minZoom: zoom - 2, maxZoom: zoom + 12,
-  };
-
-  state.deckgl = new Deck({
-    canvas: 'deck-canvas', width: '100%', height: '100%',
-    views: new OrthographicView({ id: 'ortho', controller: true, flipY: false }),
-    initialViewState, controller: { doubleClickZoom: false }, onViewStateChange, layers: [],
-  });
-  dragPan(document.getElementById('deck-canvas'), () => state.currentViewState,
-    viewState => onViewStateChange({ viewState }));
-  state.currentViewState = initialViewState;
-  updateScalebar(initialViewState);
-
-  document.getElementById('btn-fit-spatial')?.addEventListener('click', () =>
-    setViewState(initialViewState));
-
   // ── Store subscriptions ───────────────────────────────────────────────────
   initRenderScheduler();
   onLive(requestRender);
@@ -174,34 +118,19 @@ async function main() {
   store.subscribe(s => s.colorBy, recolorCells);
   store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);
-  store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(state.currentViewState); });
+  store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(spatialView()?.viewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
   applyTheme(store.getState().theme);
   store.subscribe(s => s.theme, t => { applyTheme(t); refreshCharts(); });
 
   initAnnotations();
-  initInput();
   initReleaseGuard();
   initRuleStrip();
+  initSelectionBar();
+  // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
+  // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
-  initProjectButton(document.getElementById('btn-project'));
-
-  let statsOpen      = true;
-  let lastStatsSizes = mainSplit.getSizes();
-  document.getElementById('btn-stats-toggle')?.addEventListener('click', () => {
-    statsOpen = !statsOpen;
-    if (statsOpen) {
-      mainSplit.setSizes(lastStatsSizes);
-    } else {
-      lastStatsSizes = mainSplit.getSizes();
-      mainSplit.setSizes([100, 0]);
-    }
-    window.dispatchEvent(new Event('resize'));
-    if (state.currentViewState) updateTiles(state.currentViewState);
-    document.getElementById('btn-stats-toggle')?.classList.toggle('active', statsOpen);
-  });
-  document.getElementById('btn-stats-toggle')?.classList.add('active');
 
   // ── R → viewer messages ───────────────────────────────────────────────────
   onMessage('load_metadata', ({ columns }) => {
@@ -234,30 +163,34 @@ async function main() {
   // The saved config comes from R on connect ('restore'), over the defaults
   // set above, images included
   initPersist();
-  // A saved camera replaces the fitted one
+  // A saved camera replaces the fitted one (a view not laid out yet starts
+  // from it itself)
   store.persist.onFinishHydration(s => {
-    if (s.view) setViewState({ ...initialViewState, target: [s.view.target[0], s.view.target[1], 0],
-      zoom: s.view.zoom });
+    const view = spatialView();
+    if (s.view && view?.initialViewState) setViewState({ ...view.initialViewState,
+      target: [s.view.target[0], s.view.target[1], 0], zoom: s.view.zoom });
   });
   onSetView(saveView);
   store.persist.rehydrate();
   initComms();   // after every handler is registered
 
   $status('ready');
-  updateTiles(initialViewState);
 }
 
 // No object loaded: the start page, to open a project and one of its
 // snapshots (`project`: the project R has open), or wait for R to load one
 function showEmpty(project) {
   document.body.classList.add('empty');
-  showStartPage(document.getElementById('spatial-pane'), project);
+  const host = document.createElement('div');
+  host.className = 'spatial-pane start-host';
+  document.getElementById('main-layout').prepend(host);
+  showStartPage(host, project);
   initComms();
   $status('no object');
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panel: panelHandle };
+window.__giottolens = { state, store, actions, panel: panelHandle, get spatial() { return spatialView(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);

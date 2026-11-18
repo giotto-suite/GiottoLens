@@ -19,6 +19,21 @@ Direction for GiottoLens. How the current viewer works is in the
 [design article](design.html); features land in the [NEWS](../../news/index.html) when
 implemented, and small known gaps are GitHub issues.
 
+## Several spatial views
+
+The spatial view is a panel with its own deck.gl Deck (adr/0023). Next, views that can be
+split, placed and closed, for views and spaces and for gmulti samples. One gobject is shown
+at a time, so every view reads the same cells, rules and colouring.
+
+1. **Several views of the same data,** each with its own camera: a selection source per
+   view (`spatial:<id>`), tiles planned over the union of their viewports, and in-progress
+   drawing state per view.
+2. **What a view shows as its own setting:** a space as its `modelMatrix`, a gmulti sample
+   as a subset of cells, a view as a cell-id filter. A lasso carries its view's sample or
+   space, in `selection/rules.ts` and `R/rules.R` alike.
+3. **Popout windows** for a workspace across monitors (dockview's `addPopoutGroup`). Each
+   view already has its own Deck. Window listeners must come from `ownerDocument.defaultView`.
+
 ## Panels from GiottoVisuals specs
 
 GiottoVisuals writes the plot spec, GiottoLens docks it as a panel, and the panel

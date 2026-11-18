@@ -117,8 +117,8 @@ grid, 0.9 s.
 A selection is one **rule** per source: the spatial view (lasso, brush), the scatter, each
 histogram, the metadata filter, pushed panels and R. Rule kinds: `polygon`, `stroke`,
 `range`, `categories`, `compare`, `ids`, `union` and `intersect`, each optionally negated.
-Sources combine with OR, or with AND in cross-filter mode, where each panel shows the other
-sources only. Within a view, a lasso or brush stroke replaces the view's rule, Shift adds to
+Sources combine with AND in cross-filter mode (the default), where each panel shows the
+other sources only, or with OR. Within a view, a lasso or brush stroke replaces the view's rule, Shift adds to
 it (a union) and Alt or Ctrl/Cmd subtracts from it (an intersection with the negated stroke),
 the same in both modes; the × on a rule in the rules strip drops one view's rule.
 
@@ -252,9 +252,13 @@ start page only: list projects and their snapshots, and open one (adr/0019).
 
 ## Panels
 
-Chart panels dock beside the spatial view as tabs and splits (dockview-core, adr/0009); the
-spatial view itself is not a panel. The viewer's controls dock the same way, one of each, in a
-column of their own (adr/0016). The built-in panels are a scatter of any two metadata
+The panels dock as tabs and splits (dockview-core, adr/0009): the spatial view, the charts,
+and the viewer's controls, one of each, in a column of their own (adr/0016). The spatial
+view is a panel since adr/0023. It owns its canvas, tools and overlays and has a deck.gl
+Deck of its own. It can be closed, which gives back its WebGL context and its tiles, and
+added back from a `+` menu. The page's own controls, the actions on the selection among
+them, are in a tools bar, a narrow panel at the left edge. The selection is one for the
+page, and its count and rules are in a bar along the bottom, outside the dock. The built-in panels are a scatter of any two metadata
 columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
 image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
 selection rules; the `+` menu adds more. The density rectangle is two range rules

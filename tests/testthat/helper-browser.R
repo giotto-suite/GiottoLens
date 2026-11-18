@@ -34,7 +34,7 @@ browser_wait <- function(br, cond_js, timeout = 30) {
 # Drag the mouse along a closed path given in canvas pixel coordinates.
 # `modifiers`: CDP bitmask, Alt 1, Ctrl 2, Meta 4, Shift 8
 browser_drag <- function(br, pts, modifiers = 0L) {
-    off <- br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left, r.top]; })()")
+    off <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left, r.top]; })()")
     send <- function(type, p) br$session$Input$dispatchMouseEvent(
         type = type, x = off[[1]] + p[[1]], y = off[[2]] + p[[2]], modifiers = modifiers,
         button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)

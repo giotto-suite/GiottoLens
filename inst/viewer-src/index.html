@@ -10,7 +10,7 @@
        (.lens-dark) keep the dark ones in both: their colours (selection,
        uncoloured cells, image channels) are chosen for a dark background.
        color-scheme sets the browser's own controls to match. */
-    :root, #spatial-pane, .lens-dark {
+    :root, .spatial-pane, .lens-dark {
       color-scheme: dark;
       --bg-0: #0d1117; --bg-1: #111827; --bg-2: #1f2937; --bg-3: #374151;
       --fg-0: #e5e7eb; --fg-1: #d1d5db; --fg-2: #9ca3af; --fg-3: #6b7280; --fg-4: #4b5563;
@@ -30,19 +30,18 @@
     body { background: var(--bg-1); overflow: hidden; font-family: monospace; }
     canvas { position: absolute; inset: 0; }
 
-    #hud {
+    .hud {
       position: absolute; top: 12px; left: 12px;
       color: var(--fg-1); font-size: 12px; line-height: 1.6;
       background: rgba(17,24,39,0.75); border: 1px solid rgba(255,255,255,0.06);
       border-radius: 5px; padding: 3px 10px;
       pointer-events: none; user-select: none;
     }
-    #tx-sample, #sel-count, #cursor-coords { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); color: var(--fg-3); font-size: 11px; }
-    #cursor-coords { font-family: monospace; }
-    #rule-strip {
-      position: absolute; top: 44px; left: 12px; right: 120px; z-index: 5;
-      display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none;
-    }
+    .hud:not(:has(.hud-item:not(:empty))) { display: none; }
+    .hud-item { color: var(--fg-3); font-size: 11px; }
+    .hud-item:not(:empty) ~ .hud-item:not(:empty) { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); }
+    .cursor-coords { font-family: monospace; }
+    #rule-strip { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow: hidden; margin-left: 6px; }
     .rule-chip {
       pointer-events: auto; display: inline-flex; align-items: center; gap: 4px;
       background: rgba(17,24,39,0.85); border: 1px solid rgba(255,220,50,0.45); border-radius: 10px;
@@ -52,35 +51,36 @@
     .rule-chip.rule-mode { border-color: rgba(156,163,175,0.5); color: var(--fg-2); padding-right: 8px; }
     .rule-chip-x { background: none; border: none; color: var(--fg-2); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
     .rule-chip-x:hover { color: #f87171; }
-    #ruler-label {
+    .ruler-label {
       position: absolute; display: none; pointer-events: none;
       background: rgba(17,24,39,0.85); border: 1px solid var(--bg-3); border-radius: 4px;
       padding: 2px 6px; color: #fef08a; font-size: 11px; font-family: monospace;
       white-space: nowrap; z-index: 10;
     }
-    #ruler-label.visible { display: block; }
+    .ruler-label.visible { display: block; }
 
-    #cell-tooltip {
+    .cell-tooltip {
       position: absolute; display: none; pointer-events: none;
       background: rgba(17,24,39,0.92); border: 1px solid var(--bg-3); border-radius: 4px;
       padding: 5px 8px; color: var(--fg-1); font-size: 11px; font-family: monospace;
       white-space: nowrap; z-index: 11; max-width: 260px;
     }
-    #cell-tooltip.visible { display: block; }
-    #cell-tooltip .ctt-id { color: #fef08a; }
-    #cell-tooltip .ctt-row { display: flex; gap: 8px; line-height: 1.5; }
-    #cell-tooltip .ctt-key { color: var(--fg-3); flex: 0 0 auto; }
-    #cell-tooltip .ctt-val { color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; }
-    #cell-tooltip .ctt-sep { height: 1px; background: var(--bg-2); margin: 3px 0; }
-    #cell-tooltip .ctt-overflow { color: var(--fg-4); font-size: 10px; margin-top: 2px; }
+    .cell-tooltip.visible { display: block; }
+    .cell-tooltip .ctt-id { color: #fef08a; }
+    .cell-tooltip .ctt-row { display: flex; gap: 8px; line-height: 1.5; }
+    .cell-tooltip .ctt-key { color: var(--fg-3); flex: 0 0 auto; }
+    .cell-tooltip .ctt-val { color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; }
+    .cell-tooltip .ctt-sep { height: 1px; background: var(--bg-2); margin: 3px 0; }
+    .cell-tooltip .ctt-overflow { color: var(--fg-4); font-size: 10px; margin-top: 2px; }
 
-    #meta-sel-panel {
-      position: absolute; left: 12px; bottom: 60px;
+    /* Select by metadata, beside the tools bar's button (panels/tools.ts) */
+    .meta-sel-panel {
+      position: fixed;
       background: rgba(17,24,39,0.92); border: 1px solid var(--bg-2); border-radius: 6px;
       padding: 8px 10px; display: none; flex-direction: column; gap: 6px;
-      pointer-events: all; z-index: 10; min-width: 200px;
+      pointer-events: all; z-index: 1000; min-width: 200px;
     }
-    #meta-sel-panel.visible { display: flex; }
+    .meta-sel-panel.visible { display: flex; }
     .meta-sel-row { display: flex; gap: 6px; }
     .meta-sel-row select, .meta-sel-row input {
       flex: 1; padding: 4px 6px; background: var(--bg-2);
@@ -88,30 +88,30 @@
       color: var(--fg-0); font-size: 11px; font-family: monospace; outline: none;
     }
     .meta-sel-row select:focus, .meta-sel-row input:focus { border-color: var(--fg-4); }
-    #meta-sel-apply {
+    .meta-sel-apply {
       padding: 4px 10px; background: var(--accent-bg); border: 1px solid var(--accent);
       border-radius: 4px; color: var(--accent-fg); font-size: 11px; cursor: pointer; white-space: nowrap;
     }
-    #meta-sel-apply:hover { background: var(--accent-bg-hover); }
+    .meta-sel-apply:hover { background: var(--accent-bg-hover); }
 
-    #tx-lasso-panel {
+    .tx-lasso-panel {
       position: absolute; right: 12px; bottom: 60px;
       background: rgba(17,24,39,0.95); border: 1px solid var(--bg-3); border-radius: 6px;
       display: none; flex-direction: column;
       pointer-events: all; z-index: 10; width: 220px; max-height: 340px;
     }
-    #tx-lasso-panel.visible { display: flex; }
-    #tx-lasso-hdr {
+    .tx-lasso-panel.visible { display: flex; }
+    .tx-lasso-hdr {
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 10px; border-bottom: 1px solid var(--bg-2); flex-shrink: 0;
     }
-    #tx-lasso-title { font-size: 11px; color: #fbbf24; }
-    #tx-lasso-close {
+    .tx-lasso-title { font-size: 11px; color: #fbbf24; }
+    .tx-lasso-close {
       background: none; border: none; color: var(--fg-3); cursor: pointer;
       font-size: 14px; line-height: 1; padding: 0 2px;
     }
-    #tx-lasso-close:hover { color: var(--fg-0); }
-    #tx-lasso-results { overflow-y: auto; padding: 4px 0; flex: 1; }
+    .tx-lasso-close:hover { color: var(--fg-0); }
+    .tx-lasso-results { overflow-y: auto; padding: 4px 0; flex: 1; }
     .tx-gene-row {
       display: flex; align-items: center; gap: 6px;
       padding: 2px 10px; font-size: 11px;
@@ -122,20 +122,20 @@
     .tx-gene-bar { height: 100%; background: #fbbf24; border-radius: 2px; }
     .tx-gene-count { color: var(--fg-2); width: 36px; text-align: right; flex-shrink: 0; }
 
-    #annot-popup {
+    .annot-popup {
       position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
       background: rgba(17,24,39,0.92); border: 1px solid var(--bg-2); border-radius: 6px;
       padding: 10px 12px; display: none; flex-direction: column; gap: 6px;
       pointer-events: all; z-index: 10; min-width: 160px;
     }
-    #annot-popup.visible { display: flex; }
-    #annot-type { font-size: 10px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.05em; }
-    #annot-name {
+    .annot-popup.visible { display: flex; }
+    .annot-type { font-size: 10px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.05em; }
+    .annot-name {
       width: 100%; padding: 4px 8px; background: var(--bg-2);
       border: 1px solid var(--bg-3); border-radius: 4px;
       color: var(--fg-0); font-size: 12px; font-family: monospace; outline: none;
     }
-    #annot-name:focus { border-color: var(--fg-4); }
+    .annot-name:focus { border-color: var(--fg-4); }
 
     /* The transcripts panel (panels/transcripts.ts) */
     .gene-head { flex-shrink: 0; border-bottom: 1px solid var(--bg-2); }
@@ -239,19 +239,18 @@
     .img-contrast { display: flex; align-items: center; gap: 6px; padding-left: 22px; font-size: 10px; color: var(--fg-2); }
     .img-contrast span { min-width: 64px; text-align: right; font-family: monospace; }
     .item-off .img-contrast { opacity: 0.35; }
-    #reg-pane { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; z-index: 3;
+    .reg-pane { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; z-index: 3;
       background: #000; border-right: 2px solid var(--bg-3); }
-    #reg-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+    .reg-canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
     .reg-pane-label { position: absolute; top: 12px; z-index: 4; pointer-events: none;
       color: var(--fg-1); font-size: 12px; background: rgba(17,24,39,0.75);
       border: 1px solid rgba(255,255,255,0.06); border-radius: 5px; padding: 3px 10px; }
-    #reg-pane-label { left: 12px; }
-    #reg-ref-label { right: 12px; display: none; }
-    #spatial-pane.registering #reg-ref-label { display: block; }
-    #spatial-pane.registering #deck-canvas { position: absolute; top: 0; left: 50% !important; width: 50% !important; }
-    #spatial-pane.registering #hud, #spatial-pane.registering #rule-strip,
-    #spatial-pane.registering #scalebar { left: calc(50% + 12px); }
-    #spatial-pane.registering #toolbar { left: 75%; }
+    .reg-image-label { left: 12px; }
+    .reg-ref-label { right: 12px; display: none; }
+    .spatial-pane.registering .reg-ref-label { display: block; }
+    .spatial-pane.registering .deck-canvas { position: absolute; top: 0; left: 50% !important; width: 50% !important; }
+    .spatial-pane.registering .hud, .spatial-pane.registering .scalebar { left: calc(50% + 12px); }
+    .spatial-pane.registering .toolbar { left: 75%; }
     .reg-actions { display: flex; gap: 4px; margin: 4px 0; }
     .reg-actions button {
       padding: 3px 6px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 4px;
@@ -297,11 +296,13 @@
 
     #main-layout {
       position: absolute; top: 0; left: 0; bottom: 0; right: 0;
-      display: flex; overflow: hidden;
+      display: flex; flex-direction: column; overflow: hidden;
     }
-    #spatial-pane { position: relative; overflow: hidden; min-width: 150px; background: var(--bg-1); }
+    /* The spatial view (spatial/view.ts), always in the dark colours */
+    .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--bg-1); color: var(--fg-1); }
+    .tx-connector { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9; }
     /* The docked panels (panels/dock.ts): dockview's dark theme, in the colour tokens */
-    #dock { position: relative; overflow: hidden; min-width: 0; background: var(--bg-0); border-left: 1px solid var(--bg-2); }
+    #dock { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--bg-0); }
     .dockview-theme-dark.lens-dock {
       --dv-group-view-background-color: var(--bg-0);
       --dv-tabs-and-actions-container-background-color: var(--bg-1);
@@ -333,6 +334,7 @@
       background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 4px; padding: 3px 0; min-width: 100px;
     }
     .dock-menu.open { display: flex; }
+    .dock-menu-float { position: fixed; }
     .dock-menu button, .dock-empty button {
       background: none; border: none; color: var(--fg-2); font: 11px monospace; text-align: left;
       padding: 4px 10px; cursor: pointer;
@@ -347,12 +349,32 @@
     }
     .stats-ctrl-sel:focus { border-color: var(--fg-4); }
     .stats-chart-area { flex: 1; overflow: hidden; min-height: 0; }
-    .gutter { background: var(--bg-2); background-clip: padding-box; transition: background 0.1s; }
-    .gutter:hover { background: var(--bg-3); }
-    .gutter.gutter-horizontal { cursor: col-resize; }
-    #status { position: absolute; top: 12px; right: 12px; color: var(--fg-3); font-size: 12px; }
+    /* The tools bar (panels/tools.ts): a column of icons, more when widened */
+    .tools-bar { display: grid; grid-template-columns: repeat(auto-fill, 32px); justify-content: center; gap: 4px; padding: 6px 0; }
+    .tools-bar .tool-btn { width: 32px; height: 30px; }
+    .tools-sep { grid-column: 1 / -1; height: 1px; margin: 2px 6px; background: var(--bg-3); }
+    .lens-tools-group .dock-actions { display: none; }
+    .lens-tools-group .dv-tabs-container, .lens-tools-group .dv-tab { flex: 1; padding: 0; }
+    .lens-tools-group .dv-void-container { display: none; }
+    .dock-grip { display: flex; align-items: center; justify-content: center; height: 100%; min-width: 24px;
+      color: var(--fg-4); font-size: 13px; cursor: grab; user-select: none; }
+    .dock-grip:hover { color: var(--fg-2); }
 
-    #toolbar {
+    /* The selection bar (ui/selbar.js) */
+    #selection-bar {
+      position: relative; flex-shrink: 0; height: 28px; display: flex; align-items: center; gap: 8px;
+      padding: 0 8px; background: var(--bg-1); border-top: 1px solid var(--bg-2); font-size: 11px; color: var(--fg-2);
+    }
+    .selbar-sel { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
+    /* Wide enough for any count, so the chips after it stay put */
+    #sel-count { color: #fde68a; margin: 0 6px; min-width: 18ch; white-space: nowrap; }
+    #sel-count.none { color: var(--fg-3); }
+    :root[data-theme="light"] #sel-count:not(.none) { color: #b45309; }
+    #selection-bar .tool-btn { padding: 3px 5px; }
+    #selection-bar .tool-btn svg { width: 13px; height: 13px; }
+    #status { color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+
+    .toolbar {
       position: absolute; bottom: 20px;
       left: 50%; transform: translateX(-50%);
       display: flex; align-items: center; gap: 3px;
@@ -375,39 +397,39 @@
     }
     .tool-group.open .tool-submenu { display: flex; }
 
-    #r-status {
+    .r-status {
       display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-      margin-left: 5px; vertical-align: middle; background: var(--fg-4);
+      vertical-align: middle; background: var(--fg-4);
     }
-    #r-status.connected    { background: #34d399; }
-    #r-status.disconnected { background: #f87171; }
+    .r-status.connected    { background: #34d399; }
+    .r-status.disconnected { background: #f87171; }
 
-    #scalebar {
+    .scalebar {
       position: absolute; bottom: 20px; left: 12px;
       pointer-events: none; user-select: none;
       display: flex; flex-direction: column; align-items: flex-start;
     }
-    #scalebar-bar {
+    .scalebar-bar {
       height: 6px; border: 2px solid var(--fg-1); border-bottom: none;
       box-sizing: border-box;
       filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
     }
-    #scalebar-label {
+    .scalebar-label {
       color: var(--fg-1); font-size: 11px; font-family: monospace;
       margin-top: 3px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
     }
-    #btn-screenshot {
+    .spatial-pane .screenshot {
       position: absolute; bottom: 20px; right: 12px;
       pointer-events: all; z-index: 5;
       opacity: 0.25; transition: opacity 0.2s;
     }
-    #btn-screenshot:hover { opacity: 1; }
+    .spatial-pane .screenshot:hover { opacity: 1; }
 
-    /* No object loaded (launch_lens() without one) */
-    body.empty #toolbar, body.empty #dock, body.empty .gutter, body.empty #rule-strip,
-    body.empty #btn-screenshot { display: none; }
-    body.empty #spatial-pane { width: 100% !important; }
-    body.empty #deck-canvas, body.empty #scalebar { display: none; }
+    /* No object loaded (launch_lens() without one): the start page in place
+       of the panels */
+    body.empty #dock, body.empty .selbar-sel { display: none; }
+    body.empty #status { margin-left: auto; }
+    .start-host { position: relative; flex: 1; inset: auto; }
 
     /* The start page (ui/start.ts): in place of the view, or as a dialog */
     .start {
@@ -474,93 +496,20 @@
 </head>
 <body>
   <div id="main-layout">
-    <div id="spatial-pane">
-      <canvas id="deck-canvas"></canvas>
-      <div id="reg-pane" style="display:none"><canvas id="reg-canvas"></canvas><div id="reg-pane-label" class="reg-pane-label"></div></div>
-      <div id="reg-ref-label" class="reg-pane-label"></div>
-      <svg id="tx-connector" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:9;">
-        <line id="tx-connector-line" x1="0" y1="0" x2="0" y2="0" stroke="#ffff64" stroke-width="1.5" display="none"/>
-      </svg>
-      <div id="hud">GiottoLens<span id="r-status" title="R connection"></span><span id="tx-sample"></span><span id="sel-count"></span><span id="cursor-coords"></span></div>
-      <div id="rule-strip" style="display:none"></div>
-      <div id="toolbar">
-    <button class="tool-btn active" data-mode="pan" title="pan (or, with any tool, hold Space or drag with the middle button)"><i data-lucide="hand"></i></button>
-    <button class="tool-btn" id="btn-fit-spatial" title="zoom to fit"><i data-lucide="maximize-2"></i></button>
-    <div class="tool-group" id="group-measure">
-      <button class="tool-btn tool-group-btn" id="btn-group-measure" title="measure"><i data-lucide="pencil-ruler"></i></button>
-      <div class="tool-submenu">
-        <button class="tool-btn" data-mode="ruler" title="ruler"><i data-lucide="ruler"></i></button>
-        <button class="tool-btn" data-mode="txlasso" title="transcript lasso — count genes in region"><i data-lucide="scan-search"></i></button>
-        <button class="tool-btn" id="tool-clear-measure" title="clear measurements"><i data-lucide="circle-x"></i></button>
-      </div>
-    </div>
-    <div class="tool-sep"></div>
-    <div class="tool-group" id="group-draw">
-      <button class="tool-btn tool-group-btn" id="btn-group-draw" title="draw"><i data-lucide="pencil"></i></button>
-      <div class="tool-submenu">
-        <button class="tool-btn" data-mode="poly" title="polygon"><i data-lucide="pentagon"></i></button>
-        <button class="tool-btn" data-mode="rect" title="rectangle"><i data-lucide="square"></i></button>
-        <button class="tool-btn" data-mode="freehand" title="freehand"><i data-lucide="spline"></i></button>
-      </div>
-    </div>
-    <div class="tool-sep"></div>
-    <div class="tool-group" id="group-select">
-      <button class="tool-btn tool-group-btn" id="btn-group-select" title="select"><i data-lucide="mouse-pointer-2"></i></button>
-      <div class="tool-submenu">
-        <button class="tool-btn" data-mode="lasso" title="lasso (Shift adds, Alt or Ctrl/Cmd subtracts)"><i data-lucide="lasso"></i></button>
-        <button class="tool-btn" data-mode="brush" title="brush select ([ and ] resize; Shift adds, Alt or Ctrl/Cmd subtracts)"><i data-lucide="paintbrush-2"></i></button>
-        <button class="tool-btn" id="tool-invert-sel" title="invert selection"><i data-lucide="flip-horizontal-2"></i></button>
-        <button class="tool-btn" id="tool-meta-sel" title="select by metadata"><i data-lucide="filter"></i></button>
-        <button class="tool-btn" id="tool-clear-sel" title="clear selection"><i data-lucide="circle-x"></i></button>
-      </div>
-    </div>
-    <div class="tool-sep"></div>
-    <button class="tool-btn" id="btn-crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
-    <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
-    <button class="tool-btn" id="btn-stats-toggle" title="show or hide the panels"><i data-lucide="bar-chart-2"></i></button>
-    <div class="tool-sep"></div>
-    <button class="tool-btn" id="btn-project" title="project: open a snapshot or another project"><i data-lucide="folder-open"></i></button>
-  </div>
-      <div id="scalebar">
-        <div id="scalebar-bar"></div>
-        <span id="scalebar-label"></span>
-      </div>
-      <button class="tool-btn" id="btn-screenshot" title="save screenshot"><i data-lucide="camera"></i></button>
-      <div id="ruler-label"></div>
-      <div id="cell-tooltip"></div>
-      <div id="tx-lasso-panel">
-        <div id="tx-lasso-hdr">
-          <span id="tx-lasso-title"></span>
-          <button id="tx-lasso-close">×</button>
-        </div>
-        <div id="tx-lasso-results"></div>
-      </div>
-      <div id="meta-sel-panel">
-    <div class="meta-sel-row">
-      <select id="meta-sel-col"></select>
-      <select id="meta-sel-op">
-        <option value="=">=</option>
-        <option value="!=">≠</option>
-        <option value=">">&gt;</option>
-        <option value="<">&lt;</option>
-        <option value="LIKE">contains</option>
-      </select>
-    </div>
-    <div class="meta-sel-row">
-      <input id="meta-sel-val" type="text" placeholder="value…" autocomplete="off" spellcheck="false">
-      <button id="meta-sel-apply">select</button>
-    </div>
-  </div>
-  <div id="annot-popup">
-    <span id="annot-type"></span>
-    <input id="annot-name" type="text" placeholder="name…" autocomplete="off" spellcheck="false">
-    </div>
-      <div id="status">initializing…</div>
-    </div><!-- /spatial-pane -->
-
+    <!-- The panels, the spatial view and the tools bar among them (panels/dock.ts) -->
     <div id="dock"></div>
 
-  </div><!-- /main-layout -->
+    <!-- The page's selection (ui/selbar.js, ui/rules.js) and the status line -->
+    <div id="selection-bar">
+      <span class="r-status" id="r-status" title="R: connecting"></span>
+      <div class="selbar-sel">
+        <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
+        <span id="sel-count"></span>
+        <div id="rule-strip" style="display:none"></div>
+      </div>
+      <div id="status">initializing…</div>
+    </div>
+  </div>
 
   <script type="module" src="./main.js"></script>
 </body>
