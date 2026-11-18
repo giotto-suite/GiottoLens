@@ -49,6 +49,7 @@ R/
   analysis.R   LensAnalysis (step keys rooted at the snapshot, the poll loop over jobs through
                .AnalysisWorker, results to the viewer), the daemon side (.aw_*), adr/0021
   analysis-*.R the analysis steps and catalog: parameters, menu choices, run/result (adr/0022)
+  preferences.R lens_preferences(): built-in defaults, the preferences file, broadcast to viewers
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -300,6 +301,17 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `.lens_names()` (`.pre_names()`); the viewer gets the cluster and cell type column names
   in `analysis_markers` (`columns`).
 
+### Preferences
+
+- `R/preferences.R` holds the built-in defaults (`.lens_pref_spec()`); the file saves only
+  preferences that were set, and `.lens_pref(k)` reads one. `core/prefs.ts` `BUILTIN` must
+  match `.lens_pref_spec()` (a test checks). R sends `preferences` (`defaults`, `set`) before
+  `restore` and to every open viewer after a change; the panel sends `preferences_set`.
+- Colors read `prefs()` when they draw (`render/colors.ts`: `defaultPreset()`,
+  `categoryPalette()`, fill opacity). Config fields that start from a preference
+  (`outline`, `txPalette`) take a new preference only while they hold the old one (`onPrefs`
+  in `main.js`). The background applies only when set.
+
 ### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
@@ -452,7 +464,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
+`set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
 `select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,

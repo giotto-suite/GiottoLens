@@ -5,6 +5,7 @@
 // holds one that cannot be read and an error shows here. One picker is open
 // at a time; it closes on a pick, Escape, or a click outside. The Data panel
 // (panels/data.ts) is where items are pulled into the metadata instead.
+import { prefs } from '../core/prefs.ts';
 import { state } from '../core/state.js';
 // @ts-ignore: plain JS module
 import { MAX_LIST_ROWS } from '../core/constants.js';
@@ -51,11 +52,13 @@ export function openPicker(opts: PickerOptions): void {
     if ([...section.options].some(o => o.value === keep)) section.value = keep;
   }
 
-  // The source the field's value is from
+  // The source the field's value is from; else the expression values the
+  // expr_values preference names, when the object has them
   function startAt(field: string | null | undefined) {
     const r = field ? parseItemKey(field) : null;
-    const s = r && sources.find(o => o.slot === r.slot && o.feat_type === r.feat_type &&
-      (o.name ?? '') === (r.name ?? '') && (o.method ?? '') === (r.method ?? ''));
+    const s = r ? sources.find(o => o.slot === r.slot && o.feat_type === r.feat_type &&
+      (o.name ?? '') === (r.name ?? '') && (o.method ?? '') === (r.method ?? ''))
+      : sources.find(o => o.slot === 'expression' && o.name === prefs().expr_values);
     if (s) section.value = String(s.id);
   }
 

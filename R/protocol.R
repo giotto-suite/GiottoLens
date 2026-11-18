@@ -10,7 +10,8 @@
     "registration_update", "set_column_type", "ask", "close", "panel_pick",
     "analysis_param", "analysis_labels",
     "analysis_cancel", "analysis_settings", "analysis_region", "analysis_run",
-    "analysis_add", "analysis_remove", "analysis_history", "analysis_feature", "analysis_open")
+    "analysis_add", "analysis_remove", "analysis_history", "analysis_feature", "analysis_open",
+    "preferences_set")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Messages about the object a page shows, ignored from a page that has not

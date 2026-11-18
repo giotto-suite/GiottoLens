@@ -28,7 +28,9 @@ import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { spatialView } from './spatial/current.ts';
 import { saveView } from './spatial/view.ts';
 import { applyTheme } from './ui/theme.ts';
-import { initPersist } from './core/persist.ts';
+import { initPersist, restoredConfig } from './core/persist.ts';
+import { prefs, prefIsSet, applyPrefs, onPrefs } from './core/prefs.ts';
+import { prefOutline, prefTxPalette, prefSelection } from './core/store.ts';
 import { createIcons, icons } from 'lucide';
 
 // Initialise lucide icons for the selection bar's buttons in the HTML.
@@ -153,11 +155,17 @@ async function main() {
   initDock(document.getElementById('dock'));
 
   // ── R → viewer messages ───────────────────────────────────────────────────
+  let metaCount = 0;
   onMessage('load_metadata', ({ columns }) => {
     // A reconnect re-sends the current metadata; keep the panels as they are
     if (!state.cells || !setMetaInfo(columns ?? [])) return;
+    metaCount++;
     const colorBy = store.getState().colorBy;
-    if (colorBy && !isItemKey(colorBy) && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
+    // A first launch colors by the first column of the color_by preference
+    const first = !colorBy && !restoredConfig() && metaCount === 1
+      ? prefs().color_by.split(',').map(c => c.trim()).find(c => c && state.metaInfo.has(c)) : null;
+    if (first) actions.setColorBy(first);
+    else if (colorBy && !isItemKey(colorBy) && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
     else recolorCells();
     // Rules on metadata columns re-evaluate against the new columns
     recompute({ reset: true });
@@ -183,6 +191,19 @@ async function main() {
   initRegistration();
 
   initRemote();
+  // Preferences come before the saved config. A config field still holding
+  // the old preference takes the new one.
+  onMessage('preferences', applyPrefs);
+  onPrefs((next, prev) => {
+    const s = store.getState();
+    if (JSON.stringify(s.outline) === JSON.stringify(prefOutline(prev))) actions.setOutline(prefOutline(next));
+    if (s.txPalette === prefTxPalette(prev)) actions.setTxPalette(prefTxPalette(next));
+    if (JSON.stringify(s.selectionColor) === JSON.stringify(prefSelection(prev)))
+      actions.setSelectionColor(prefSelection(next));
+    // Every spatial view's background (index.html .spatial-pane)
+    document.documentElement.style.setProperty('--view-bg', prefIsSet('background') ? next.background : '');
+    recolorCells();
+  });
   // The saved config comes from R on connect ('restore'), over the defaults
   // set above, images included
   initPersist();

@@ -69,6 +69,17 @@ test_that("set_outline checks its arguments before sending", {
     expect_error(v$set_outline(width = 0.01), "no viewer connected")
 })
 
+test_that("set_selection_color checks its argument before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_selection_color(c("red", "blue")), "one color name or hex string")
+    expect_error(v$set_selection_color(1), "one color name or hex string")
+    expect_error(v$set_selection_color("notacolour"), "invalid color name")
+    expect_error(v$set_selection_color("red"), "no viewer connected")
+    expect_error(v$set_selection_color(), "no viewer connected")
+})
+
 test_that("set_theme checks its argument before sending", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
@@ -166,17 +177,18 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_false(v$connected())
 
     # Metadata pushed before any tab connects is written and sent on connect,
-    # after the (empty) saved config
+    # after the preferences and the (empty) saved config
     v$push_metadata(fx$meta)
     a <- ws_client(ws_url(v), origin = sub("/lens/.*$", "", v$url))
-    expect_true(pump_until(function() length(a$state$msgs) > 1))
-    expect_identical(a$state$msgs[[1]]$type, "restore")
-    expect_null(a$state$msgs[[1]]$data$config)
-    expect_identical(a$state$msgs[[2]]$type, "load_metadata")
     expect_true(pump_until(function() length(a$state$msgs) > 2))
+    expect_identical(a$state$msgs[[1]]$type, "preferences")
+    expect_identical(a$state$msgs[[2]]$type, "restore")
+    expect_null(a$state$msgs[[2]]$data$config)
+    expect_identical(a$state$msgs[[3]]$type, "load_metadata")
+    expect_true(pump_until(function() length(a$state$msgs) > 3))
     # No rules to re-send: R's rule count alone, so the tab can report it
-    expect_identical(a$state$msgs[[3]]$type, "rule_seq")
-    expect_identical(a$state$msgs[[3]]$data$seq, 0L)
+    expect_identical(a$state$msgs[[4]]$type, "rule_seq")
+    expect_identical(a$state$msgs[[4]]$data$seq, 0L)
     expect_true(v$connected())
 
     ids <- get("private", v$.__enclos_env__)$cell_ids
@@ -250,7 +262,7 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
     expect_identical(pushed[[2]]$data$where, "below")
     expect_match(pushed[[2]]$data$data_url, "^session/panels/big_")
-    expect_identical(a$state$msgs[[1]]$data$panels, list("panel-1", "big"))
+    expect_identical(a$state$msgs[[2]]$data$panels, list("panel-1", "big"))
 
     # The page's config comes back verbatim to the next page
     cfg <- '{"state":{"layers":{"poly":{"show":false,"alpha":0.3}},"images":{},"genes":[]},"version":1}'
@@ -263,9 +275,9 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_true(pump_until(function() !v$connected()))
 
     b <- ws_client(ws_url(v))
-    expect_true(pump_until(function() length(b$state$msgs) > 0))
-    expect_identical(b$state$msgs[[1]]$data$config, cfg)
-    expect_identical(b$state$msgs[[1]]$data$panels, list("panel-1"))
+    expect_true(pump_until(function() length(b$state$msgs) > 1))
+    expect_identical(b$state$msgs[[2]]$data$config, cfg)
+    expect_identical(b$state$msgs[[2]]$data$panels, list("panel-1"))
     v$remove_panel("panel-1")
     expect_true(pump_until(function() any(vapply(b$state$msgs, function(m) m$type == "remove_panel", NA))))
     b$ws$close()

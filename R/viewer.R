@@ -873,6 +873,25 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Set the color selected cells draw in, in the spatial
+        #'   view (dots, and outlines once zoomed in) and in scatter panels.
+        #'   Part of the saved config (`state()$config$selectionColor`).
+        #' @param color Colour, as a name or hex string (`"#00e5ff"`);
+        #'   `NULL` goes back to the `selection_color` preference (see
+        #'   [lens_preferences()]), yellow unless set
+        set_selection_color = function(color = NULL) {
+            if (is.null(color)) {
+                private$request("set_selection_color", list(reset = TRUE))
+                return(invisible(self))
+            }
+            if (!is.character(color) || length(color) != 1L)
+                stop("[LensViewer] `color` must be one color name or hex string",
+                    call. = FALSE)
+            color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            private$request("set_selection_color", list(color = as.list(color)))
+            invisible(self)
+        },
+
         #' @description Show the viewer's panels and controls dark or light.
         #'   The spatial view and scatter plots stay dark in both: their
         #'   colors (the selection, uncolored cells, image channels) are
@@ -1275,16 +1294,18 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   `$write_settings()`; its saved settings are listed in the viewer,
         #'   ready to restore.
         #' @param threads Threads for UMAP and data.table in the jobs' process,
-        #'   for a new analysis.
+        #'   for a new analysis. Default: preference `threads` (see
+        #'   [lens_preferences()]), else 4.
         #' @param network_dir Folder where spatial networks are saved, for a
         #'   new analysis. A network is read from it when an analysis asks for
         #'   one with the same cells, cell coordinates and network settings, in
         #'   this or a later session. `NULL` keeps networks for the session
-        #'   only. Default: option `GiottoLens.network_dir`, else `networks` in
+        #'   only. Default: option `GiottoLens.network_dir`, else preference
+        #'   `network_dir` (see [lens_preferences()]), else `networks` in
         #'   [tools::R_user_dir()]'s cache folder for GiottoLens.
         #' @returns The [LensAnalysis]
         analysis = function(params = NULL, cell_markers = NULL, analyses = NULL, settings = NULL,
-                            threads = 4L, network_dir = .default_network_dir()) {
+                            threads = .lens_pref("threads"), network_dir = .default_network_dir()) {
             a <- private$lens_analysis
             if (is.null(a)) {
                 a <- private$start_analysis("LensViewer$analysis", params = params,
@@ -2366,6 +2387,7 @@ LensViewer <- R6::R6Class("LensViewer",
                             if (!is.null(id)) assign(id, priv$load_seq, envir = priv$conn_load)
                             # The saved config first, so a reload comes back as
                             # it was; then the data and panels it refers to
+                            ws$send(.encode_ws_message("preferences", .lens_pref_msg()))
                             ws$send(.encode_ws_message("restore", list(
                                 config = priv$config_json, panels = as.list(names(priv$pushed)))))
                             if (!is.null(priv$cached_meta))
@@ -2400,6 +2422,15 @@ LensViewer <- R6::R6Class("LensViewer",
                         analysis_history = , analysis_feature = , analysis_open =
                             priv$analysis_message(ws, parsed$type, dat),
                         ask = priv$answer(ws, parsed$id, dat),
+                        # The Preferences panel
+                        preferences_set = tryCatch(.lens_pref_from_viewer(dat),
+                            error = function(e) {
+                                priv$add_log("error", list(where = "preferences",
+                                    message = conditionMessage(e)))
+                                warning("[LensViewer] ", .console_text(conditionMessage(e)),
+                                    call. = FALSE)
+                                .lens_pref_broadcast()
+                            }),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
                         panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {
@@ -2523,7 +2554,8 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
-    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers")
+    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers",
+    "preferences")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

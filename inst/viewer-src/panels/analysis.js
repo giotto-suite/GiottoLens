@@ -15,7 +15,7 @@ import {
   rangeKey, sliderPos, sliderValue, clusterColorPatch, pipelines, pipelineSteps, canRun,
   tableRows, draftParams, paramShown, controlsOthers, progressText, progressFraction,
 } from './analysis-model.ts';
-import { PALETTE } from '../core/constants.js';
+import { categoryPalette } from '../render/colors.ts';
 
 const model = emptyModel();
 const mounted = new Set();          // render functions of open panels
@@ -48,7 +48,7 @@ function syncClusterColors() {
   const styles = store.getState().categoryStyles;
   const { patch, auto } = clusterColorPatch(shareColors ? model.labels : {},
     cl.levels ?? [], ty?.levels ?? [], styles[columns.type] ?? {}, styles[columns.cluster] ?? {},
-    PALETTE, autoColors);
+    categoryPalette(), autoColors);
   autoColors = auto;
   if (Object.keys(patch).length) actions.setCategoryStyles(columns.cluster, patch);
 }

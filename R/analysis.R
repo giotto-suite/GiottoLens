@@ -1,10 +1,11 @@
 # ── Analysis (adr/0021, adr/0022) ────────────────────────────────────────────
 
 # The folder of saved spatial networks: option GiottoLens.network_dir, else
-# GiottoLens's user cache
+# preference `network_dir`, else GiottoLens's user cache
 .default_network_dir <- function() {
-    getOption("GiottoLens.network_dir",
-        file.path(tools::R_user_dir("GiottoLens", "cache"), "networks"))
+    pref <- .lens_pref("network_dir")
+    getOption("GiottoLens.network_dir", if (nzchar(pref)) pref
+        else file.path(tools::R_user_dir("GiottoLens", "cache"), "networks"))
 }
 
 # ── Worker side (runs in the jobs' daemon, adr/0025) ────────────────────────
@@ -1036,7 +1037,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 rec$suggestions <- private$suggestions
             }
             runs <- c(runs, list(rec))
-            cap <- getOption("GiottoLens.analysis_history", 10L)
+            cap <- getOption("GiottoLens.analysis_history", .lens_pref("history"))
             private$runs[[id]] <- utils::tail(runs, cap)
             private$send_schema()
         },

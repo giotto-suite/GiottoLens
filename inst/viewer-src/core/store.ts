@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
+import { prefs, hexRgb, type Prefs } from './prefs.ts';
 import { state } from './state.js';
 import type { Registration, Landmark, Affine } from '../data/registration.ts';
 import type { CategoryStyle, ColorScale } from '../render/colors.ts';
@@ -49,6 +50,7 @@ export interface SavedView { target: [number, number]; zoom: number }
 export interface Config {
   layers: Record<LayerName, LayerVis>;
   outline: OutlineStyle;
+  selectionColor: [number, number, number];   // selected cells, in the spatial view and scatters
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
@@ -83,6 +85,12 @@ export type LensState = Config & Runtime;
 
 export const RECENT_ITEMS = 8;
 
+// Config fields that start from a preference
+export const prefOutline = (p: Prefs): OutlineStyle =>
+  ({ color: hexRgb(p.outline_color), width: p.outline_width, alpha: p.outline_opacity });
+export const prefTxPalette = (p: Prefs): number => p.tx_palette === 'vivid' ? 1 : 0;
+export const prefSelection = (p: Prefs): [number, number, number] => hexRgb(p.selection_color);
+
 export const initialConfig = (): Config => ({
   layers: {
     poly:        { show: true,  alpha: 0.6 },
@@ -90,9 +98,10 @@ export const initialConfig = (): Config => ({
     annotations: { show: true,  alpha: 0.6 },
     img:         { show: true,  alpha: 1 },
   },
-  outline: { color: [0, 0, 0], width: 1, alpha: 0.8 },
+  outline: prefOutline(prefs()),
+  selectionColor: prefSelection(prefs()),
   images: {},
-  txPalette: 0,
+  txPalette: prefTxPalette(prefs()),
   colorAll: false,
   genes: [],
   colorBy: null,
@@ -183,6 +192,10 @@ export const actions = {
     set(s => ({ outline: { ...s.outline, ...patch } }));
   },
   resetOutline() { set({ outline: initialConfig().outline }); },
+  // null: back to the preference
+  setSelectionColor(color: [number, number, number] | null) {
+    set({ selectionColor: color ?? prefSelection(prefs()) });
+  },
   setTheme(theme: Theme) { set({ theme }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));

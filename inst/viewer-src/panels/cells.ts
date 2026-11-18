@@ -13,7 +13,7 @@ import { store, actions } from '../core/store.ts';
 import { sendToR } from '../core/comms.js';
 // @ts-ignore: plain JS module
 import { escapeHtml } from '../ui/dom.js';
-import { SCALE_PRESETS, DEFAULT_SCALE, MAX_SCALE_COLORS, continuousColor } from '../render/colors.ts';
+import { SCALE_PRESETS, defaultPreset, MAX_SCALE_COLORS, continuousColor } from '../render/colors.ts';
 import type { Legend } from '../render/colors.ts';
 import type { PanelHandle } from './dock.ts';
 import { isItemKey, fieldLabel } from '../data/items.ts';
@@ -165,7 +165,7 @@ function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => Contin
 }
 
 function syncScale(el: HTMLElement, lg: ContinuousLegend) {
-  (el.querySelector('.scale-preset') as HTMLSelectElement).value = lg.scale.preset ?? DEFAULT_SCALE;
+  (el.querySelector('.scale-preset') as HTMLSelectElement).value = lg.scale.preset ?? defaultPreset();
   (el.querySelector('.scale-reverse') as HTMLInputElement).checked = !!lg.scale.reverse;
   (el.querySelector('.legend-gradient') as HTMLElement).style.background = gradient(lg.stops);
   const [lo, hi] = el.querySelectorAll('.legend-labels span');

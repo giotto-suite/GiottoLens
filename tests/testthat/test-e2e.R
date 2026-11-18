@@ -163,7 +163,8 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "annotations", "layers"))
+    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "annotations", "layers",
+        "preferences"))
     expect_identical(br$errors(), character())
 })
 
@@ -543,6 +544,11 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     br$js("document.querySelector('[data-panel=cells] .outline-reset').click()")
     expect_true(browser_wait(br,
         "window.__giottolens.store.getState().outline.alpha === 0.8"))
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
+    v$set_selection_color("#00e5ff")
+    expect_identical(unlist(v$state()$config$selectionColor), c(0L, 229L, 255L))
+    v$set_selection_color()
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
     # Light panels, the spatial view still dark
     expect_identical(v$state()$config$theme, "dark")
     v$set_theme("light")
@@ -585,7 +591,8 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers"))
+    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers",
+        "preferences"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; the charts in view
@@ -631,7 +638,8 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers",
+        "preferences"))))
     expect_identical(br$errors(), character())
 })
 
@@ -648,15 +656,18 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     # The tools bar at the left edge, the spatial view, the charts with the
     # table a tab behind the histogram, then the controls in a column of their
     # own on the right: cells and transcripts as tabs, then annotations, then
-    # layers (images and register come between them when there are images)
+    # layers with preferences as a tab (images and register come between them
+    # when there are images)
     p <- v$panels()
-    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "table", "cells", "transcripts", "annotations", "layers"))
+    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "table", "cells", "transcripts",
+        "annotations", "layers", "preferences"))
     expect_identical(p$kind, p$id)
     expect_identical(length(unique(p$group[1:3])), 3L)
     expect_identical(p$group[4], p$group[5])
-    expect_false(any(p$group[6:9] %in% p$group[3:5]))
+    expect_false(any(p$group[6:10] %in% p$group[3:5]))
     expect_identical(p$group[6], p$group[7])
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE))
+    expect_identical(p$group[9], p$group[10])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, FALSE))
     width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
 

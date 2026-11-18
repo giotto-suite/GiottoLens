@@ -1,7 +1,8 @@
 // Color scales shared by every view, so a column has the same colors in the
 // spatial view, the scatter and the legend.
 import type { MetaColumn } from '../data/meta.ts';
-import { PALETTE } from '../core/constants.js';
+import { PALETTE, CATEGORY_PALETTES } from '../core/constants.js';
+import { prefs } from '../core/prefs.ts';
 
 export type RGBA = [number, number, number, number];
 // Per-category overrides of a categorical column (store.categoryStyles)
@@ -31,12 +32,18 @@ export const SCALE_PRESETS: Record<string, [number, number, number][]> = {
   'blue-white-red': ['#2166ac', '#67a9cf', '#d1e5f0', '#f7f7f7', '#fddbc7', '#ef8a62', '#b2182b'].map(h),
 };
 export const DEFAULT_SCALE = 'blue-red';
+// The preset of a scale without one: the scale_palette preference
+export const defaultPreset = (): string =>
+  prefs().scale_palette in SCALE_PRESETS ? prefs().scale_palette : DEFAULT_SCALE;
+// The colors of categories: the cat_palette preference
+export const categoryPalette = (): number[][] =>
+  (CATEGORY_PALETTES as Record<string, number[][]>)[prefs().cat_palette] ?? PALETTE;
 export const MAX_SCALE_COLORS = 9;
 
 // The colors a scale draws with, low to high
 export function scaleStops(scale: ColorScale = {}): [number, number, number][] {
   const custom = scale.preset === 'custom' && scale.colors && scale.colors.length >= 2;
-  const stops = custom ? scale.colors! : SCALE_PRESETS[scale.preset ?? DEFAULT_SCALE] ?? SCALE_PRESETS[DEFAULT_SCALE];
+  const stops = custom ? scale.colors! : SCALE_PRESETS[scale.preset ?? defaultPreset()] ?? SCALE_PRESETS[defaultPreset()];
   return scale.reverse ? [...stops].reverse() : stops;
 }
 
@@ -81,13 +88,15 @@ export function cellColorBuffer(n: number, col: MetaColumn | null,
   const v = col.values;
   if (col.kind === 'categorical') {
     const levels = col.levels ?? [];
+    const pal = categoryPalette();
+    const fillAlpha = prefs().fill_opacity;
     const items: LegendItem[] = levels.map((label, k) => {
       const st = styles[label] ?? {};
       return {
         label,
-        color: st.color ?? [...PALETTE[k % PALETTE.length]],
+        color: st.color ?? [...pal[k % pal.length]],
         show: st.show ?? true,
-        alpha: st.alpha ?? DEFAULT_FILL_ALPHA,
+        alpha: st.alpha ?? fillAlpha,
       };
     });
     const rgba: RGBA[] = items.map(it => it.show

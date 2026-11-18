@@ -330,6 +330,36 @@
     .an-hint:hover { background: var(--accent-bg); color: var(--fg-0); }
     .an-hint.an-weak { color: #fbbf24; border-color: #92400e; }
     .an-feats { flex: 1; min-width: 0; color: var(--fg-3); font-family: monospace; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Preferences panel */
+    .pref-panel { padding: 0; }
+    .pref-panel details { border-bottom: 1px solid var(--bg-2); }
+    .pref-panel summary { list-style: none; cursor: pointer; padding: 6px 10px; display: flex; align-items: center; font-weight: 600; color: var(--fg-0); }
+    .pref-panel summary::-webkit-details-marker { display: none; }
+    .pref-panel summary::before { content: '\25B8'; margin-right: 6px; color: var(--fg-2); display: inline-block; transition: transform .1s; }
+    .pref-panel details[open] > summary::before { transform: rotate(90deg); }
+    .pref-panel .pref-sub { border-bottom: 0; border-top: 1px solid var(--bg-2); }
+    .pref-panel .pref-sub > summary { font-weight: 500; padding-left: 22px; color: var(--fg-1); }
+    .pref-title { flex: 1; }
+    .pref-count { color: var(--accent-fg); font-weight: 400; font-size: 11px; }
+    .pref-body { padding: 2px 8px 8px 22px; }
+    .pref-sub .pref-body { padding-left: 32px; }
+    .pref-row { display: grid; grid-template-columns: 104px 1fr 14px; align-items: center; gap: 6px; margin: 5px 0; }
+    .pref-row > label { color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pref-row.pref-set > label { color: var(--fg-0); }
+    .pref-row.pref-set > label::before { content: '\2022  '; color: var(--accent-fg); }
+    .pref-ctl { min-width: 0; }
+    .pref-ctl .ctl-select, .pref-ctl .ctl-input { width: 100%; }
+    .pref-bar { height: 8px; border-radius: 2px; margin-top: 3px; }
+    .pref-swatches { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px; }
+    .pref-swatches span { width: 10px; height: 10px; border-radius: 2px; }
+    .pref-range { width: calc(100% - 34px); vertical-align: middle; }
+    .pref-val { display: inline-block; width: 30px; text-align: right; color: var(--fg-2); }
+    .pref-color { width: 34px; height: 18px; border: 0; background: none; padding: 0; }
+    .pref-reset { background: none; border: 0; color: var(--fg-2); cursor: pointer; padding: 0; font: inherit; }
+    .pref-reset:hover { color: var(--accent-fg); }
+    .pref-foot { padding: 8px 10px; }
+    .pref-note { color: var(--fg-3); font-size: 11px; margin-top: 6px; }
+    .pref-code { margin: 6px 0 0; font-size: 11px; white-space: pre-wrap; background: var(--bg-0); border: 1px solid var(--bg-3); border-radius: 3px; padding: 6px; color: var(--fg-1); }
     /* Regions panel */
     .rg { padding: 8px 10px; font-size: 11px; color: var(--fg-1); overflow-y: auto; height: 100%; box-sizing: border-box; }
     .rg-hd { font-size: 11px; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 4px; }
@@ -531,7 +561,7 @@
       display: flex; flex-direction: column; overflow: hidden;
     }
     /* The spatial view (spatial/view.ts), always in the dark colours */
-    .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--bg-1); color: var(--fg-1); }
+    .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--view-bg, var(--bg-1)); color: var(--fg-1); }
     .tx-connector { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9; }
     /* The docked panels (panels/dock.ts): dockview's dark theme, in the colour tokens */
     #dock { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--bg-0); }

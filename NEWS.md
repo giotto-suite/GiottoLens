@@ -48,6 +48,12 @@
   as metadata columns beside pulled ones, docked charts and tables; a gene clicked in a table
   colors the cells. Finished runs are kept under History. See adr/0021 and adr/0022.
 * Pushed charts: an interval param named `range` sends its extent to R (`panel_pick`).
+* Preferences: `lens_preferences()` and the viewer's Preferences panel (a tab beside Layers)
+  set defaults for every viewer: color palettes, the background, cell outlines and fill, the
+  expression values the picker opens on and region comparisons read, the column cells are
+  colored by at launch, and an analysis's threads, history length and network folder. Only
+  preferences that are set are saved, so the others follow the installed defaults; launch
+  arguments, R options and changes made in a viewer take precedence.
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See
@@ -72,6 +78,9 @@
 * Protocol 6: `ready` carries the page's load, R sends `reload`, and the page asks R with
   `ask`, answered with `answer`.
 
+* The selection color can be set: `viewer$set_selection_color("#00e5ff")`, or the
+  `selection_color` preference for every viewer; `NULL` goes back to the preference (yellow
+  unless set). It is part of the saved config (`state()$config$selectionColor`).
 * A light theme for the panels and controls: `viewer$set_theme("light")`. The spatial view
   and scatter plots stay dark. The theme is part of the saved config (`state()$config$theme`).
 * Opening a panel group's "+" menu closes any other one that is open.

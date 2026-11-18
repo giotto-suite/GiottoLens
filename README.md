@@ -61,6 +61,7 @@ cat <- viewer$catalog()
 viewer$color_by(cat[cat$item == "CD3E" & cat$name %in% "normalized", ])
                                                   # one gene, not added to the metadata
 viewer$set_outline(color = "black", width = 2, alpha = 1)  # cell outline color, width (px), opacity
+viewer$set_selection_color("#00e5ff")             # selected cells' color; NULL: the preference
 viewer$set_theme("light")                         # light panels; the spatial view stays dark
 viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
                         alpha = c(0.2, Myeloid = 1))
@@ -93,6 +94,12 @@ a <- viewer$analysis(analyses = c("interactions", "niches"))   # opens the Analy
 a$set("leiden", resolution = 0.5)                 # reruns Leiden and the steps below it
 a$run("niches")                                   # runs an added analysis
 a$code()                                          # the Giotto calls, as R code
+
+# Preferences: defaults for every viewer (also the Preferences panel)
+lens_preferences()                                # every preference; attr "set": those set
+lens_preferences(scale_palette = "magma", cat_palette = "okabe_ito")
+lens_preferences(scale_palette = NULL)            # back to the built-in default
+lens_preferences(reset = TRUE)
 ```
 
 Selection rules are evaluated in R as well as in the browser, so `viewer$select()` resolves

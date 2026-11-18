@@ -58,6 +58,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
+    \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
@@ -670,6 +671,29 @@ sets the same values.
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_selection_color"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_selection_color}{}}}
+\subsection{\code{LensViewer$set_selection_color()}}{
+  Set the color selected cells draw in, in the spatial
+view (dots, and outlines once zoomed in) and in scatter panels.
+Part of the saved config (\code{state()$config$selectionColor}).
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_selection_color(color = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#00e5ff"});
+\code{NULL} goes back to the \code{selection_color} preference (see
+\code{\link[=lens_preferences]{lens_preferences()}}), yellow unless set}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_theme"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_theme}{}}}
 \subsection{\code{LensViewer$set_theme()}}{
@@ -1174,7 +1198,7 @@ Arguments given to a later call apply to the analysis there is.
   cell_markers = NULL,
   analyses = NULL,
   settings = NULL,
-  threads = 4L,
+  threads = .lens_pref("threads"),
   network_dir = .default_network_dir()
 )}
     \if{html}{\out{</div>}}
@@ -1199,12 +1223,14 @@ Preprocessing; see \link{LensAnalysis} \verb{$catalog()}.}
 \verb{$write_settings()}; its saved settings are listed in the viewer,
 ready to restore.}
       \item{\code{threads}}{Threads for UMAP and data.table in the jobs' process,
-for a new analysis.}
+for a new analysis. Default: preference \code{threads} (see
+\code{\link[=lens_preferences]{lens_preferences()}}), else 4.}
       \item{\code{network_dir}}{Folder where spatial networks are saved, for a
 new analysis. A network is read from it when an analysis asks for
 one with the same cells, cell coordinates and network settings, in
 this or a later session. \code{NULL} keeps networks for the session
-only. Default: option \code{GiottoLens.network_dir}, else \code{networks} in
+only. Default: option \code{GiottoLens.network_dir}, else preference
+\code{network_dir} (see \code{\link[=lens_preferences]{lens_preferences()}}), else \code{networks} in
 \code{\link[tools:R_user_dir]{tools::R_user_dir()}}'s cache folder for GiottoLens.}
     }
     \if{html}{\out{</div>}}

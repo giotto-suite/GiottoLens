@@ -40,7 +40,8 @@
 }
 
 # The expression source a comparison reads, from the catalog: `values` (an
-# expression name), or "normalized"
+# expression name), else the de_values preference when the object has it,
+# else "normalized"
 .de_source <- function(cat, values, feat_type, where) {
     expr <- Filter(function(s) s$slot == "expression" &&
         (is.null(feat_type) || identical(s$feat_type, feat_type)), cat$sources)
@@ -48,7 +49,9 @@
         stop("[", where, "] the object shown has no expression to compare", call. = FALSE)
     if (!is.null(values) && (!is.character(values) || length(values) != 1L || is.na(values)))
         stop("[", where, "] `values` must be one expression name", call. = FALSE)
-    want <- values %||% "normalized"
+    pref <- .lens_pref("de_values")
+    want <- values %||% if (any(vapply(expr, function(s) identical(s$name, pref), NA))) pref
+        else "normalized"
     hit <- Find(function(s) identical(s$name, want), expr)
     if (is.null(hit))
         stop("[", where, "] no '", want, "' expression",
