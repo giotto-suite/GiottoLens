@@ -27,7 +27,6 @@
     "hyparquet-compressors": "1.1.2",
     "hysnappy": "1.1.1",
     "lucide": "1.14.0",
-    "split.js": "1.6.5",
     "vega": "6.4.0",
     "vega-embed": "7.3.0",
     "vega-lite": "6.5.0",

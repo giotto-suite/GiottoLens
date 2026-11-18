@@ -8,6 +8,7 @@ import { registrationFit, completePairs, MIN_PAIRS } from '../data/registration.
 import { registering, pending, startRegistration, flipImage, rotateImage, onMainView } from '../ui/registration.ts';
 import { createIcons, icons } from 'lucide';
 import type { PanelHandle } from './dock.ts';
+import { spatialView } from '../spatial/current.ts';
 
 const css = ([r, g, b]: number[]) => `rgb(${r},${g},${b})`;
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: object = {}): HTMLElementTagNameMap[K] =>
@@ -84,7 +85,8 @@ export function createRegisterPanel(body: HTMLElement): PanelHandle {
   preview.input.addEventListener('change', () => actions.patchRegistration({ preview: preview.input.checked }));
   link.input.addEventListener('change', () => {
     actions.patchRegistration({ link: link.input.checked });
-    if (link.input.checked && state.currentViewState) onMainView(state.currentViewState);
+    const vs = spatialView()?.viewState;
+    if (link.input.checked && vs) onMainView(vs);
   });
 
   const render = () => {

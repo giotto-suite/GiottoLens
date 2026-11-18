@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-02
 - **Supersedes:** —
-- **Superseded by:** 0016 in part (controls dock too)
+- **Superseded by:** 0016 in part (controls dock too); 0023 in part (the spatial view docks)
 
 ## Context
 

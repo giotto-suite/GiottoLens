@@ -1,5 +1,5 @@
 // One render per animation frame, however many changes asked for one.
-import { state } from '../core/state.js';
+import { spatialView } from '../spatial/current.ts';
 import { store } from '../core/store.ts';
 import { renderLayers } from './render.js';
 
@@ -9,7 +9,10 @@ export function requestRender() {
   _pending = true;
   requestAnimationFrame(() => {
     _pending = false;
-    renderLayers(state.currentViewState);
+    // A view behind another tab has no size: it catches up when shown (its
+    // resize observer asks for a render)
+    const view = spatialView();
+    if (view?.root.clientWidth) renderLayers(view);
   });
 }
 

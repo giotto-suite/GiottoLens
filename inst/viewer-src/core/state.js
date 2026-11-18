@@ -5,7 +5,7 @@
 /** @type {Record<string, any>} */
 export const state = {
   // App
-  manifest: null, deckgl: null, tileTimer: null, currentViewState: null,
+  manifest: null, tileTimer: null,   // the spatial view and its camera: spatial/current.ts
   geneIndex: null,          // Map gene name → index into manifest genes
   images: null,             // Map image name → LensImage (data/images.ts), manifest order
 
@@ -40,5 +40,4 @@ export const state = {
   brushDown:    false,
   brushPos:     null,
   landmarkDrag: null,       // render/landmarks.ts LandmarkDrag
-  regDeck:      null,       // the registered image's pane (ui/registration.ts)
 };

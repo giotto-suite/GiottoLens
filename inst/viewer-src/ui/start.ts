@@ -238,8 +238,9 @@ export function showStartPage(host: HTMLElement, project: string | null) {
   onConnect(() => { if (!shown) { shown = true; first(); } });
 }
 
-// The toolbar's project button: the start page as a dialog over the view
-export function initProjectButton(btn: HTMLElement) {
+// The tools bar's project button: the start page as a dialog over the page.
+// `signal` removes the listener it adds to the window.
+export function initProjectButton(btn: HTMLElement, signal?: AbortSignal) {
   let overlay: HTMLElement | null = null;
   const close = () => { overlay?.remove(); overlay = null; };
   btn.addEventListener('click', () => {
@@ -251,5 +252,6 @@ export function initProjectButton(btn: HTMLElement) {
     document.body.append(overlay);
     first();
   });
-  window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && overlay) close(); });
+  window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && overlay) close(); }, { signal });
+  signal?.addEventListener('abort', close);
 }

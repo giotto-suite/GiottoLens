@@ -56,10 +56,13 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               live.ts (panel brush drags: bucket index, live counts, adr/0013)
   render/     render.js, schedule.js (requestRender), colors.ts, marks.ts (cell dots and marks),
               landmarks.ts (registration pairs)
-  ui/         input.js, annotations.js (name popup, sync to R), tooltip.js, rules.js, release.js,
-              dom.js, registration.ts (landmark tool, image pane), start.ts (start page and
-              project dialog, through askR())
-  panels/     dock.ts (dockview: panel types, slots, placement, layout), scatter.js, histogram.js,
+  spatial/    view.ts (the spatial view panel: its DOM, Deck and camera), current.ts
+              (spatialView(): the open view, or null)
+  ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
+              rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
+              (landmark tool, image pane), start.ts (start page and project dialog, through askR())
+  panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
+              scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
               images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
@@ -163,7 +166,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   with a pixel minimum, or squares and hexagons (`ColumnLayer`, no pixel minimum, so dots
   until a mark is as wide as a dot). Selection is centroid membership whatever the mark.
 - A selection is one rule per source (`spatial`, `scatter`, `hist:<col>`, `meta`, `panel:*`,
-  `r`), combined with OR, or AND in cross-filter mode. Rules evaluate to `Uint8Array` masks
+  `r`), combined with AND (cross-filter, the default in both `store.ts` and R), or OR. Rules evaluate to `Uint8Array` masks
   over all cells, never only loaded tiles; masks are a cache keyed by rule object (rules are
   never mutated). Selections cross the socket as base64 bitmasks (LSB first).
 - `R/rules.R` and `selection/rules.ts` implement the same evaluation; change both together
@@ -188,9 +191,14 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 - Config and selection live in the zustand store and change only through `actions`. Renders
   follow store subscriptions through `requestRender()` (one per frame). `core/state.js` holds
-  runtime data only (deck, manifest, caches, loaded tables, in-progress drawing).
-- Camera moves go through `setViewState()` so tiles load. Viewport size comes from
-  `#spatial-pane` (`viewportSize()`), never `window` or the canvas before deck sizes it.
+  runtime data only (manifest, caches, loaded tables, in-progress drawing).
+- The spatial view is a panel that can be closed (adr/0023): its Deck, camera, canvas and
+  overlays are on the view `spatialView()` returns (`spatial/current.ts`), never on `state`
+  and never found by id. Code that draws, moves the camera or reads the view does nothing
+  without one; R commands that need one call `needView()`, which throws.
+- Camera moves go through `setViewState()` so tiles load. Viewport size comes from the view's
+  pane (`viewportSize(view)`, 0 x 0 until it is laid out), never `window` or the canvas before
+  deck sizes it. A view starts (fits or takes the saved camera) at its first size.
 - deck.gl compares `data` by reference: build binary data objects once per array (`once()` in
   `render.js`). A new object per render re-triangulates polygons and re-uploads buffers.
 - Selected genes are saved by name and the camera (`view`) in data coordinates; a saved view
@@ -278,8 +286,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (pixels to the image's pane: flips and quarter turns, display only), `preview`, `link`. The
   image draws with `currentTransform()`: the least-squares affine from three complete pairs,
   else `base`.
-- In mode `landmark` the spatial pane has class `registering`: a second Deck (`state.regDeck`,
-  `#reg-canvas`) on the left half draws only the image, in `orient` coordinates; the main
+- In mode `landmark` the spatial pane has class `registering`: a second Deck (the view's
+  `regDeck`, on `el.regCanvas`, finalized with the view) on the left half draws only the image, in `orient` coordinates; the main
   canvas takes the right half and `viewportSize()` halves its width. The main view leaves the
   image out unless `preview`. `render/landmarks.ts` draws each pane's own points (draggable)
   and, with a fit, the other pane's points mapped through it. `link` moves either pane with
@@ -295,14 +303,28 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
   pair, Escape the open one.
 
-### Panels (adr/0009, adr/0016)
+### Panels (adr/0009, adr/0016, adr/0023)
 
-- Charts and controls dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the spatial view is
-  not a panel. Built-in kinds are listed once in `TYPES`: charts (`meta`) need metadata and can
-  repeat; controls (`single`) are one per viewer with their kind as id, placed in a column at
-  the dock's right edge by `slot` (at most two tabs each: more do not fit), and left closed
-  after a reload once closed (`closedPanels`). Keep `.lens_builtin_panels` in R in step. A
-  pushed panel without `ref` goes next to the charts.
+- Everything but the selection bar docks (`panels/dock.ts`, dockview-core 4.13.1, pinned).
+  Built-in kinds are listed once in `TYPES`: charts (`meta`) need metadata and can repeat;
+  `single` panels are one per viewer with their kind as id and are left closed after a reload
+  once closed (`closedPanels`); controls are single panels with a `slot`, placed in a column at
+  the dock's right edge (at most two tabs each: more do not fit). `spatial` is single and
+  closable; `tools` is `fixed` (no close, not in the `+` menus). `placeFixed()` adds either to
+  a layout without them. Keep `.lens_builtin_panels` in R in step. A pushed panel without
+  `ref` goes next to the charts, never beside a single panel.
+- The tools bar is one or two columns wide (`TOOLS_WIDTH`, `TOOLS_MAX`, the icon grid in
+  `index.html`) and keeps its width (`holdTools()`): dockview shares a removed group's width
+  evenly along its row and splits a group with a new neighbour. Nothing docks into its
+  group, and the bar never becomes a tab of another (refused in `onWillShowOverlay` and
+  `onWillDrop`, since a group lock still shows drop targets). Its group has low layout
+  priority through dockview's private `_priority`; recheck these when bumping dockview.
+- The selection bar (`ui/selbar.js`, `ui/rules.js`, static markup with ids in `index.html`,
+  outside the dock) shows R's connection, the page's selection (the rules toggle, the count
+  with a fixed minimum width, the rule chips) and the status line. Keep buttons out of it
+  after the count, since they would move as the count changes. The actions on the selection (combine mode, select by
+  metadata, invert, clear) are the tools bar's (`panels/tools.ts`). Tools that act in a view
+  stay in the view.
 - A control builds its own DOM and keeps references to it: no `getElementById`, no ids, no
   markup in `index.html`, styles by class; e2e tests select `[data-panel=<id>] .class`. A tab's
   content is mounted when first shown (`dock_tab()` in the tests) and leaves the document when

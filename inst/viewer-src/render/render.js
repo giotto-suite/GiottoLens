@@ -1,5 +1,6 @@
 // Builds the spatial view's deck.gl layers from the store and runtime state.
-// Called once per frame at most, through render/schedule.js.
+// Called once per frame at most, through render/schedule.js, for the open
+// view (spatial/current.ts).
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD } from '../core/constants.js';
@@ -49,18 +50,15 @@ function liveLayerProps(values, dims, gate) {
   return { data: _live.data, extensions: _live.extensions };
 }
 
-export function renderLayers(viewState) {
-  if (!state.deckgl || !viewState) return;
+export function renderLayers(view) {
+  const viewState = view?.viewState;
+  if (!viewState) return;
   const s = store.getState();
   const layers = [];
   const inOverview = viewState.zoom < TRANSCRIPT_ZOOM_THRESHOLD;
   const outlines   = viewState.zoom >= POLYGON_ZOOM_THRESHOLD;
   const sel        = s.selection;
   const live       = liveView();
-  const count      = live ? live.count : sel.count;
-
-  const selCountEl = document.getElementById('sel-count');
-  if (selCountEl) selCountEl.textContent = count > 0 ? `${count.toLocaleString()} selected` : '';
 
   // Images, under everything else, RGB first. A hidden image is left out
   // rather than made invisible, so its tiles stop loading. While an image is
@@ -83,7 +81,7 @@ export function renderLayers(viewState) {
   if (s.layers.poly.show && s.layers.poly.alpha > 0 && state.cells) {
     const cellLayer = state.manifest.layers.cells;
     const geometry  = !!cellLayer.geometry;
-    const tiles     = outlines && geometry ? visibleTiles(viewState, cellLayer.tiles, viewportSize()) : [];
+    const tiles     = outlines && geometry ? visibleTiles(viewState, cellLayer.tiles, viewportSize(view)) : [];
     const loaded    = tiles.map(t => [t, state.cache.get(`polygons:${t.index}`)]).filter(([, d]) => d);
     const colors    = state.cellColors;
     const mask      = sel.mask;
@@ -166,7 +164,7 @@ export function renderLayers(viewState) {
   }
 
   // Transcript points
-  const txSampleEl = document.getElementById('tx-sample');
+  const txSampleEl = view.el.txSample;
   if (!inOverview && s.layers.tx.show && s.layers.tx.alpha > 0) {
     const tier = Math.min(3, Math.max(0, state.txZoomTier));
     const label = ['1/16', '1/4', null, null][tier];
@@ -254,6 +252,6 @@ export function renderLayers(viewState) {
     }));
   }
 
-  state.deckgl.setProps({ layers });
+  view.deck.setProps({ layers });
   renderRegPane();
 }

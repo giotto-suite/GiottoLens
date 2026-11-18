@@ -3,6 +3,7 @@ import { store } from '../core/store.ts';
 import { cellId } from '../data/cells.ts';
 import { metaValue, onColumnsLoaded, prefetchState } from '../data/meta.ts';
 import { escapeHtml } from './dom.js';
+import { spatialView } from '../spatial/current.ts';
 
 function fmtVal(v) {
   if (v == null) return 'NA';
@@ -51,12 +52,13 @@ function isSuppressed() {
 }
 
 export function showCellTooltip(idx, x, y) {
-  const el = document.getElementById('cell-tooltip');
+  const view = spatialView();
+  const el = view?.el.tooltip;
   if (!el || idx == null || !state.cells || isSuppressed()) { hideCellTooltip(); return; }
   _shown = { idx, x, y };
   el.innerHTML = buildHTML(idx);
 
-  const paneRect = document.getElementById('spatial-pane').getBoundingClientRect();
+  const paneRect = view.root.getBoundingClientRect();
   el.style.left = '0px';
   el.style.top  = '0px';
   el.classList.add('visible');
@@ -72,5 +74,5 @@ export function showCellTooltip(idx, x, y) {
 
 export function hideCellTooltip() {
   _shown = null;
-  document.getElementById('cell-tooltip')?.classList.remove('visible');
+  spatialView()?.el.tooltip.classList.remove('visible');
 }

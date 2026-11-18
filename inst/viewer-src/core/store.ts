@@ -97,7 +97,7 @@ export const initialConfig = (): Config => ({
   colorScales: {},
   cellMark: {},
   rules: {},
-  combine: 'or',
+  combine: 'and',   // cross-filter by default
   annotations: [],
   mode: 'pan',
   brushRadius: 30,
