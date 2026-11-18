@@ -7,7 +7,7 @@
 // layout is config (store `layout`): it is saved through R and restored after
 // a reload. Charts (scatter, histogram, density, table) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// Controls (cells, transcripts, data, images, annotations, register, layers)
+// Controls (cells, transcripts, data, regions, images, annotations, register, layers)
 // are one per viewer, with their kind as id, and keep their own state in the store
 // (adr/0016). So are the spatial view, which can be closed and opened again
 // from a "+" menu, and the tools bar, which cannot be closed.
@@ -36,6 +36,7 @@ import { createCellsPanel } from './cells.ts';
 import { createTranscriptsPanel } from './transcripts.ts';
 import { createDataPanel } from './data.ts';
 import { createTablePanel } from './table.ts';
+import { createRegionsPanel } from './regions.ts';
 import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
@@ -77,6 +78,9 @@ const TYPES = {
                  available: () => !!state.manifest?.layers?.transcripts },
   // A giotto object shown: R has a catalog to pull from
   data:        { create: createDataPanel, single: true, slot: 'sources',
+                 available: () => !!state.cells && !!state.manifest?.catalog },
+  // Regions of the object's cells and their comparison, a tab beside the Data panel
+  regions:     { create: createRegionsPanel, single: true, slot: 'sources',
                  available: () => !!state.cells && !!state.manifest?.catalog },
   images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
@@ -317,6 +321,17 @@ const viewWidth = () => Math.round(0.65 * ((dockHost?.clientWidth ?? 0) - CONTRO
 function newId(kind: string): string {
   if (!dock?.getPanel(kind)) return kind;
   for (let i = 2; ; i++) if (!dock.getPanel(`${kind}-${i}`)) return `${kind}-${i}`;
+}
+
+// A built-in panel brought forward (opened if closed), as R asks when it
+// gives the panel something new: a saved region
+export function showBuiltin(kind: BuiltinKind): void {
+  if (!dock || !available(kind)) return;
+  if (!dock.getPanel(kind)) {
+    actions.setPanelClosed(kind, false);
+    if (isControl(kind)) placeControls(); else addBuiltin(kind);
+  }
+  dock.getPanel(kind)?.api.setActive();
 }
 
 function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): void {

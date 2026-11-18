@@ -69,6 +69,9 @@ viewer$catalog()                                  # what the object holds that c
 viewer$pull(c("CD3E", "leiden_clus"), types = list(leiden_clus = "categorical"))
                                                   # adds them to the metadata; or rows of catalog()
 viewer$select(lens_cells(ids), source = "table")  # pick rows in the cell table
+viewer$save_region("tumor")                       # the selection, saved under a name; regions() lists them
+de <- viewer$compare_regions("tumor", "stroma")   # scran t-test as a job, docked as a volcano plot;
+                                                  # b = NULL: every other cell
 viewer$set_color_scale("nr_feats", preset = "magma")        # continuous scale: preset, or
 viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors
 viewer$set_layer("tx", show = TRUE)
@@ -148,6 +151,9 @@ counts; × drops one, and the bar's rules button hides them.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
+- **Regions:** the Regions panel saves the selection under a name and compares two regions,
+  or one and every other cell, by differential expression; clicking a gene in the volcano
+  plot colors the cells by it.
 - **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
   ruler, and a transcript lasso that counts genes in a region.
 - **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move

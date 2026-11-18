@@ -21,7 +21,9 @@ import { initSelectionBar, initRStatus } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
-import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
+  showBuiltin } from './panels/dock.ts';
+import { initRegions, regionList } from './panels/regions.ts';
 import { spatialView } from './spatial/current.ts';
 import { saveView } from './spatial/view.ts';
 import { applyTheme } from './ui/theme.ts';
@@ -144,6 +146,7 @@ async function main() {
   initRuleStrip();
   initSelectionBar();
   initJobs();
+  initRegions(() => showBuiltin('regions'));
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
@@ -207,7 +210,8 @@ function showEmpty(project) {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panel: panelHandle, get spatial() { return spatialView(); } };
+window.__giottolens = { state, store, actions, panel: panelHandle, regions: regionList,
+  get spatial() { return spatialView(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);

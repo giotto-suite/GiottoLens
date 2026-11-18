@@ -73,6 +73,12 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-subset}{\code{LensViewer$subset()}}
     \item \href{#method-LensViewer-view_bounds}{\code{LensViewer$view_bounds()}}
     \item \href{#method-LensViewer-zoom_to}{\code{LensViewer$zoom_to()}}
+    \item \href{#method-LensViewer-save_region}{\code{LensViewer$save_region()}}
+    \item \href{#method-LensViewer-regions}{\code{LensViewer$regions()}}
+    \item \href{#method-LensViewer-remove_region}{\code{LensViewer$remove_region()}}
+    \item \href{#method-LensViewer-select_region}{\code{LensViewer$select_region()}}
+    \item \href{#method-LensViewer-compare_regions}{\code{LensViewer$compare_regions()}}
+    \item \href{#method-LensViewer-de_results}{\code{LensViewer$de_results()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
     \item \href{#method-LensViewer-remove_panel}{\code{LensViewer$remove_panel()}}
     \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
@@ -1001,6 +1007,152 @@ viewer shows)}
       \item{\code{pad}}{Margin around them, as a fraction of their extent}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-save_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-save_region}{}}}
+\subsection{\code{LensViewer$save_region()}}{
+  Save cells as a named region, for \code{compare_regions()}
+and the viewer's Regions panel, whose "save selection" button
+does the same. Regions belong to the object shown and count as
+Lens work for \code{set_object()}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$save_region(name, ids = self$selection)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name; a region of that name is replaced}
+      \item{\code{ids}}{Cell IDs (default: the selection)}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The region's cell IDs, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-regions"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-regions}{}}}
+\subsection{\code{LensViewer$regions()}}{
+  The saved regions
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$regions(name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{A region name: return its cell IDs instead}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame of region names and cell counts, or the cell
+IDs of region \code{name}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-remove_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-remove_region}{}}}
+\subsection{\code{LensViewer$remove_region()}}{
+  Remove a saved region
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$remove_region(name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-select_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-select_region}{}}}
+\subsection{\code{LensViewer$select_region()}}{
+  Select the cells of a saved region (selection source
+\code{"r"})
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$select_region(name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-compare_regions"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-compare_regions}{}}}
+\subsection{\code{LensViewer$compare_regions()}}{
+  Differential expression between two saved regions, or
+a region and every other cell, with \code{\link[Giotto:findScranMarkers]{Giotto::findScranMarkers()}}.
+Cells in both regions are left out. Runs as a job (see \code{jobs()})
+over the object the jobs' process holds. The result is docked as
+a volcano plot (\verb{DE: a vs b}); a click on a gene colours the cells
+by it. The viewer's Regions panel runs the same comparison.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$compare_regions(a, b = NULL, values = NULL, wait = TRUE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{a}}{Region name}
+      \item{\code{b}}{Region name; \code{NULL} for every cell not in \code{a}}
+      \item{\code{values}}{Expression values (a name of the object's
+expression); default \code{"normalized"}}
+      \item{\code{wait}}{Whether to wait for the result. \code{FALSE} returns the
+job's id at once; the table is then read with \code{de_results()}.}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame, one row per gene in order of FDR: \code{gene},
+\code{logFC} (\code{a} vs \code{b}), \code{p_value}, \code{FDR}; with \code{wait = FALSE}, the
+job's id, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-de_results"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-de_results}{}}}
+\subsection{\code{LensViewer$de_results()}}{
+  Results of \code{compare_regions()}
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$de_results(id = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{A result id (\code{"de-1"}, ...): return its table instead}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with one row per comparison: \code{id}, \code{a}, \code{b},
+cell counts, \code{values} and the number of genes at FDR < 0.05; or
+the table of comparison \code{id}
   }
 }
 

@@ -22,6 +22,12 @@
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
   do the same from R. Pulls run as jobs, which the panel can cancel, and add columns to the
   viewer, not the object; `pull(wait = FALSE)` returns at once with the job's id.
+* Regions: `viewer$save_region()`, `regions()`, `select_region()` and `remove_region()` keep
+  named sets of cells for the object shown. `viewer$compare_regions(a, b)` tests two regions,
+  or one and every other cell, with `Giotto::findScranMarkers()` as a job, and docks the
+  result as a volcano plot (`de_results()` returns the tables). Clicking a gene in it colors
+  the cells by that gene. The Regions panel, a tab next to the Data panel, does the same.
+  Saved regions count as Lens work for `set_object()`. See adr/0020.
 * Color cells by one gene, enrichment or dim reduction axis without adding it to the
   metadata: the button next to "color by" opens a searchable picker, and picked items stay
   in the menu's "recent" group. `viewer$color_by()` takes a row of `catalog()` or its `key`.

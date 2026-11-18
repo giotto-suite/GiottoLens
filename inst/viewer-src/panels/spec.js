@@ -4,13 +4,17 @@
 // selected, and an interval param named `brush` becomes a selection rule
 // (source `panel:<panel id>`) over the cells whose rows fall inside it. The
 // rule keeps the brush's extent, so a chart rebuilt with its rule in place (a
-// reload, a re-push) draws the brush again and it can still be dragged.
+// reload, a re-push) draws the brush again and it can still be dragged. A
+// point param named `pick` sends the clicked row's fields to R
+// (`panel_pick`), e.g. a gene in a volcano plot; a click that ends a drag is
+// not sent.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { rangeBuffer, readColumns, numRows } from '../data/parquet.ts';
 import { primeMask, encodeMask } from '../selection/rules.ts';
 import { chartArea, whenVisible } from './controls.js';
 import { chartAxis, token } from '../ui/theme.ts';
+import { sendToR } from '../core/comms.js';
 
 const loadEmbed = () => import('vega-embed').then(m => m.default);
 
@@ -67,7 +71,8 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
     s.encoding = { ...s.encoding, opacity: { condition: { test: 'datum._sel == 1', value: 0.9 }, value: 0.15 } };
   s.config = { view: { stroke: null },
     axis: { ...chartAxis(), titleColor: token('fg-2') },
-    legend: { labelColor: token('fg-2'), titleColor: token('fg-2') }, ...s.config };
+    legend: { labelColor: token('fg-2'), titleColor: token('fg-2') },
+    title: { color: token('fg-1') }, text: { color: token('fg-1') }, ...s.config };
 
   const embed = await loadEmbed();
   if (destroyed) return { destroy() {} };
@@ -91,6 +96,30 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
   });
   resize.observe(area);
   unsub.push(() => resize.disconnect());
+
+  // A press that moves more than 4 px is a drag; the click that ends it is
+  // not a pick
+  let downAt = null, dragged = false;
+  const onDown = e => { downAt = [e.clientX, e.clientY]; dragged = false; };
+  const onMove = e => {
+    if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) dragged = true;
+  };
+  const onUp = () => { downAt = null; };
+  area.addEventListener('pointerdown', onDown, true);
+  window.addEventListener('pointermove', onMove, true);
+  window.addEventListener('pointerup', onUp, true);
+  unsub.push(() => {
+    area.removeEventListener('pointerdown', onDown, true);
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerup', onUp, true);
+  });
+  try {
+    view?.addSignalListener('pick', (_, v) => {
+      if (dragged) return;
+      const fields = Object.fromEntries(Object.entries(v ?? {}).filter(([k]) => k !== 'vlPoint'));
+      if (Object.keys(fields).length) sendToR('panel_pick', { id: ctx.id, value: fields });
+    });
+  } catch (_) { /* the spec has no pick param */ }
 
   // Hidden behind another tab, it catches up when shown
   const dim = whenVisible(ctx, () => {

@@ -180,6 +180,37 @@
     .data-panel .ctl-actions button:disabled { opacity: 0.4; cursor: default; }
     .data-status { margin-top: 6px; font-size: 11px; color: var(--fg-3); overflow-wrap: anywhere; }
     .data-status:empty { display: none; }
+    /* Regions panel */
+    .rg { padding: 8px 10px; font-size: 11px; color: var(--fg-1); overflow-y: auto; height: 100%; box-sizing: border-box; }
+    .rg-hd { font-size: 11px; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 4px; }
+    .rg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .rg-name, .rg-sel {
+      flex: 1; min-width: 0; padding: 3px 6px; background: var(--bg-2); border: 1px solid var(--bg-3);
+      border-radius: 4px; color: var(--fg-0); font-size: 11px; font-family: monospace; outline: none;
+    }
+    .rg-btn {
+      background: var(--bg-2); border: 1px solid var(--bg-3); color: var(--fg-1); border-radius: 4px;
+      font-size: 11px; padding: 3px 8px; cursor: pointer; white-space: nowrap;
+    }
+    .rg-btn:hover:not(:disabled) { background: var(--bg-3); color: var(--fg-0); }
+    .rg-btn:disabled { opacity: 0.4; cursor: default; }
+    .rg-lbl { color: var(--fg-3); }
+    .rg-list { margin-bottom: 4px; }
+    .rg-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+    .rg-pick {
+      flex: 1; min-width: 0; text-align: left; background: none; border: none; color: var(--fg-0);
+      font-size: 11px; font-family: monospace; cursor: pointer; padding: 1px 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .rg-pick:hover { color: var(--accent-fg); }
+    .rg-n { color: var(--fg-3); font-family: monospace; }
+    .rg-del { background: none; border: none; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 0 2px; }
+    .rg-del:hover { color: #f87171; }
+    .rg-empty, .rg-note { color: var(--fg-3); font-size: 10px; margin-bottom: 4px; }
+    .rg-note:empty, .rg-status:empty { display: none; }
+    .rg-status { font-size: 10px; color: var(--fg-2); overflow-wrap: anywhere; }
+    .rg-status.rg-running { color: var(--tag-amber-fg); }
+    .rg-status.rg-error { color: #f87171; }
     .data-status.error { color: #fca5a5; }
     :root[data-theme="light"] .data-status.error { color: #b91c1c; }
     /* The picker (panels/picker.ts): a popover over the page */

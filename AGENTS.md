@@ -44,6 +44,8 @@ R/
                (.item_key(), .parse_item_key(), adr/0024)
   jobs.R       jobs: the viewer's mirai daemon holding the object shown, its helpers
                (.jw_object(), .jw_run(), .lens_progress()), adr/0025
+  regions.R    region names, the comparison job (.region_de()), its expression source
+               (.de_source()) and volcano spec (.de_volcano()), adr/0020
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -75,6 +77,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
               data.ts (the Data panel: what to pull from the object, through askR()),
+              regions.ts (the Regions panel; regions-model.ts its helpers),
               picker.ts (the popover a field picks a column or an item with), images.ts,
               register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
@@ -267,7 +270,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
   (adr/0019); the Data panel's `catalog`, `pull`, and the item cache's `item`, answered only to a page showing the
   current load (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
-  earlier load). An ask is never queued while disconnected.
+  earlier load). The Regions panel's `region` (save, remove, select, compare; a compare
+  answered when its job ends) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
@@ -397,6 +401,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
   its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
   extent by field) so a rebuilt chart can draw it again.
+- A pushed spec's point param named `pick` sends the clicked row's fields to R
+  (`panel_pick`, not the click that ends a drag). R acts on picks of a panel it knows: a
+  comparison's volcano plot colours that page's cells by the gene's item key.
 - A range or rectangle brush drag is live (adr/0013): `beginLive`/`moveLive` while the
   button is down, the rule set once on release. Panels that show counts register with
   `addLiveConsumer()` (a bin per cell) and cache their totals over all cells; never set a
@@ -408,7 +415,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
 `set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
-`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`,
+`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
+`select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
 `panels()`, `push_polygons()`,
 `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

@@ -7,17 +7,17 @@
 # dropped. `on()` callbacks can be registered for the first two.
 .lens_inbound_types <- c("cell_selection", "annotations_update",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
-    "registration_update", "set_column_type", "ask", "close")
+    "registration_update", "set_column_type", "ask", "close", "panel_pick")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Messages about the object a page shows, ignored from a page that has not
 # reloaded since the last set_object() (adr/0017)
 .lens_object_types <- c("cell_selection", "annotations_update", "config",
-    "panel_closed", "registration_update", "set_column_type")
+    "panel_closed", "registration_update", "set_column_type", "panel_pick")
 
 # `ask` ops about the object a page shows, refused to a page that has not
 # reloaded since the last load
-.lens_object_ops <- c("catalog", "pull", "item", "cell_ids")
+.lens_object_ops <- c("catalog", "pull", "item", "cell_ids", "region")
 
 # Parse and validate one WebSocket text frame.
 # Returns list(type, data), or NULL with a warning when the frame is invalid.

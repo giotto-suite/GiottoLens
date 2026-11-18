@@ -1152,6 +1152,106 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self$set_view(bounds = c(x[1L] - px, x[2L] + px, y[1L] - py, y[2L] + py)))
         },
 
+        #' @description Save cells as a named region, for `compare_regions()`
+        #'   and the viewer's Regions panel, whose "save selection" button
+        #'   does the same. Regions belong to the object shown and count as
+        #'   Lens work for `set_object()`.
+        #' @param name Region name; a region of that name is replaced
+        #' @param ids Cell IDs (default: the selection)
+        #' @returns The region's cell IDs, invisibly
+        save_region = function(name, ids = self$selection) {
+            site <- "LensViewer$save_region"
+            private$need_object(site)
+            name <- .check_region_name(name, site)
+            ids <- unique(as.character(ids))
+            known <- ids %in% private$cell_ids
+            if (!all(known))
+                warning("[", site, "] ", sum(!known), " ID(s) are not cells in the viewer ",
+                    "and were left out", call. = FALSE)
+            ids <- ids[known]
+            if (!length(ids))
+                stop("[", site, "] no cells to save; select cells first", call. = FALSE)
+            private$region_sets[[name]] <- ids
+            private$add_log("region", list(name = name, cells = length(ids)))
+            private$send_regions(open = TRUE)
+            invisible(ids)
+        },
+
+        #' @description The saved regions
+        #' @param name A region name: return its cell IDs instead
+        #' @returns A data.frame of region names and cell counts, or the cell
+        #'   IDs of region `name`
+        regions = function(name = NULL) {
+            if (!is.null(name)) return(private$region_ids(name, "LensViewer$regions"))
+            r <- private$region_sets
+            data.frame(name = names(r) %||% character(), cells = vapply(r, length, 1L),
+                row.names = NULL)
+        },
+
+        #' @description Remove a saved region
+        #' @param name Region name
+        remove_region = function(name) {
+            private$region_ids(name, "LensViewer$remove_region")
+            private$region_sets[[name]] <- NULL
+            private$send_regions()
+            invisible(self)
+        },
+
+        #' @description Select the cells of a saved region (selection source
+        #'   `"r"`)
+        #' @param name Region name
+        select_region = function(name) {
+            self$select(lens_cells(private$region_ids(name, "LensViewer$select_region")))
+        },
+
+        #' @description Differential expression between two saved regions, or
+        #'   a region and every other cell, with [Giotto::findScranMarkers()].
+        #'   Cells in both regions are left out. Runs as a job (see `jobs()`)
+        #'   over the object the jobs' process holds. The result is docked as
+        #'   a volcano plot (`DE: a vs b`); a click on a gene colours the cells
+        #'   by it. The viewer's Regions panel runs the same comparison.
+        #' @param a Region name
+        #' @param b Region name; `NULL` for every cell not in `a`
+        #' @param values Expression values (a name of the object's
+        #'   expression); default `"normalized"`
+        #' @param wait Whether to wait for the result. `FALSE` returns the
+        #'   job's id at once; the table is then read with `de_results()`.
+        #' @returns A data.frame, one row per gene in order of FDR: `gene`,
+        #'   `logFC` (`a` vs `b`), `p_value`, `FDR`; with `wait = FALSE`, the
+        #'   job's id, invisibly
+        compare_regions = function(a, b = NULL, values = NULL, wait = TRUE) {
+            site <- "LensViewer$compare_regions"
+            out <- NULL
+            id <- private$compare(a, b, values, site, function(r) out <<- r)
+            if (!isTRUE(wait)) return(invisible(id))
+            while (is.null(out)) later::run_now(0.05)
+            if (out$state != "done") stop("[", site, "] ", out$message, call. = FALSE)
+            private$de[[out$result]]$table
+        },
+
+        #' @description Results of `compare_regions()`
+        #' @param id A result id (`"de-1"`, ...): return its table instead
+        #' @returns A data.frame with one row per comparison: `id`, `a`, `b`,
+        #'   cell counts, `values` and the number of genes at FDR < 0.05; or
+        #'   the table of comparison `id`
+        de_results = function(id = NULL) {
+            if (!is.null(id)) {
+                r <- private$de[[id]]
+                if (is.null(r))
+                    stop("[LensViewer$de_results] no result '", id, "'; results: ",
+                        paste(names(private$de), collapse = ", "), call. = FALSE)
+                return(r$table)
+            }
+            d <- private$de
+            data.frame(id = names(d) %||% character(),
+                a = vapply(d, `[[`, "", "a"), b = vapply(d, `[[`, "", "b"),
+                cells_a = vapply(d, function(r) as.integer(r$cells_a), 1L),
+                cells_b = vapply(d, function(r) as.integer(r$cells_b), 1L),
+                values = vapply(d, `[[`, "", "values"),
+                significant = vapply(d, function(r) sum(r$table$FDR < 0.05, na.rm = TRUE), 1L),
+                row.names = NULL)
+        },
+
         #' @description Show a Vega-Lite chart as a docked panel, for example
         #'   from `GiottoVisuals::renderSpec(..., engine = "vegalite")`. Rows
         #'   with a `cell_ID` are linked to the viewer: they dim when not
@@ -1377,6 +1477,73 @@ LensViewer <- R6::R6Class("LensViewer",
         meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
         catalog_data = NULL,    # what the object shown can pull (.lens_catalog())
+        # ── Regions and their comparisons (R/regions.R) ──
+        region_sets = list(),   # region name -> cell IDs
+        de          = list(),   # compare_regions() results by id
+        de_seq      = 0L,
+
+        region_ids = function(name, site) {
+            if (!is.character(name) || length(name) != 1L || is.null(private$region_sets[[name]]))
+                stop("[", site, "] no region '", paste(name, collapse = ", "), "'; regions: ",
+                    if (length(private$region_sets)) paste(names(private$region_sets),
+                        collapse = ", ") else "none (save one with save_region())",
+                    call. = FALSE)
+            private$region_sets[[name]]
+        },
+        regions_msg = function(open = FALSE) {
+            list(regions = unname(lapply(names(private$region_sets), function(n)
+                list(name = n, n = length(private$region_sets[[n]])))), open = open)
+        },
+        send_regions = function(open = FALSE) {
+            if (self$connected())
+                private$broadcast(.encode_ws_message("regions", private$regions_msg(open)))
+        },
+        # Start a comparison job; `done` gets its end, with the result's id.
+        # Returns the job's id.
+        compare = function(a, b, values, site, done, ref = NULL) {
+            if (!requireNamespace("Giotto", quietly = TRUE))
+                stop("[", site, "] comparing regions needs the Giotto package", call. = FALSE)
+            ids_a <- private$region_ids(a, site)
+            ids_b <- if (!is.null(b)) private$region_ids(b, site)
+            if (identical(a, b)) stop("[", site, "] `a` and `b` are the same region", call. = FALSE)
+            src <- .de_source(private$need_catalog(site), values, private$feat_type, site)
+            b_label <- b %||% "rest"
+            what <- sprintf("%s vs %s", a, b_label)
+            private$start_job(paste("DE", what), .region_de, list(a = ids_a, b = ids_b,
+                values = src$name, spat_unit = private$catalog_data$spat_unit,
+                feat_type = src$feat_type), ref = ref, on_end = done,
+                apply = function(r) {
+                    tab <- r$table[order(r$table$FDR, -abs(r$table$logFC)), , drop = FALSE]
+                    rownames(tab) <- NULL
+                    private$de_seq <- private$de_seq + 1L
+                    id <- paste0("de-", private$de_seq)
+                    private$de[[id]] <- list(a = a, b = b_label, cells_a = r$n_a,
+                        cells_b = r$n_b, cells_both = r$n_both, values = src$name,
+                        feat_type = src$feat_type, table = tab)
+                    v <- .de_volcano(tab, a, b_label)
+                    suppressMessages(self$push_panel(v$spec, data = v$data, id = id,
+                        title = paste0("DE: ", what,
+                            if (!identical(src$name, "normalized")) paste0(" (", src$name, ")"))))
+                    message(sprintf("[LensViewer] %s: %s and %s cells, %d gene(s) at FDR < 0.05%s",
+                        what, format(r$n_a, big.mark = ","), format(r$n_b, big.mark = ","),
+                        sum(tab$FDR < 0.05, na.rm = TRUE),
+                        if (r$n_both) sprintf(" (%d cell(s) in both left out)", r$n_both) else ""))
+                    id
+                })
+        },
+        # A click on a gene in a volcano plot (`panel_pick`): colour that
+        # page's cells by it, once its item is read
+        pick_gene = function(ws, id, gene) {
+            de <- private$de[[id]]
+            if (is.null(de) || !is.character(gene) || length(gene) != 1L || !nzchar(gene)) return()
+            key <- .item_key("expression", de$feat_type, gene, name = de$values)
+            private$need_item(key, "LensViewer", function(r) {
+                if (!is.null(r$error)) return(private$add_log("error",
+                    list(where = "panel_pick", message = r$error)))
+                try(ws$send(.encode_ws_message("set_color_by", list(column = key, item = r$data))),
+                    silent = TRUE)
+            })
+        },
 
         meta_entry = function(name) {
             for (cl in private$cached_meta$columns) if (identical(cl$name, name)) return(cl)
@@ -1783,6 +1950,23 @@ LensViewer <- R6::R6Class("LensViewer",
                         ref = str1(dat$ref))
                     NULL
                 },
+                # The Regions panel: save, remove, select, compare. A compare
+                # is answered when its job ends, with the result's id.
+                region = {
+                    name <- str1(dat$name) %||% ""
+                    switch(str1(dat$action) %||% "",
+                        save   = list(data = list(cells = length(self$save_region(name)))),
+                        remove = { self$remove_region(name); list(data = list()) },
+                        select = { self$select_region(name); list(data = list()) },
+                        compare = {
+                            b <- str1(dat$b)
+                            private$compare(str1(dat$a) %||% "", if (nzchar(b %||% "")) b,
+                                str1(dat$values), "LensViewer", ref = str1(dat$ref),
+                                function(r) reply(.job_answer(r, function(id) list(id = id))))
+                            NULL
+                        },
+                        list(error = "unknown region action"))
+                },
                 # A job the page started (its `job` messages carry the id)
                 cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
                     private$cancel(dat$id))),
@@ -1943,6 +2127,8 @@ LensViewer <- R6::R6Class("LensViewer",
             for (read in private$item_reads)
                 for (w in read$waits) w(list(error = "the object shown changed"))
             private$item_reads   <- list()
+            private$region_sets  <- list()
+            private$de           <- list()
             private$config_json  <- NULL
             private$rule_set     <- list()
             private$combine      <- "and"
@@ -1963,7 +2149,7 @@ LensViewer <- R6::R6Class("LensViewer",
         # without `discard = TRUE`. Settings are not counted.
         lens_work = function() {
             n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
-                `pushed panel` = length(private$pushed))
+                region = length(private$region_sets), `pushed panel` = length(private$pushed))
             parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
             if (!is.null(self$registration)) parts <- c(parts, "image registration")
             if (length(parts)) paste(parts, collapse = ", ")
@@ -2065,7 +2251,12 @@ LensViewer <- R6::R6Class("LensViewer",
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
                             # Jobs already running: a reload or a new tab lists them too
                             for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
+                            ws$send(.encode_ws_message("regions", priv$regions_msg()))
                         },
+                        # A click on a point of a pushed chart's `pick` param:
+                        # on a volcano plot, colour the cells by that gene
+                        panel_pick = if (is.character(dat$id) && length(dat$id) == 1L)
+                            priv$pick_gene(ws, dat$id, unlist(dat$value$gene)[1L]),
                         ask = priv$answer(ws, parsed$id, dat),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
@@ -2190,7 +2381,7 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
-    "transcripts", "data", "images", "register", "annotations", "layers")
+    "transcripts", "data", "regions", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
