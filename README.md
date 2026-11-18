@@ -116,8 +116,8 @@ viewer$rules()              # one row per source: summary and cells it matches o
 viewer$rules(code = TRUE)   # the lens_*() calls that recreate the selection
 ```
 
-In the viewer, chips under the HUD show the same rules with their counts; × drops one,
-and the toolbar's rules button hides the strip.
+In the viewer, chips in the selection bar along the bottom show the same rules with their
+counts; × drops one, and the bar's rules button hides them.
 
 ## Viewer
 
@@ -129,7 +129,8 @@ and the toolbar's rules button hides the strip.
 - **Selection:** lasso, brush (`[` `]` resize), invert, select by metadata, scatter lasso,
   histogram brush, and brushes on panels pushed from R. A lasso or brush stroke replaces its
   view's selection; Shift adds to it, Alt (Option) or Ctrl/Cmd subtracts from it, and × on
-  its rule drops it. Sources combine as a union, or intersect in cross-filter mode.
+  its rule drops it. Sources intersect in cross-filter mode (the default), or combine as a
+  union.
   Selections cover all cells, not only those loaded.
 - **Images:** the object's images under the cells, each from its own TIFF file by tile
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
@@ -144,6 +145,10 @@ and the toolbar's rules button hides the strip.
   selection.
 - **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
   ruler, and a transcript lasso that counts genes in a region.
+- **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move
+  or split one, × closes it, and `+` adds one, including a closed spatial view. The tools bar
+  at the left edge holds the project dialog, the panels toggle and the selection's actions.
+  The bar along the bottom holds R's connection, the selected count and the rules.
 
 ## Architecture
 

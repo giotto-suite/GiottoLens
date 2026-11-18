@@ -10,14 +10,18 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     expect_true(browser_wait(br, tiles_loaded))
     expect_true(pump_until(function() v$connected()))
     expect_true(browser_wait(br,
-        "document.getElementById('r-status').className === 'connected'"))
+        "!!document.querySelector('.r-status.connected')"))
+    # Cross-filter is on from the start, on both sides
+    expect_identical(br$js("window.__giottolens.store.getState().combine"), "and")
+    expect_true(br$js("document.querySelector('[data-panel=tools] [data-act=crossfilter]').classList.contains('active')"))
+    expect_identical(get("private", v$.__enclos_env__)$combine, "and")
 
     # Transcripts on: tiles go through the Range handler
     br$js("document.querySelector('[data-panel=layers] [data-layer=tx] .show').click()")
     expect_true(browser_wait(br, tiles_loaded))
 
     br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
-    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    size <- br$js("(() => { const c = window.__giottolens.spatial.canvas; return [c.clientWidth, c.clientHeight]; })()")
     cx <- size[[1]] / 2; cy <- size[[2]] / 2; r <- min(cx, cy) * 0.5
     ring <- lapply(seq(0, 2 * pi, length.out = 24), function(a) c(cx + r * cos(a), cy + r * sin(a)))
     browser_drag(br, ring)
@@ -52,9 +56,9 @@ test_that("holding Space pans with any tool, and the tool comes back on release"
         windowsVirtualKeyCode = 32L)
     pan_lit <- function() br$js("document.querySelector('.tool-btn[data-mode=\"pan\"]').classList.contains('active')")
     mode <- function() br$js("window.__giottolens.store.getState().mode")
-    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    size <- br$js("(() => { const c = window.__giottolens.spatial.canvas; return [c.clientWidth, c.clientHeight]; })()")
     cx <- size[[1]] / 2; cy <- size[[2]] / 2
-    target <- function() unlist(br$js("window.__giottolens.state.currentViewState.target"))[1:2]
+    target <- function() unlist(br$js("window.__giottolens.spatial.viewState.target"))[1:2]
 
     br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
     expect_false(pan_lit())
@@ -71,7 +75,7 @@ test_that("holding Space pans with any tool, and the tool comes back on release"
     expect_identical(mode(), "lasso")
     # With the pan tool, a held drag pans once: deck.gl does not pan as well
     br$js("window.__giottolens.actions.setMode('pan')")
-    scale <- br$js("2 ** window.__giottolens.state.currentViewState.zoom")
+    scale <- br$js("2 ** window.__giottolens.spatial.viewState.zoom")
     key("keyDown")
     t0 <- target()
     browser_drag(br, list(c(cx, cy), c(cx + 40, cy), c(cx + 80, cy + 20)))
@@ -82,7 +86,7 @@ test_that("holding Space pans with any tool, and the tool comes back on release"
     br$js("window.__giottolens.actions.setMode('poly')")
     click <- function(p) for (t in c("mousePressed", "mouseReleased")) br$session$Input$dispatchMouseEvent(
         type = t, x = p[1], y = p[2], button = "left", buttons = if (t == "mousePressed") 1L else 0L, clickCount = 1L)
-    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left, r.top]; })()"))
+    off <- unlist(br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left, r.top]; })()"))
     click(off + c(cx, cy)); click(off + c(cx + 30, cy))
     expect_true(browser_wait(br, "window.__giottolens.state.drawRing.length === 2"))
     key("keyDown"); key("keyUp")
@@ -98,8 +102,8 @@ test_that("the middle button pans with any tool without interrupting it", {
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, tiles_loaded))
-    off <- unlist(br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"))
-    vs <- function() br$js("(() => { const v = window.__giottolens.state.currentViewState; return [v.target[0], v.target[1], 2 ** v.zoom]; })()")
+    off <- unlist(br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"))
+    vs <- function() br$js("(() => { const v = window.__giottolens.spatial.viewState; return [v.target[0], v.target[1], 2 ** v.zoom]; })()")
     mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
         button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
     middle_drag <- function(from, by) {
@@ -159,7 +163,7 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("scatter", "histogram", "transcripts", "annotations", "layers"))
+    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "transcripts", "annotations", "layers"))
     expect_identical(br$errors(), character())
 })
 
@@ -184,7 +188,7 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     v$push_metadata(fx$meta[, c("cell_ID", "half")])
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    ids <- "window.__giottolens.state.deckgl.props.layers.map(l => l.id)"
+    ids <- "window.__giottolens.spatial.deck.props.layers.map(l => l.id)"
     has <- function(id) browser_wait(br, sprintf("%s.includes('%s')", ids, id))
 
     expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
@@ -255,7 +259,7 @@ test_that("the cell mark is set from R, survives a reload, and resets", {
     on.exit(v$close(), add = TRUE)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    layer <- function() br$js("(() => { const l = window.__giottolens.state.deckgl.props.layers.find(l => l.id.startsWith('cell-')); return l && [l.id, l.props.getRadius ?? l.props.radius]; })()")
+    layer <- function() br$js("(() => { const l = window.__giottolens.spatial.deck.props.layers.find(l => l.id.startsWith('cell-')); return l && [l.id, l.props.getRadius ?? l.props.radius]; })()")
     expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
     expect_true(pump_until(function() v$connected()))
     v$set_view(x = 60, y = -60, zoom = 4)
@@ -294,7 +298,7 @@ test_that("segmented cells take a mark when it is turned on", {
     on.exit(v$close(), add = TRUE)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    ids <- "window.__giottolens.state.deckgl.props.layers.map(l => l.id)"
+    ids <- "window.__giottolens.spatial.deck.props.layers.map(l => l.id)"
     expect_true(pump_until(function() v$connected(), 20))
     # Below outline zoom: dots by default
     v$set_view(x = 50, y = -50, zoom = -3)
@@ -322,7 +326,7 @@ test_that("selections do not depend on what is loaded, and match R", {
         jsonlite::toJSON(ring))
 
     # Zoomed far out: no polygon tiles are loaded
-    br$js("(() => { const g = window.__giottolens; g.state.deckgl.setProps({viewState: {...g.state.currentViewState, zoom: -6}}); g.state.cache.clear(); })()")
+    br$js("(() => { const g = window.__giottolens; g.spatial.deck.setProps({viewState: {...g.spatial.viewState, zoom: -6}}); g.state.cache.clear(); })()")
     br$js(sprintf("window.__giottolens.actions.setRule('spatial', %s)", rule_js))
     expect_true(pump_until(function() length(v$selection) > 0))
     expect_identical(sort(v$selection), expected)
@@ -334,7 +338,7 @@ test_that("selections do not depend on what is loaded, and match R", {
     # Invert covers every cell, loaded or not
     br$js(sprintf("window.__giottolens.actions.setRule('spatial', %s)", rule_js))
     expect_true(pump_until(function() length(v$selection) == length(expected)))
-    br$js("document.getElementById('tool-invert-sel').click()")
+    br$js("document.querySelector('[data-panel=tools] [data-act=invert]').click()")
     expect_true(pump_until(function() length(v$selection) == 100L - length(expected)))
 
     # Crossfilter: histogram range AND spatial lasso
@@ -344,7 +348,7 @@ test_that("selections do not depend on what is loaded, and match R", {
     br$js("window.__giottolens.actions.setRule('hist:score', {source:'hist:score',kind:'range',space:'score',params:{min:3,max:6}})")
     both <- sort(intersect(expected, fx$meta$cell_ID[fx$meta$score >= 3 & fx$meta$score <= 6]))
     expect_true(pump_until(function() identical(sort(v$selection), both)))
-    expect_true(browser_wait(br, "document.getElementById('btn-crossfilter').classList.contains('active')"))
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=tools] [data-act=crossfilter]').classList.contains('active')"))
 
     expect_identical(br$errors(), character())
 })
@@ -448,7 +452,7 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_identical(v$state()$config$theme, "light")
     expect_true(browser_wait(br, "document.documentElement.dataset.theme === 'light'"))
     expect_true(browser_wait(br, paste0(
-        "getComputedStyle(document.getElementById('spatial-pane')).backgroundColor === 'rgb(17, 24, 39)' && ",
+        "getComputedStyle(window.__giottolens.spatial.root).backgroundColor === 'rgb(17, 24, 39)' && ",
         "getComputedStyle(document.body).backgroundColor === 'rgb(243, 244, 246)'")))
     v$set_theme("dark")
 
@@ -484,7 +488,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("scatter", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))
+    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; the charts in view
@@ -530,7 +534,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))))
     expect_identical(br$errors(), character())
 })
 
@@ -541,18 +545,20 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=layers] [data-layer=poly] .alpha')"))
-    expect_true(browser_wait(br, "document.getElementById('r-status').className === 'connected'"))
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
     expect_true(pump_until(function() v$connected()))
 
-    # Charts on the left, the controls in a column of their own on the right:
-    # cells and transcripts as tabs, then annotations, then layers (images and
-    # register come between them when there are images)
+    # The tools bar at the left edge, the spatial view, the charts, then the
+    # controls in a column of their own on the right: cells and transcripts
+    # as tabs, then annotations, then layers (images and register come
+    # between them when there are images)
     p <- v$panels()
-    expect_identical(p$id, c("scatter", "histogram", "cells", "transcripts", "annotations", "layers"))
+    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "cells", "transcripts", "annotations", "layers"))
     expect_identical(p$kind, p$id)
-    expect_false(any(p$group[3:6] %in% p$group[1:2]))
-    expect_identical(p$group[3], p$group[4])
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, FALSE, TRUE, TRUE))
+    expect_identical(length(unique(p$group[1:3])), 3L)
+    expect_false(any(p$group[5:8] %in% p$group[3:4]))
+    expect_identical(p$group[5], p$group[6])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, TRUE))
     width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
 
@@ -585,12 +591,12 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     br$js("location.reload()")
     Sys.sleep(0.3)
     # The cells panel is there at boot; the restore, once connected, leaves layers out
-    expect_true(browser_wait(br, paste("document.getElementById('r-status')?.className === 'connected'",
+    expect_true(browser_wait(br, paste("!!document.querySelector('.r-status.connected')",
         "&& window.__giottolens.store.getState().closedPanels.includes('layers')",
         "&& !!document.querySelector('[data-panel=cells]') && !document.querySelector('[data-panel=layers]')")))
     expect_false("layers" %in% v$panels()$id)
     menu <- function(kind) {
-        br$js("document.querySelector('.dock-add').click()")
+        br$js("[...document.querySelectorAll('.dock-add')].find(b => b.offsetParent).click()")
         br$js(sprintf("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === '%s').click()", kind))
     }
     menu("layers")
@@ -599,6 +605,104 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     menu("cells")
     expect_identical(sum(v$panels()$id == "cells"), 1L)
     expect_true(pump_until(function() grepl('"closedPanels":[]', priv$config_json %||% "", fixed = TRUE)))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the spatial view docks: it closes, comes back, and the panels hide beside it", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 1400, height = 800)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    expect_true(pump_until(function() v$connected()))
+    width <- function(id) br$js(sprintf("document.querySelector('[data-panel=%s]').clientWidth", id))
+    # The tools bar is one column; the view 65% of what it and the controls leave
+    expect_identical(width("tools"), 40L)
+    expect_equal(width("spatial"), round(0.65 * (1400 - 260 - 40)), tolerance = 2)
+
+    # Nothing docks into the tools bar, as a tab or a split; its sash stops at
+    # two columns of icons. dockview reads its own drag data, so synthetic
+    # drag events will do
+    drag <- function(tab, x, y) br$js(sprintf("(() => {
+      const tab = [...document.querySelectorAll('.dv-tab')].find(t => t.textContent.trim() === '%s');
+      const dt = new DataTransfer(), at = { bubbles: true, cancelable: true, clientX: %f, clientY: %f, dataTransfer: dt };
+      tab.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+      const target = document.elementFromPoint(%f, %f);
+      for (const t of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(t, at));
+      tab.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+    })()", tab, x, y, x, y))
+    groups <- function() { p <- v$panels(); setNames(p$group, p$id) }
+    g0 <- groups()
+    drag("scatter", 20, 400)    # the tools bar's middle
+    drag("scatter", 36, 400)    # its right edge
+    pump_until(function() FALSE, 0.3)
+    expect_identical(groups(), g0)
+    sash <- br$js("(() => { const r = document.querySelector('[data-panel=tools]').getBoundingClientRect(); return [r.right, r.top + 300]; })()")
+    mouse <- function(type, x) br$session$Input$dispatchMouseEvent(type = type, x = x, y = sash[[2]],
+        button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
+    mouse("mousePressed", sash[[1]] + 1)
+    for (x in seq(sash[[1]] + 10, 400, by = 30)) mouse("mouseMoved", x)
+    mouse("mouseReleased", 400)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=tools]').clientWidth === 80"))
+    expect_identical(br$js("getComputedStyle(document.querySelector('.tools-bar')).gridTemplateColumns"), "32px 32px")
+    mouse("mousePressed", 81); for (x in seq(75, 20, by = -15)) mouse("mouseMoved", x); mouse("mouseReleased", 20)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=tools]').clientWidth === 40"))
+
+    # The panels toggle hides every group but the view's and the tools bar's,
+    # and gives them back their widths
+    toggle <- "document.querySelector('[data-panel=tools] [data-act=panels]').click()"
+    w0 <- width("spatial")
+    br$js(toggle)
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=spatial]').clientWidth === 1360"))
+    p <- v$panels()
+    expect_identical(p$visible, p$id %in% c("tools", "spatial"))
+    br$js(toggle)
+    expect_true(browser_wait(br, sprintf("document.querySelector('[data-panel=spatial]').clientWidth === %d", w0)))
+    expect_identical(width("tools"), 40L)
+
+    # Closed, its Deck gives back its WebGL context and its tiles go; R gets
+    # an error for what needs a view, and the selection still works
+    v$set_view(x = 10, y = -20, zoom = 3)
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"zoom":3', priv$config_json %||% "", fixed = TRUE)))
+    br$js("(window.__gl = window.__giottolens.spatial.deck.device.gl, true)")
+    v$remove_panel("spatial")
+    expect_true(browser_wait(br, "window.__giottolens.spatial === null && window.__gl.isContextLost()"))
+    expect_identical(br$js("window.__giottolens.state.cache.size"), 0L)
+    expect_identical(width("tools"), 40L)
+    expect_error(v$view_bounds(), "no spatial view")
+    expect_error(v$set_view(zoom = 1), "no spatial view")
+    expect_error(v$screenshot(), "no spatial view")
+    v$set_selection(c("cell_001", "cell_002"))
+    expect_true(browser_wait(br, "document.getElementById('sel-count').textContent.startsWith('2 ')"))
+
+    # It stays closed after a reload, and the tools bar's + brings it back
+    # where it was looking
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, paste("!!document.querySelector('.r-status.connected')",
+        "&& window.__giottolens.store.getState().closedPanels.includes('spatial')")))
+    expect_false("spatial" %in% v$panels()$id)
+    expect_null(br$js("window.__giottolens.spatial"))
+    br$js("document.querySelector('[data-panel=tools] [data-act=add]').click()")
+    br$js("[...document.querySelectorAll('.dock-menu-float button')].find(b => b.textContent === 'spatial').click()")
+    expect_true(browser_wait(br, "window.__giottolens.spatial?.viewState?.zoom === 3"))
+    expect_identical(unlist(br$js("window.__giottolens.spatial.viewState.target.slice(0, 2)")), c(10L, -20L))
+    expect_true(browser_wait(br, tiles_loaded))
+    expect_identical(width("tools"), 40L)
+    expect_equal(width("spatial"), round(0.65 * (1400 - 260 - 40)), tolerance = 2)
+    expect_false("spatial" %in% unlist(br$js("window.__giottolens.store.getState().closedPanels")))
+
+    # A layout saved before the view docked gets the tools bar and the view
+    br$js("(() => { const g = window.__giottolens, L = structuredClone(g.store.getState().layout);
+      const keep = n => n.type === 'leaf' ? !n.data.views.some(id => id === 'tools' || id === 'spatial')
+        : (n.data = n.data.filter(keep), true);
+      keep(L.grid.root); delete L.panels.tools; delete L.panels.spatial; g.actions.setLayout(L); })()")
+    expect_true(browser_wait(br, "window.__giottolens.spatial?.viewState != null"))
+    expect_identical(v$panels()$id[1:3], c("tools", "spatial", "scatter"))
+    expect_identical(width("tools"), 40L)
     expect_identical(br$errors(), character())
 })
 
@@ -697,7 +801,7 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
     expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
 
     # Added from the + menu, titled by its columns
-    br$js("document.querySelector('.dock-add').click()")
+    br$js("[...document.querySelectorAll('.dock-add')].find(b => b.offsetParent).click()")
     br$js("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === 'density').click()")
     expect_true(browser_wait(br, "window.__giottolens.panel('density')?.view != null"))
     p <- v$panels()
@@ -829,11 +933,11 @@ test_that("a release outside the page ends pans and lassos (no sticky drags)", {
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "/ready|loaded/.test(document.getElementById('status').textContent)"))
-    c0 <- br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()")
+    c0 <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()")
     x0 <- c0[[1]]; y0 <- c0[[2]]
     send <- function(type, x, y, buttons) br$session$Input$dispatchMouseEvent(type = type,
         x = x, y = y, button = if (buttons) "left" else "none", buttons = buttons, clickCount = 1L)
-    target <- function() unlist(br$js("window.__giottolens.state.currentViewState.target.slice(0, 2)"))
+    target <- function() unlist(br$js("window.__giottolens.spatial.viewState.target.slice(0, 2)"))
 
     # A normal drag pans
     t0 <- target()
@@ -924,10 +1028,10 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
     sel_after <- function(f) { v$selection <- NULL; f(); pump_until(function() !is.null(v$selection)); v$selection }
 
     br$js("document.querySelector('.tool-btn[data-mode=\"lasso\"]').click()")
-    size <- br$js("(() => { const c = document.getElementById('deck-canvas'); return [c.clientWidth, c.clientHeight]; })()")
+    size <- br$js("(() => { const c = window.__giottolens.spatial.canvas; return [c.clientWidth, c.clientHeight]; })()")
     w <- size[[1]]; h <- size[[2]]
     box <- function(x0, x1, y0, y1) list(c(x0 * w, y0 * h), c(x1 * w, y0 * h), c(x1 * w, y1 * h), c(x0 * w, y1 * h), c(x0 * w, y0 * h))
-    target <- br$js("window.__giottolens.state.currentViewState.target")
+    target <- br$js("window.__giottolens.spatial.viewState.target")
 
     # Shapes stay clear of the overlays at the edges (HUD, rules strip)
     left  <- sel_after(function() browser_drag(br, box(0.2, 0.5, 0.2, 0.8)))
@@ -943,7 +1047,7 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
     expect_true(length(cut) > 0L && length(cut) < length(both) && all(cut %in% both))
     expect_identical(sort(v$selection), in_r())
     # Modifier drags draw; they do not move the camera
-    expect_identical(br$js("window.__giottolens.state.currentViewState.target"), target)
+    expect_identical(br$js("window.__giottolens.spatial.viewState.target"), target)
 
     # A subtracting brush (Ctrl) removes what it covers, the same in R
     br$js("document.querySelector('.tool-btn[data-mode=\"brush\"]').click()")
@@ -1016,7 +1120,7 @@ test_that("images draw under the cells in data coordinates, and R sets them", {
     on.exit(v$close(), add = TRUE)
     br <- lens_browser(v$url, width = 900, height = 700)
     on.exit(br$close(), add = TRUE)
-    loaded <- paste0("(() => { const L = window.__giottolens?.state.deckgl?.layerManager?.getLayers() ?? [];",
+    loaded <- paste0("(() => { const L = window.__giottolens?.spatial?.deck?.layerManager?.getLayers() ?? [];",
         " const im = L.filter(l => /^img-/.test(l.id) && !l.parent);",
         " return im.length === 1 && im.every(l => l.isLoaded); })()")
     expect_true(browser_wait(br, loaded))
@@ -1039,7 +1143,7 @@ test_that("images draw under the cells in data coordinates, and R sets them", {
 
     # The bright quadrant is the image's first rows and columns: top left
     px <- function(x, y) br$js(sprintf(
-        "window.__giottolens.state.deckgl.getViewports()[0].project([%f, %f])", x, y))
+        "window.__giottolens.spatial.deck.getViewports()[0].project([%f, %f])", x, y))
     shot <- png::readPNG(v$screenshot())
     at <- function(p) shot[round(p[[2L]]) + 1L, round(p[[1L]]) + 1L, 1L]
     expect_gt(at(px(25, -25)), 0.8)
@@ -1085,7 +1189,7 @@ test_that("flipped and rotated images are drawn where GiottoClass places them", 
     on.exit(v$close(), add = TRUE)
     br <- lens_browser(v$url, width = 900, height = 700)
     on.exit(br$close(), add = TRUE)
-    loaded <- paste0("(() => { const L = window.__giottolens?.state.deckgl?.layerManager?.getLayers() ?? [];",
+    loaded <- paste0("(() => { const L = window.__giottolens?.spatial?.deck?.layerManager?.getLayers() ?? [];",
         " const im = L.filter(l => /^img-/.test(l.id) && !l.parent);",
         " return im.length === 1 && im.every(l => l.isLoaded); })()")
     expect_true(browser_wait(br, loaded))
@@ -1099,7 +1203,7 @@ test_that("flipped and rotated images are drawn where GiottoClass places them", 
     at <- GiottoClass:::.affine_matrix(rbind(c(25, -25), c(75, -75)), turned@affine[])
     shot <- png::readPNG(v$screenshot())
     value <- function(xy) {
-        p <- br$js(sprintf("window.__giottolens.state.deckgl.getViewports()[0].project([%f, %f])",
+        p <- br$js(sprintf("window.__giottolens.spatial.deck.getViewports()[0].project([%f, %f])",
             xy[[1L]], xy[[2L]]))
         shot[round(p[[2L]]) + 1L, round(p[[1L]]) + 1L, 1L]
     }
@@ -1120,7 +1224,7 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=register] .reg-start')"))
     expect_true(pump_until(function() v$connected()))
     expect_true(browser_wait(br,
-        "document.getElementById('r-status').className === 'connected'"))
+        "!!document.querySelector('.r-status.connected')"))
 
     # The image file has no place yet: drawn inside the data's extent
     t0 <- unlist(br$js("window.__giottolens.state.images.get('hne').transform"))
@@ -1145,9 +1249,9 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     expect_identical(br$js("window.__giottolens.store.getState().mode"), "landmark")
 
     # The image has its own pane on the left; the main view takes the right half
-    expect_true(browser_wait(br, paste0("document.getElementById('spatial-pane').classList.contains('registering')",
-        " && window.__giottolens.state.regDeck?.getViewports()[0]?.width > 0")))
-    widths <- br$js("[document.getElementById('reg-canvas').clientWidth, document.getElementById('deck-canvas').clientWidth]")
+    expect_true(browser_wait(br, paste0("window.__giottolens.spatial.root.classList.contains('registering')",
+        " && window.__giottolens.spatial.regDeck?.getViewports()[0]?.width > 0")))
+    widths <- br$js("[window.__giottolens.spatial.el.regCanvas.clientWidth, window.__giottolens.spatial.canvas.clientWidth]")
     expect_lt(abs(widths[[1]] - widths[[2]]), 3)
     expect_false(br$js("document.querySelector('[data-panel=register] .reg-flip-h').disabled"))
     expect_false(br$js("document.querySelector('[data-panel=register] .reg-link').disabled"))
@@ -1155,15 +1259,15 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     # Two clicks make a pair: on the image in its pane (pane coordinates are
     # pixels with y negated), then on the reference in the main view
     click <- function(deck, canvas, x, y) {
-        off <- br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left, r.top]; })()", canvas))
-        p <- br$js(sprintf("window.__giottolens.state.%s.getViewports()[0].project([%f, %f])", deck, x, y))
+        off <- br$js(sprintf("(() => { const r = %s.getBoundingClientRect(); return [r.left, r.top]; })()", sprintf("({'reg-canvas': window.__giottolens.spatial.el.regCanvas, 'deck-canvas': window.__giottolens.spatial.canvas})['%s']", canvas)))
+        p <- br$js(sprintf("window.__giottolens.spatial.%s.getViewports()[0].project([%f, %f])", deck, x, y))
         for (type in c("mousePressed", "mouseReleased"))
             br$session$Input$dispatchMouseEvent(type = type, x = off[[1]] + p[[1]],
                 y = off[[2]] + p[[2]], button = "left", clickCount = 1L)
     }
     click("regDeck", "reg-canvas", 120, -180)
     expect_true(browser_wait(br, "window.__giottolens.store.getState().registration.landmarks.length === 5"))
-    click("deckgl", "deck-canvas", 20.5, -30.5)
+    click("deck", "deck-canvas", 20.5, -30.5)
     pump_until(function() isTRUE(!is.na(v$registration$landmarks$fixed_x[5L])), 5)
     lm <- v$registration$landmarks
     expect_identical(nrow(lm), 5L)
@@ -1174,8 +1278,8 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     # As in the main view, the middle button and a drag with Space held pan the
     # image's pane, and place no point there or in the main view
     n_lm <- function() br$js("window.__giottolens.store.getState().registration.landmarks.length")
-    pane_t <- function() unlist(br$js("window.__giottolens.state.regDeck.props.viewState.target"))[1:2]
-    mid <- function(canvas) unlist(br$js(sprintf("(() => { const r = document.getElementById('%s').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()", canvas)))
+    pane_t <- function() unlist(br$js("window.__giottolens.spatial.regDeck.props.viewState.target"))[1:2]
+    mid <- function(canvas) unlist(br$js(sprintf("(() => { const r = %s.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()", sprintf("({'reg-canvas': window.__giottolens.spatial.el.regCanvas, 'deck-canvas': window.__giottolens.spatial.canvas})['%s']", canvas))))
     mouse <- function(type, p, button = "left") br$session$Input$dispatchMouseEvent(type = type, x = p[1], y = p[2],
         button = button, buttons = if (type == "mouseReleased") 0L else if (button == "middle") 4L else 1L, clickCount = 1L)
     drag <- function(from, by, button) {
@@ -1234,20 +1338,20 @@ test_that("set_view sets the zoom after the view was zoomed by hand", {
     on.exit(br$close(), add = TRUE)
     expect_true(pump_until(function() v$connected()))
     expect_true(browser_wait(br,
-        "document.getElementById('r-status').className === 'connected'"))
-    zoom <- function() br$js("window.__giottolens.state.deckgl.getViewports()[0].zoom")
+        "!!document.querySelector('.r-status.connected')"))
+    zoom <- function() br$js("window.__giottolens.spatial.deck.getViewports()[0].zoom")
     z0 <- zoom()
 
     # A wheel on the canvas zooms through deck.gl's controller
-    r <- br$js("(() => { const r = document.getElementById('deck-canvas').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    r <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
     br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
         deltaX = 0, deltaY = -500)
     expect_true(browser_wait(br, sprintf(
-        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) > 0.1", z0)))
+        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z0)))
 
     v$set_view(zoom = z0 - 1)
     expect_true(browser_wait(br, sprintf(
-        "Math.abs(window.__giottolens.state.deckgl.getViewports()[0].zoom - %f) < 1e-6", z0 - 1)))
+        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) < 1e-6", z0 - 1)))
     # The box fits the view, its tighter side 2^0.2 times the box's
     v$set_view(bounds = c(0, 50, -50, 0))
     b <- v$view_bounds()
@@ -1304,15 +1408,15 @@ test_that("set_object() reloads the page onto another object and back, each from
     v$set_object(fx$g, images = FALSE)
     expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 100"))
     expect_identical(br$js("window.__giottolens.store.getState().genes.length"), 0L)
-    expect_false(isTRUE(br$js("window.__giottolens.state.currentViewState.zoom === 3")))
+    expect_false(isTRUE(br$js("window.__giottolens.spatial.viewState.zoom === 3")))
 
     # A reload of the same object keeps its camera (the config R holds)
     expect_true(pump_until(function() v$connected()))
     v$set_view(x = 20, y = -30, zoom = 3)
     expect_true(pump_until(function() identical(as.numeric(saved()$view$zoom), 3)))
     br$session$Page$reload()
-    expect_true(browser_wait(br, "window.__giottolens?.state?.currentViewState?.zoom === 3"))
-    vs <- br$js("window.__giottolens.state.currentViewState.target")
+    expect_true(browser_wait(br, "window.__giottolens?.spatial?.viewState?.zoom === 3"))
+    vs <- br$js("window.__giottolens.spatial.viewState.target")
     expect_equal(unlist(vs)[1:2], c(20, -30))
     expect_identical(br$errors(), character())
 })
@@ -1340,7 +1444,7 @@ test_that("the start page opens a project's snapshot, and asks before dropping w
     expect_true(pump_until(function() v$connected()))
     v$push_polygons("POLYGON((40 -70,60 -70,60 -50,40 -50,40 -70))")
     expect_true(pump_until(function() length(v$annotations) == 1L))
-    br$js("document.getElementById('btn-project').click()")
+    br$js("document.querySelector('[data-panel=tools] [data-act=project]').click()")
     expect_true(browser_wait(br, row_open("fixture")))
     expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
     expect_length(v$annotations, 1L)

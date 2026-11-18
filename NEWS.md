@@ -1,5 +1,13 @@
 # GiottoLens (development version)
 
+* Cross-filter mode is on by default: the selection is the cells every source selects.
+  `set_selection()` still turns it off.
+* The spatial view is a panel: move, split, or close it, and add it back from a `+` menu.
+  The page's controls (project, the panels toggle, cross-filter, select by metadata, invert,
+  clear) are in a tools bar at the left edge. R's connection, the selected count and the
+  rules are in a bar along the bottom. The view no longer shows a "GiottoLens" label. With
+  no spatial view open, `set_view()`, `zoom_to()`, `screenshot()` and `view_bounds()` stop
+  with an error. `panels()` lists `tools` and `spatial`. See adr/0023.
 * A catalog panel lists what the object shown holds beyond the metadata already pushed
   (cell metadata, expression, spatial enrichments, dim reductions) and pulls the items
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
@@ -20,7 +28,7 @@
   snapshot of the project as it was saved, without a new save.
 * A start page on a viewer without an object: open a GiottoDisk project from the recent
   ones, a path or (in RStudio) a folder dialog, and open one of its snapshots. The
-  toolbar's project button shows it over the view. Unkept automatic saves are hidden
+  tools bar's project button shows it over the page. Unkept automatic saves are hidden
   behind a toggle. `viewer$open_project(path)` and `launch_lens(project = path)` start on
   it; switching asks before dropping Lens work. See adr/0019.
 * Untiled point and polygon stores are read as one tile, up to 50,000 polygons and 2,000,000

@@ -14,13 +14,12 @@ import { setViewState } from '../data/schedule.js';
 import { requestRender } from '../render/schedule.js';
 import { imageLayer } from '../render/image-layer.ts';
 import { landmarkLayers, type Side, type LandmarkDrag } from '../render/landmarks.ts';
+import { spatialView, type SpatialView } from '../spatial/current.ts';
 import { clientToWorld, fitZoom, dragPan, spaceHeld } from './dom.js';
 import {
   apply, compose, invert, flip, rotate90, currentTransform, registrationFit, matrix4,
   mapView, UPRIGHT, type Registration, type Landmark, type XY, type Affine,
 } from '../data/registration.ts';
-
-const $ = (id: string) => document.getElementById(id) as HTMLElement | null;
 
 let _seq = 0;
 const landmarkId = () => `lm_${Date.now().toString(36)}_${(_seq++).toString(36)}`;
@@ -106,12 +105,12 @@ export function landmarkClick(side: Side, pt: XY) {
 // moves preview it and mouseup drops it. A press and release without moving
 // stays a click.
 const DRAG_PX = 4;
-let _deck: any = null;            // the image's pane
+let _deck: any = null;            // the image's pane, in the open view (attachRegistration)
 let _vs: any = null;              // its view state
 let _armed: { side: Side; id: string; pos: XY; x: number; y: number } | null = null;
 let _dropped = false;
 const _over: Record<Side, boolean> = { moving: false, fixed: false };
-const deckOf = (side: Side) => side === 'fixed' ? state.deckgl : _deck;
+const deckOf = (side: Side) => side === 'fixed' ? spatialView()?.deck : _deck;
 const panController = (side: Side, pan: boolean) => deckOf(side)?.setProps({
   controller: pan ? { doubleClickZoom: false } : { dragPan: false, doubleClickZoom: false } });
 
@@ -212,7 +211,7 @@ function paneToData(reg: Registration): Affine | null {
 function fitPane() {
   const reg = store.getState().registration;
   const size = reg && imageSize(reg.image);
-  const pane = $('reg-pane');
+  const pane = spatialView()?.el.regPane;
   if (!reg || !size || !pane || !_deck) return;
   const corners = ([[0, 0], [size.width, 0], [0, size.height], [size.width, size.height]] as XY[]).map(c => apply(reg.orient, c));
   const xs = corners.map(c => c[0]), ys = corners.map(c => c[1]);
@@ -228,7 +227,8 @@ function paneViewChange(vs: any) {
   _deck.setProps({ viewState: vs });
   const reg = store.getState().registration;
   const m = reg?.link && paneToData(reg);
-  if (m && state.currentViewState) setViewState(mapView(vs, m, state.currentViewState));
+  const main = spatialView()?.viewState;
+  if (m && main) setViewState(mapView(vs, m, main));
   requestRender();
 }
 
@@ -257,32 +257,33 @@ export function renderRegPane() {
 let _paneImage: string | null = null;
 let _paneOrient: Affine | null = null;
 function syncPane() {
-  const sp = $('spatial-pane'), pane = $('reg-pane');
-  if (!sp || !pane) return;
+  const view = spatialView();
+  if (!view) return;
+  const { root: sp, el } = view;
   const on = registering();
   const was = sp.classList.contains('registering');
   if (on !== was) {
     sp.classList.toggle('registering', on);
-    pane.style.display = on ? '' : 'none';
+    el.regPane.style.display = on ? '' : 'none';
     window.dispatchEvent(new Event('resize'));
     // The main view is half as wide: tiles and the scalebar follow
-    requestAnimationFrame(() => { if (state.currentViewState) setViewState({ ...state.currentViewState }); });
+    requestAnimationFrame(() => { const v = spatialView(); if (v?.viewState) setViewState({ ...v.viewState }); });
   }
   if (!on) { _paneImage = null; return; }
   const reg = store.getState().registration!;
   if (!_deck) {
     _deck = new Deck({
-      canvas: 'reg-canvas', width: '100%', height: '100%',
+      canvas: el.regCanvas, width: '100%', height: '100%',
       views: new OrthographicView({ id: 'reg', controller: true, flipY: false }),
       viewState: { target: [0, 0, 0], zoom: 0 }, controller: { doubleClickZoom: false },
       onViewStateChange: ({ viewState }: any) => paneViewChange(viewState),
       getCursor: paneCursor,
       layers: [],
     } as any);
-    state.regDeck = _deck;
+    view.regDeck = _deck;
   }
-  ($('reg-pane-label') as HTMLElement).textContent = reg.image;
-  ($('reg-ref-label') as HTMLElement).textContent = reg.reference ?? 'data';
+  el.regLabel.textContent = reg.image;
+  el.regRefLabel.textContent = reg.reference ?? 'data';
   if (_paneImage !== reg.image || _paneOrient !== reg.orient) {
     _paneImage = reg.image;
     _paneOrient = reg.orient;
@@ -299,12 +300,11 @@ export const refreshPaneCursor = () => _deck?.setProps({ getCursor: (s: any) => 
 
 // As in the main view, the middle button and a drag with Space held pan the
 // pane whatever is under the pointer; points are placed with the left button
-function initPaneInput() {
-  const canvas = $('reg-canvas') as HTMLCanvasElement | null;
-  if (!canvas) return;
+function initPaneInput(view: SpatialView) {
+  const canvas = view.el.regCanvas as HTMLCanvasElement;
   let down: [number, number] | null = null;
   const world = (e: MouseEvent) => clientToWorld(e.clientX, e.clientY, canvas, _vs) as XY;
-  dragPan(canvas, () => _vs, (vs: any) => paneViewChange(vs));
+  dragPan(canvas, () => _vs, (vs: any) => paneViewChange(vs), { signal: view.signal });
   canvas.addEventListener('mousedown', e => {
     if (e.button !== 0 || spaceHeld()) return;
     down = [e.clientX, e.clientY];
@@ -320,13 +320,27 @@ function initPaneInput() {
   });
 }
 
-// The image's pane and the registration sent to R; the Register panel
-// (panels/register.ts) is the UI, and R's register_image() works without it
+// The image's pane in a spatial view: its input, and its Deck once an image
+// is registered. Returns what the view calls when it closes: the pane's Deck
+// goes with it and gives back its WebGL context.
+export function attachRegistration(view: SpatialView): () => void {
+  initPaneInput(view);
+  syncPane();
+  return () => {
+    const gl = _deck?.device?.gl;
+    _deck?.finalize();
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    _deck = null; _vs = null; _paneImage = null; _paneOrient = null;
+    _armed = null; _over.moving = false; _over.fixed = false;
+  };
+}
+
+// The registration sent to R; the Register panel (panels/register.ts) is the
+// UI, and R's register_image() works without it
 export function initRegistration() {
   if (!state.images?.size) return;
   store.subscribe(s => [s.registration, s.mode], syncPane,
     { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] });
-  initPaneInput();
   syncPane();
 
   // R keeps the latest (LensViewer$registration)

@@ -7,27 +7,28 @@ export function generateAnnotId() {
   return `ann_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export function initAnnotations() {
-  const $popup = document.getElementById('annot-popup');
-  const $name  = document.getElementById('annot-name');
-  const $type  = document.getElementById('annot-type');
-
-  store.subscribe(s => s.selectedAnnotId, id => {
+// The selected annotation's name, edited in a view's popup
+export function attachAnnotPopup(view) {
+  const { annotPopup: $popup, annotName: $name, annotType: $type } = view.el;
+  const unsub = store.subscribe(s => s.selectedAnnotId, id => {
     const annot = id && store.getState().annotations.find(a => a.id === id);
     if (annot) {
-      if ($name) $name.value = annot.name ?? '';
-      if ($type) $type.textContent = annot.type ?? '';
-      $popup?.classList.add('visible');
+      $name.value = annot.name ?? '';
+      $type.textContent = annot.type ?? '';
+      $popup.classList.add('visible');
     } else {
-      $popup?.classList.remove('visible');
+      $popup.classList.remove('visible');
     }
-  });
+  }, { fireImmediately: true });
+  view.signal.addEventListener('abort', unsub);
 
-  $name?.addEventListener('input', () => {
+  $name.addEventListener('input', () => {
     const id = store.getState().selectedAnnotId;
     if (id) actions.renameAnnotation(id, $name.value);
   });
+}
 
+export function initAnnotations() {
   store.subscribe(s => s.annotations, annotations => {
     sendToR('annotations_update', {
       annotations: annotations.map(a => ({

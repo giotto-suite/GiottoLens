@@ -1,10 +1,14 @@
-export function updateScalebar(viewState) {
-  const pxPerMicron = Math.pow(2, viewState.zoom);
+import { spatialView } from '../spatial/current.ts';
+
+// The view's scalebar, for its current zoom
+export function updateScalebar(view) {
+  if (!view?.viewState) return;
+  const pxPerMicron = Math.pow(2, view.viewState.zoom);
   const exp = Math.pow(10, Math.floor(Math.log10(100 / pxPerMicron)));
   const niceMicrons = [1, 2, 5, 10].map(x => x * exp).find(x => x * pxPerMicron >= 80) ?? exp * 10;
   const label = niceMicrons >= 1000 ? `${niceMicrons / 1000} mm` : `${niceMicrons} μm`;
-  document.getElementById('scalebar-bar').style.width = (niceMicrons * pxPerMicron) + 'px';
-  document.getElementById('scalebar-label').textContent = label;
+  view.el.scalebarBar.style.width = (niceMicrons * pxPerMicron) + 'px';
+  view.el.scalebarLabel.textContent = label;
 }
 
 // ── Canvas ↔ world coordinate transforms ─────────────────────────────────────
@@ -72,15 +76,14 @@ export function pointInPolygon(ring, x, y) {
 }
 
 // ── Viewport ──────────────────────────────────────────────────────────────────
-// Size of the spatial view in CSS pixels. The window is larger: the side
-// panel and the stats column take part of it. Measured on the pane, since the
-// canvas is still the default 300 × 150 until deck.gl sizes it. While an image
-// is registered, its own pane takes the left half.
-export function viewportSize() {
-  const c = document.getElementById('spatial-pane');
-  const width = c?.clientWidth || window.innerWidth;
-  return { width: c?.classList.contains('registering') ? Math.floor(width / 2) : width,
-           height: c?.clientHeight || window.innerHeight };
+// Size of a spatial view in CSS pixels (0 x 0 before its panel is laid out).
+// Measured on the pane, since the canvas is still the default 300 × 150 until
+// deck.gl sizes it. While an image is registered, its own pane takes the left
+// half. With no view open, the window's.
+export function viewportSize(view = spatialView()) {
+  if (!view) return { width: window.innerWidth, height: window.innerHeight };
+  const c = view.root, width = c.clientWidth;
+  return { width: c.classList.contains('registering') ? Math.floor(width / 2) : width, height: c.clientHeight };
 }
 
 // A view state with `zoom` set. deck.gl's controller adds zoomX and zoomY,

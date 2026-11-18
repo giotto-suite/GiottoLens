@@ -1,6 +1,8 @@
 // Tile scheduling: which tiles are in view, eviction, and load order.
 // Anything that moves the camera goes through setViewState() so tiles load.
+// Tiles follow the spatial view; with none open nothing loads.
 import { state } from '../core/state.js';
+import { spatialView } from '../spatial/current.ts';
 import { store } from '../core/store.ts';
 import { TRANSCRIPT_ZOOM_THRESHOLD, POLYGON_ZOOM_THRESHOLD, MAX_TRANSCRIPT_TILES } from '../core/constants.js';
 import { visibleTiles, loadTile, abortTiles, invalidateTx, txStride } from './tiles.js';
@@ -8,11 +10,13 @@ import { requestRender } from '../render/schedule.js';
 import { updateScalebar, viewportSize } from '../ui/dom.js';
 
 export function updateTiles(viewState) {
-  state.currentViewState = viewState;
+  const view = spatialView();
+  if (!view || !viewState) return;
+  view.viewState = viewState;
   const newTier = Math.min(3, Math.max(0, Math.floor(viewState.zoom - TRANSCRIPT_ZOOM_THRESHOLD)));
   if (newTier !== state.txZoomTier) { state.txZoomTier = newTier; invalidateTx(); }
   const { layers } = store.getState();
-  const size      = viewportSize();
+  const size      = viewportSize(view);
   const txLayer   = state.manifest.layers.transcripts;
   const cellLayer = state.manifest.layers.cells;
   const wantTx    = layers.tx.show && txLayer && viewState.zoom >= TRANSCRIPT_ZOOM_THRESHOLD;
@@ -54,6 +58,15 @@ export function updateTiles(viewState) {
   }
 }
 
+// The view closed: loads in flight stop. A view closed by hand also lets go
+// of the tiles it had (`release`); one replaced by a layout restore keeps
+// them for the view that takes its place.
+export function abortAllTiles({ release = false } = {}) {
+  clearTimeout(state.tileTimer);
+  abortTiles(new Set());
+  if (release) state.cache.clear();
+}
+
 // Debounced tile update for continuous camera moves (pan, zoom)
 export function scheduleTiles(viewState, delay = 150) {
   clearTimeout(state.tileTimer);
@@ -66,9 +79,11 @@ export function onSetView(fn) { viewHooks.add(fn); }
 
 // Jump the camera (fit, zoom-to-annotation) and load what is now in view
 export function setViewState(viewState) {
+  const view = spatialView();
+  if (!view) return;
   viewHooks.forEach(fn => fn(viewState));
-  state.currentViewState = viewState;
-  state.deckgl.setProps({ viewState });
-  updateScalebar(viewState);
+  view.viewState = viewState;
+  view.deck.setProps({ viewState });
+  updateScalebar(view);
   updateTiles(viewState);
 }

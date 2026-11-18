@@ -1111,6 +1111,8 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @description The data-space box on screen, `c(xmin, xmax, ymin, ymax)`
         view_bounds = function() {
             b <- unlist(self$state()$view$bounds)
+            if (is.null(b))
+                stop("[LensViewer$view_bounds] no spatial view is open", call. = FALSE)
             stats::setNames(b, c("xmin", "xmax", "ymin", "ymax"))
         },
 
@@ -1403,7 +1405,7 @@ LensViewer <- R6::R6Class("LensViewer",
         },
         rule_set    = list(),
         rule_seq    = 0L,       # rule changes sent to the page (set_rule `seq`)
-        combine     = "or",
+        combine     = "and",    # cross-filter by default, as the page
         config_json = NULL,     # the page's saved config, as it sent it (JSON text)
         pushed      = list(),   # push_panel() payloads by id, in push order
         panel_seq   = 0L,
@@ -1686,7 +1688,7 @@ LensViewer <- R6::R6Class("LensViewer",
             .prune_meta_files(private$meta_dir(), character())
             private$config_json  <- NULL
             private$rule_set     <- list()
-            private$combine      <- "or"
+            private$combine      <- "and"
             private$pushed       <- list()
             private$cached_meta  <- NULL
             private$meta_values  <- list()
@@ -1848,7 +1850,7 @@ LensViewer <- R6::R6Class("LensViewer",
                                 rules <- dat$rules %||% list()
                                 names(rules) <- vapply(rules, function(r) r$source %||% "", "")
                                 priv$rule_set   <- rules
-                                priv$combine <- dat$combine %||% "or"
+                                priv$combine <- dat$combine %||% "and"
                             }
                             cb <- priv$cbs[[parsed$type]]
                             if (!is.null(cb)) later::later(function() cb(dat))
@@ -1922,8 +1924,8 @@ print.lens_description <- function(x, ...) {
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
-.lens_builtin_panels <- c("scatter", "histogram", "density", "cells", "transcripts",
-    "catalog", "images", "register", "annotations", "layers")
+.lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "cells",
+    "transcripts", "catalog", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

@@ -76,9 +76,19 @@ export function reportError(err, where = '') {
   });
 }
 
+// The connection to R ('connecting', 'connected', 'disconnected'), shown in
+// the tools bar (panels/tools.ts). `fn` gets the current one at once and each
+// change; the returned function unsubscribes.
+let rStatus = 'connecting';
+const statusFns = new Set();
+export function onRStatus(fn) {
+  statusFns.add(fn);
+  fn(rStatus);
+  return () => statusFns.delete(fn);
+}
 function setRStatus(s) {
-  const el = document.getElementById('r-status');
-  if (el) { el.className = s; el.title = 'R: ' + s; }
+  rStatus = s;
+  statusFns.forEach(fn => fn(s));
 }
 
 function wsUrl() {

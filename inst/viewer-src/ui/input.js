@@ -1,16 +1,18 @@
-// Spatial-view tools: modes, drawing, measuring, selecting, keyboard
+// Spatial-view tools: modes, drawing, measuring, selecting, keyboard. Bound
+// to one view (attachInput) and removed with it; the page-wide selection
+// actions are the selection bar's (ui/selbar.js).
 import { state } from '../core/state.js';
+import { spatialView } from '../spatial/current.ts';
 import { store, actions } from '../core/store.ts';
 import { requestRender } from '../render/schedule.js';
 import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
-import { lassoSpatial, brushStart, brushMove, brushEnd, invertSelection, filterMeta, strokeOp } from '../selection/selection.ts';
+import { lassoSpatial, brushStart, brushMove, brushEnd, strokeOp } from '../selection/selection.ts';
 import { generateAnnotId } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
 import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, consumeDrop,
   removeLastLandmark, cancelPendingLandmark, refreshPaneCursor } from './registration.ts';
 
-let _canvas = null; // set in initInput, used by exported functions above initInput scope
 let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
 let _downPx = null;                // where the button went down: a click after a pan is no click
 // Space held: a drag pans whatever the tool (dragPan in ui/dom.js), and the
@@ -26,30 +28,33 @@ function rulerDist(a, b) {
 }
 
 export function updateRulerLabel() {
-  const label = document.getElementById('ruler-label');
-  if (!label || !state.rulerStart || !state.rulerEnd) return;
+  const view = spatialView();
+  const label = view?.el.ruler;
+  if (!label || !view.viewState || !state.rulerStart || !state.rulerEnd) return;
   const mid = [(state.rulerStart[0] + state.rulerEnd[0]) / 2,
                (state.rulerStart[1] + state.rulerEnd[1]) / 2];
-  const [sx, sy] = worldToClient(mid[0], mid[1], _canvas, state.currentViewState);
-  label.style.left = `${sx + 8}px`;
-  label.style.top  = `${sy - 10}px`;
+  const [sx, sy] = worldToClient(mid[0], mid[1], view.canvas, view.viewState);
+  const pane = view.root.getBoundingClientRect();
+  label.style.left = `${sx - pane.left + 8}px`;
+  label.style.top  = `${sy - pane.top - 10}px`;
   label.textContent = rulerDist(state.rulerStart, state.rulerEnd);
   label.classList.add('visible');
 }
 
 export function updateTxConnector() {
-  const line  = document.getElementById('tx-connector-line');
-  const panel = document.getElementById('tx-lasso-panel');
-  if (!line || !panel || !state.txLassoRing?.length || !panel.classList.contains('visible')) {
+  const view  = spatialView();
+  const line  = view?.el.txLine;
+  const panel = view?.el.txPanel;
+  if (!line || !panel || !view.viewState || !state.txLassoRing?.length || !panel.classList.contains('visible')) {
     line?.setAttribute('display', 'none');
     return;
   }
   const ring = state.txLassoRing;
   const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length;
   const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length;
-  const [sx, sy] = worldToClient(cx, cy, _canvas, state.currentViewState);
+  const [sx, sy] = worldToClient(cx, cy, view.canvas, view.viewState);
   const rect     = panel.getBoundingClientRect();
-  const paneRect = document.getElementById('spatial-pane').getBoundingClientRect();
+  const paneRect = view.root.getBoundingClientRect();
   line.setAttribute('x1', sx - paneRect.left);
   line.setAttribute('y1', sy - paneRect.top);
   line.setAttribute('x2', rect.left - paneRect.left);
@@ -73,26 +78,30 @@ export function setMode(m) {
   actions.setMode(m);
 }
 
+const GROUP_MODES = { draw: ['poly', 'rect', 'freehand'], select: ['lasso', 'brush'], measure: ['ruler', 'txlasso'] };
+
 function applyMode(mode) {
+  const view = spatialView();
+  if (!view) return;
   const m = spaceHeld() ? 'pan' : mode;   // what the toolbar shows
-  state.deckgl.setProps({
+  view.deck.setProps({
     controller: DRAG_MODES.includes(mode) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
     getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
   });
   refreshPaneCursor();
-  document.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
+  view.root.querySelectorAll('.tool-btn[data-mode]').forEach(b =>
     b.classList.toggle('active', b.dataset.mode === m)
   );
-  document.getElementById('btn-group-draw')?.classList.toggle('active',    ['poly','rect','freehand'].includes(m));
-  document.getElementById('btn-group-select')?.classList.toggle('active',  ['lasso','brush'].includes(m));
-  document.getElementById('btn-group-measure')?.classList.toggle('active', ['ruler','txlasso'].includes(m));
+  view.root.querySelectorAll('.tool-group').forEach(g =>
+    g.querySelector('.tool-group-btn')?.classList.toggle('active', GROUP_MODES[g.dataset.group]?.includes(m)));
 }
 
 function clearMeasurements() {
+  const el = spatialView()?.el;
   state.rulerStart = null; state.rulerEnd = null; state.rulerLocked = false;
-  document.getElementById('ruler-label')?.classList.remove('visible');
+  el?.ruler.classList.remove('visible');
   state.txLassoRing = null;
-  document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+  el?.txPanel.classList.remove('visible');
   updateTxConnector();
   requestRender();
 }
@@ -105,10 +114,9 @@ const TX_LASSO_MAX_TILES = 100;
 let _txLassoRun = 0;
 
 async function _runTxLasso(ring) {
-  const panel = document.getElementById('tx-lasso-panel');
-  const title = document.getElementById('tx-lasso-title');
-  const list  = document.getElementById('tx-lasso-results');
-  if (!panel) return;
+  const el = spatialView()?.el;
+  if (!el) return;
+  const { txPanel: panel, txTitle: title, txResults: list } = el;
   const run = ++_txLassoRun;
 
   state.txLassoRing = ring;
@@ -180,87 +188,43 @@ function addAnnotation(type, coords) {
   actions.addAnnotation({ id: generateAnnotId(), type, name: '', coords });
 }
 
-// ── Input initialization ──────────────────────────────────────────────────────
-export function initInput() {
-  _canvas = document.getElementById('deck-canvas');
-  const canvas = _canvas;
-  const world  = e => clientToWorld(e.clientX, e.clientY, canvas, state.currentViewState);
+// ── Input ─────────────────────────────────────────────────────────────────────
+// The view's toolbar, canvas and keyboard; every listener goes with the view
+export function attachInput(view) {
+  const { canvas, el, signal } = view;
+  const on = { signal };
+  const world  = e => clientToWorld(e.clientX, e.clientY, canvas, view.viewState);
   let lassoDragged = false;
   let lassoLastPx  = null;
   let lassoOp      = 'replace';
 
-  store.subscribe(s => s.mode, applyMode, { fireImmediately: true });
-  store.subscribe(s => s.combine, c =>
-    document.getElementById('btn-crossfilter')?.classList.toggle('active', c === 'and'));
+  const unsub = store.subscribe(s => s.mode, applyMode, { fireImmediately: true });
+  signal.addEventListener('abort', unsub);
 
-  // ── Toolbar groups ────────────────────────────────────────────────────────
-  function toggleGroup(groupId, ...otherIds) {
-    const grp     = document.getElementById(groupId);
-    const opening = !grp.classList.contains('open');
-    otherIds.forEach(id => document.getElementById(id)?.classList.remove('open'));
-    grp.classList.toggle('open', opening);
-  }
+  // ── Toolbar groups: one open at a time ────────────────────────────────────
+  const groups = [...view.root.querySelectorAll('.tool-group')];
+  for (const g of groups)
+    g.querySelector('.tool-group-btn').addEventListener('click', () => {
+      const opening = !g.classList.contains('open');
+      groups.forEach(x => x.classList.remove('open'));
+      g.classList.toggle('open', opening);
+    });
 
-  document.getElementById('btn-group-draw')?.addEventListener('click', () =>
-    toggleGroup('group-draw', 'group-select', 'group-measure'));
-  document.getElementById('btn-group-select')?.addEventListener('click', () =>
-    toggleGroup('group-select', 'group-draw', 'group-measure'));
-  document.getElementById('btn-group-measure')?.addEventListener('click', () =>
-    toggleGroup('group-measure', 'group-draw', 'group-select'));
-
-  document.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
+  view.root.querySelectorAll('.tool-btn[data-mode]').forEach(btn =>
     btn.addEventListener('click', () => setMode(btn.dataset.mode))
   );
 
-  // ── Tool action buttons ───────────────────────────────────────────────────
-  document.getElementById('tool-clear-sel')?.addEventListener('click', () => actions.clearSelection());
-  document.getElementById('tool-clear-measure')?.addEventListener('click', clearMeasurements);
-  document.getElementById('tool-invert-sel')?.addEventListener('click', invertSelection);
-  document.getElementById('btn-crossfilter')?.addEventListener('click', () =>
-    actions.setCombine(store.getState().combine === 'and' ? 'or' : 'and'));
-
-  document.getElementById('btn-screenshot')?.addEventListener('click', () => {
-    if (!state.deckgl) return;
-    state.deckgl.redraw('screenshot');
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = `giottolens-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-')}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  });
-
-  // ── Meta-select panel ─────────────────────────────────────────────────────
-  const $metaSelPanel = document.getElementById('meta-sel-panel');
-  document.getElementById('tool-meta-sel')?.addEventListener('click', () => {
-    if (!$metaSelPanel) return;
-    const open = $metaSelPanel.classList.toggle('visible');
-    if (open) {
-      const colSel = document.getElementById('meta-sel-col');
-      const names  = state.metaInfo ? [...state.metaInfo.keys()] : [];
-      if (colSel) colSel.innerHTML = names.length
-        ? names.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
-        : '<option value="">no metadata loaded</option>';
-    }
-  });
-
-  document.getElementById('meta-sel-apply')?.addEventListener('click', () => {
-    const col = document.getElementById('meta-sel-col')?.value;
-    const op  = document.getElementById('meta-sel-op')?.value ?? '=';
-    const val = document.getElementById('meta-sel-val')?.value ?? '';
-    if (!col || !state.metaInfo?.has(col)) return;
-    filterMeta(col, op === 'LIKE' ? 'contains' : op, val);
-  });
-
-  document.getElementById('tx-lasso-close')?.addEventListener('click', () => {
+  el.clearMeasure.addEventListener('click', clearMeasurements);
+  el.txClose.addEventListener('click', () => {
     state.txLassoRing = null;
-    document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+    el.txPanel.classList.remove('visible');
     updateTxConnector();
     requestRender();
   });
 
   // ── Canvas events ─────────────────────────────────────────────────────────
   canvas.addEventListener('click', e => {
+    if (!view.viewState) return;
     const mode = toolMode();
     if (mode === 'landmark') {
       const moved = _downPx && Math.hypot(e.clientX - _downPx[0], e.clientY - _downPx[1]) > 4;
@@ -274,7 +238,7 @@ export function initInput() {
         state.rulerStart  = pt;
         state.rulerEnd    = pt;
         state.rulerLocked = false;
-        document.getElementById('ruler-label')?.classList.remove('visible');
+        el.ruler.classList.remove('visible');
       } else {
         state.rulerEnd    = pt;
         state.rulerLocked = true;
@@ -288,7 +252,7 @@ export function initInput() {
     if (e.detail > 1) return;
     _lastClickAddedVertex = false;
     const r      = canvas.getBoundingClientRect();
-    const picked = state.deckgl.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
+    const picked = view.deck.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 4 });
     if (picked?.layer?.id === 'annotations') return;
     state.drawRing.push(world(e));
     _lastClickAddedVertex = true;
@@ -312,7 +276,7 @@ export function initInput() {
   // Tools act on the left button; the middle one pans (dragPan in ui/dom.js)
   canvas.addEventListener('mousedown', e => {
     hideCellTooltip();
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !view.viewState) return;
     _downPx = [e.clientX, e.clientY];
     const mode = toolMode();
     if (mode === 'landmark') {
@@ -320,11 +284,11 @@ export function initInput() {
     } else if (mode === 'brush') {
       state.brushDown = true;
       state.brushPos  = world(e);
-      brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, state.currentViewState.zoom), strokeOp(e));
+      brushStart(state.brushPos, store.getState().brushRadius / Math.pow(2, view.viewState.zoom), strokeOp(e));
     } else if (mode === 'lasso' || mode === 'freehand' || mode === 'txlasso') {
       if (mode === 'txlasso') {
         state.txLassoRing = null;
-        document.getElementById('tx-lasso-panel')?.classList.remove('visible');
+        el.txPanel.classList.remove('visible');
         updateTxConnector();
       }
       lassoDragged = false;
@@ -339,9 +303,9 @@ export function initInput() {
   });
 
   canvas.addEventListener('mousemove', e => {
+    if (!view.viewState) return;
     const coords  = world(e);
-    const coordEl = document.getElementById('cursor-coords');
-    if (coordEl) coordEl.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
+    el.coords.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
     const mode = toolMode();
 
     if (mode === 'landmark' && landmarkDragMove('fixed', coords, e)) requestRender();
@@ -399,20 +363,17 @@ export function initInput() {
       state.rectPreview = null;
       requestRender();
     }
-  });
+  }, on);
 
   canvas.addEventListener('mouseleave', () => {
     hideCellTooltip();
-    const coordEl = document.getElementById('cursor-coords');
-    if (coordEl) coordEl.textContent = '';
+    el.coords.textContent = '';
   });
 
-  // Escape also returns the stats panels to pan
-  const panelsToPan = () => document.dispatchEvent(new CustomEvent('lens:pan'));
-  const holdPan = on => {
-    if (on === spaceHeld()) return;
-    setSpaceHeld(on);
-    if (on) state.brushPos = null;   // no brush outline while panning
+  const holdPan = down => {
+    if (down === spaceHeld()) return;
+    setSpaceHeld(down);
+    if (down) state.brushPos = null;   // no brush outline while panning
     applyMode(store.getState().mode);
     requestRender();
   };
@@ -433,11 +394,9 @@ export function initInput() {
     if (e.key === 'Escape') {
       resetDrawing();
       actions.selectAnnotation(null);
-      panelsToPan();
       if (mode !== 'pan') setMode('pan'); else requestRender();
     }
     if (inInput) return;
-    if (e.key === 'c') actions.clearSelection();
     if (e.key === 'x') clearMeasurements();
     if (mode === 'brush') {
       if (e.key === '[') actions.setBrushRadius(store.getState().brushRadius - 5);
@@ -453,8 +412,9 @@ export function initInput() {
       actions.removeAnnotation(annot);
       e.preventDefault();
     }
-  });
-  document.addEventListener('keyup', e => { if (e.code === 'Space') holdPan(false); });
+  }, on);
+  document.addEventListener('keyup', e => { if (e.code === 'Space') holdPan(false); }, on);
   // A release while the page is not focused never arrives
-  window.addEventListener('blur', () => holdPan(false));
+  window.addEventListener('blur', () => holdPan(false), on);
+  signal.addEventListener('abort', () => { setSpaceHeld(false); resetDrawing(); });
 }

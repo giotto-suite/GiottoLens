@@ -4,6 +4,7 @@ import { store } from '../core/store.ts';
 import { PALETTES } from '../core/constants.js';
 import { readTileColumns } from './parquet.ts';
 import { decodePolygons } from './wkb.ts';
+import { spatialView } from '../spatial/current.ts';
 
 // ── Tile visibility ───────────────────────────────────────────────────────────
 // `size`: the spatial view in CSS pixels (ui/dom.js viewportSize())
@@ -70,7 +71,7 @@ export async function loadTile(layerName, tile, onLoad) {
     // The tile may have left the view and come back: a newer load owns the key
     if (state.pending.get(key) === ctl) state.pending.delete(key);
     updateStatus();
-    if (!ctl.signal.aborted) onLoad(state.currentViewState);
+    if (!ctl.signal.aborted) onLoad(spatialView()?.viewState);
   }
 }
 
