@@ -193,8 +193,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Pulled columns (`pull()`, the Data panel) and items come from one `spatValues()` call
   (`.plan_values()`) run as a job over the daemon's object, never `gobject()` on the main
   thread. The `item` and `pull` asks answer when their job ends (`ask()` returns NULL and
-  calls `reply`); asks for an item being read share its job (`need_item()`). and are added to the payload
-  (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
+  calls `reply`); asks for an item being read share its job (`need_item()`). Pulled columns
+  are added to the payload (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
   `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `data/catalog.ts` names
   columns the same way, so change both together. Payload entries are read with `$`, which
   partial-matches: no new field may start with an existing one's name (`number_text`, not
