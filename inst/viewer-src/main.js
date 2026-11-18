@@ -16,7 +16,7 @@ import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
-import { initSelectionBar } from './ui/selbar.js';
+import { initSelectionBar, initRStatus } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
@@ -187,6 +187,7 @@ function showEmpty(project) {
   host.className = 'spatial-pane start-host';
   document.getElementById('main-layout').prepend(host);
   showStartPage(host, project);
+  initRStatus();
   initComms();
   $status('no object');
 }

@@ -403,6 +403,9 @@
     }
     .r-status.connected    { background: #34d399; }
     .r-status.disconnected { background: #f87171; }
+    /* Stop: one click arms it, a second within CLOSE_ARM_MS stops the viewer */
+    #btn-close:disabled { opacity: 0.35; cursor: default; background: none; }
+    #btn-close.armed { color: #f87171; border-color: #f87171; }
 
     .scalebar {
       position: absolute; bottom: 20px; left: 12px;
@@ -493,7 +496,7 @@
     /* The dialog follows the theme; the start page is in the always-dark spatial pane */
     :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error) { color: #b91c1c; }
   </style>
-  <script type="module" crossorigin src="./assets/index-BExiRayG.js"></script>
+  <script type="module" crossorigin src="./assets/index-D4Q-FPkp.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-BHncyuL9.css">
 </head>
 <body>
@@ -504,6 +507,7 @@
     <!-- The page's selection (ui/selbar.js, ui/rules.js) and the status line -->
     <div id="selection-bar">
       <span class="r-status" id="r-status" title="R: connecting"></span>
+      <button class="tool-btn" id="btn-close" title="stop the viewer (viewer$close())" disabled><i data-lucide="power"></i></button>
       <div class="selbar-sel">
         <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
         <span id="sel-count"></span>

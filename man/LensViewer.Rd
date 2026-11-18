@@ -1115,7 +1115,9 @@ first). Its result is never applied.
 \if{html}{\out{<a id="method-LensViewer-close"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-close}{}}}
 \subsection{\code{LensViewer$close()}}{
-  Stop the server and remove this viewer's temp files
+  Stop the server and remove this viewer's temp files.
+The power button next to R's connection in the viewer does the
+same; open tabs say the viewer is stopped.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$close()}
