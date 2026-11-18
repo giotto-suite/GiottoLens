@@ -15,6 +15,7 @@ export const PROTOCOL = 7;
 
 let ws             = null;
 let reconnectTimer = null;
+let stopped        = false;   // R said the viewer is closing: no reconnect
 const handlers     = new Map();   // type → Set of handlers
 const outQueue     = new Map();   // type → latest message while disconnected
 
@@ -76,8 +77,9 @@ export function reportError(err, where = '') {
   });
 }
 
-// The connection to R ('connecting', 'connected', 'disconnected'), shown in
-// the tools bar (panels/tools.ts). `fn` gets the current one at once and each
+// The connection to R ('connecting', 'connected', 'disconnected', or
+// 'closed' once R has stopped the viewer), shown in the selection bar
+// (ui/selbar.js). `fn` gets the current one at once and each
 // change; the returned function unsubscribes.
 let rStatus = 'connecting';
 const statusFns = new Set();
@@ -135,17 +137,19 @@ function connect() {
     let msg;
     try { msg = JSON.parse(data); } catch (e) { reportError(e, 'parsing a message from R'); return; }
     if (msg.type === 'answer') onAnswer(msg.data ?? {});
+    // viewer$close(): the server is going away, so stop trying to reach it
+    else if (msg.type === 'closed') stopped = true;
     else dispatch(msg);
   };
 
   ws.onerror = () => setRStatus('disconnected');
 
   ws.onclose = () => {
-    setRStatus('disconnected');
+    setRStatus(stopped ? 'closed' : 'disconnected');
     // Their answers would come on this socket
     for (const p of asked.values()) p.reject(new Error('R disconnected'));
     asked.clear();
-    reconnectTimer = setTimeout(connect, 2000);
+    if (!stopped) reconnectTimer = setTimeout(connect, 2000);
   };
 }
 

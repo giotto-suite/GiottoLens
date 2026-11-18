@@ -1309,10 +1309,17 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @returns Whether the job was cancelled, invisibly
         cancel_job = function(id) invisible(private$cancel(id)),
 
-        #' @description Stop the server and remove this viewer's temp files
+        #' @description Stop the server and remove this viewer's temp files.
+        #'   The power button next to R's connection in the viewer does the
+        #'   same; open tabs say the viewer is stopped.
         close = function() {
             private$stop_jobs()
             if (!is.null(private$server)) {
+                # Tabs stop trying to reconnect and say the viewer is stopped
+                if (self$connected()) {
+                    private$broadcast(.encode_ws_message("closed"))
+                    later::run_now(0.05)
+                }
                 private$server$stop()
                 private$server <- NULL
                 rm(list = ls(private$conns), envir = private$conns)
@@ -2065,6 +2072,12 @@ LensViewer <- R6::R6Class("LensViewer",
                                 .console_text(dat$message))
                         },
                         log = priv$add_log(dat$action %||% "", dat$detail),
+                        # The stop button: after this callback, so the server
+                        # is not stopped from inside its own handler
+                        close = later::later(function() {
+                            message("[LensViewer] stopped from the viewer")
+                            pub$close()
+                        }),
                         # "treat as" menu in the viewer
                         set_column_type = tryCatch({
                             pub$set_column_type(as.character(dat$column %||% ""),
