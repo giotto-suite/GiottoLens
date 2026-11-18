@@ -89,6 +89,13 @@ test_that("the page hears of jobs and their progress, and can cancel one", {
     # A cancel from the page
     id <- priv$start_job("sleep", function(g) { Sys.sleep(30); 1 }, on_end = function(r) end <<- r)
     later::run_now(0.3)
+    # A page that connects while it runs hears of it
+    b <- ws_client(ws_url(jv$v), load = priv$load_seq)
+    on.exit(b$ws$close(), add = TRUE, after = FALSE)
+    expect_true(pump_until(function() any(vapply(b$state$msgs, function(m)
+        m$type == "job" && identical(m$data$id, id) && identical(m$data$state, "running"), NA))))
+    hit <- Find(function(m) m$type == "job", b$state$msgs)
+    expect_true(is.numeric(hit$data$started))
     a$ws$send(jsonlite::toJSON(list(type = "ask", id = "c1", data = list(op = "cancel_job", id = id)),
         auto_unbox = TRUE))
     expect_true(pump_until(function() identical(end$state, "cancelled"), timeout = 10))

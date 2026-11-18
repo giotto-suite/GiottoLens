@@ -11,6 +11,7 @@ import { invertSelection, filterMeta } from '../selection/selection.ts';
 // @ts-ignore: plain JS module
 import { escapeHtml } from '../ui/dom.js';
 import { initProjectButton } from '../ui/start.ts';
+import { jobsButton } from '../ui/jobs.ts';
 import { togglePanels, panelsShown, onLayoutChange, openAddMenu, type PanelHandle } from './dock.ts';
 
 export function createToolsPanel(body: HTMLElement): PanelHandle {
@@ -21,6 +22,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
     <button class="tool-btn" data-act="project" title="project: open a snapshot or another project"><i data-lucide="folder-open"></i></button>
     <button class="tool-btn" data-act="panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
     <button class="tool-btn" data-act="add" title="add a panel"><i data-lucide="plus"></i></button>
+    <button class="tool-btn jobs-btn" data-act="jobs" title="jobs"><i data-lucide="activity"></i></button>
     <span class="tools-sep"></span>
     <button class="tool-btn" data-act="crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
     <button class="tool-btn" data-act="meta" title="select by metadata"><i data-lucide="text-search"></i></button>
@@ -37,6 +39,8 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   const add = bar.querySelector('[data-act=add]') as HTMLElement;
   add.addEventListener('click', () => openAddMenu(add));
   showState();
+  // Jobs R runs for the page, and cancelling them (ui/jobs.ts)
+  const offJobs = jobsButton(bar.querySelector('[data-act=jobs]') as HTMLElement);
 
   // The selection: AND or OR, invert, clear
   const btn = (act: string) => bar.querySelector(`[data-act=${act}]`) as HTMLElement;
@@ -48,7 +52,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   btn('clear').addEventListener('click', () => actions.clearSelection());
   const closeMeta = selectByMetadata(btn('meta'));
 
-  return { destroy() { off.abort(); offLayout(); offCombine(); closeMeta(); } };
+  return { destroy() { off.abort(); offLayout(); offCombine(); closeMeta(); offJobs(); } };
 }
 
 // Select by metadata: a form beside the button, over the page (the bar's

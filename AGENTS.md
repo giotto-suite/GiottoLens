@@ -62,7 +62,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               (spatialView(): the open view, or null)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
-              (landmark tool, image pane), start.ts (start page and project dialog, through askR())
+              (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
+              jobs.ts (the tools bar's jobs button and popover; the page's list of jobs)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
               scatter.js, histogram.js,
               density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
@@ -242,8 +243,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
 - Jobs: R broadcasts `job` `{id, label, ref, state, message?, progress?}` as each starts, reports
-  progress and ends (`running`, `done`, `error`, `cancelled`); the page cancels one with the
-  `cancel_job` ask.
+  progress and ends (`running`, `done`, `error`, `cancelled`), and sends the running ones to a
+  tab on `ready`; the page cancels one with the `cancel_job` ask. The page keeps the running
+  jobs and the last few finished ones (`ui/jobs.ts`), shown in the tools bar's jobs popover
+  only, never the status line.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
   the number), and a connecting tab with no rules to re-send gets `rule_seq`. A

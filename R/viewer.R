@@ -1693,10 +1693,14 @@ LensViewer <- R6::R6Class("LensViewer",
             isTRUE(mirai::stop_mirai(job$m))
         },
         job_message = function(job, state, msg = NULL) {
-            if (!self$connected()) return()
-            private$broadcast(.encode_ws_message("job", Filter(Negate(is.null), list(
-                id = job$id, label = job$label, ref = job$ref, state = state, message = msg,
-                progress = job$progress))))
+            if (self$connected()) private$broadcast(private$job_json(job, state, msg))
+        },
+        # `started` in seconds since the epoch, so a page that connects later
+        # shows how long a job has run
+        job_json = function(job, state, msg = NULL) {
+            .encode_ws_message("job", Filter(Negate(is.null), list(id = job$id, label = job$label,
+                ref = job$ref, state = state, message = msg, progress = job$progress,
+                started = as.numeric(job$started))))
         },
         stop_jobs = function() {
             for (id in names(private$running_jobs)) private$cancel(id, "the viewer was closed")
@@ -1839,6 +1843,8 @@ LensViewer <- R6::R6Class("LensViewer",
                             else ws$send(.encode_ws_message("rule_seq", list(seq = priv$rule_seq)))
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                            # Jobs already running: a reload or a new tab lists them too
+                            for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
                         },
                         ask = priv$answer(ws, parsed$id, dat),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
