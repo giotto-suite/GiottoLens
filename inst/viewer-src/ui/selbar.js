@@ -2,14 +2,53 @@
 // one for the whole page, rules from every view and panel combined with OR or
 // AND, so its count and its rules (ui/rules.js) live here rather than in a
 // view; the actions on it are the tools bar's (panels/tools.ts). R's
-// connection is at its left end and the status line at its right.
+// connection and the stop button (viewer$close()) are at its left end, the
+// status line at its right.
 import { store, actions } from '../core/store.ts';
 import { liveView, onLive } from '../selection/live.ts';
-import { onRStatus } from '../core/comms.js';
+import { onRStatus, sendToR } from '../core/comms.js';
+
+const CLOSE_ARM_MS = 3000;
+
+// R's connection and the stop button; also on the start page
+export function initRStatus() {
+  const dot = document.getElementById('r-status');
+  const stop = document.getElementById('btn-close');
+  const status = document.getElementById('status');
+  // Two clicks, since a native confirm() can be blocked in an IDE's viewer pane
+  let armed;
+  function disarm() {
+    clearTimeout(armed);
+    armed = undefined;
+    stop.classList.remove('armed');
+    stop.title = 'stop the viewer (viewer$close())';
+  }
+  onRStatus(s => {
+    dot.className = `r-status ${s}`;
+    dot.title = `R: ${s}`;
+    // Only while connected: a message sent while disconnected is queued, and
+    // would stop the viewer on reconnect
+    stop.disabled = s !== 'connected';
+    if (s !== 'connected') disarm();
+    if (s === 'closed') status.textContent = 'viewer stopped; launch_lens() starts a new one';
+  });
+
+  stop.addEventListener('click', () => {
+    if (armed === undefined) {
+      stop.classList.add('armed');
+      stop.title = 'click again to stop the viewer';
+      status.textContent = 'click the power button again to stop the viewer';
+      armed = setTimeout(() => { disarm(); status.textContent = ''; }, CLOSE_ARM_MS);
+      return;
+    }
+    disarm();
+    status.textContent = 'stopping…';
+    sendToR('close');
+  });
+}
 
 export function initSelectionBar() {
-  const dot = document.getElementById('r-status');
-  onRStatus(s => { dot.className = `r-status ${s}`; dot.title = `R: ${s}`; });
+  initRStatus();
 
   // A panel brush being dragged shows its live count (adr/0013)
   const count = document.getElementById('sel-count');
