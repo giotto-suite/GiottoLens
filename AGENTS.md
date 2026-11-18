@@ -224,6 +224,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
+- `close()` sends `closed` to every tab before stopping; a page that has it stops
+  reconnecting (status `closed`). The page's stop button sends `close`, which R handles on
+  the next `later` turn, never inside the server's own callback.
 - Bump `PROTOCOL` and `.lens_protocol` together when the message format changes.
 - R numbers its rule changes: `set_rule` carries `seq` (`rule_message()`; a re-send keeps
   the number), and a connecting tab with no rules to re-send gets `rule_seq`. A
@@ -320,7 +323,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `onWillDrop`, since a group lock still shows drop targets). Its group has low layout
   priority through dockview's private `_priority`; recheck these when bumping dockview.
 - The selection bar (`ui/selbar.js`, `ui/rules.js`, static markup with ids in `index.html`,
-  outside the dock) shows R's connection, the page's selection (the rules toggle, the count
+  outside the dock) shows R's connection with the stop button (`close`; also on the start
+  page, `initRStatus()`), the page's selection (the rules toggle, the count
   with a fixed minimum width, the rule chips) and the status line. Keep buttons out of it
   after the count, since they would move as the count changes. The actions on the selection (combine mode, select by
   metadata, invert, clear) are the tools bar's (`panels/tools.ts`). Tools that act in a view

@@ -7,7 +7,7 @@
 # dropped. `on()` callbacks can be registered for the first two.
 .lens_inbound_types <- c("cell_selection", "annotations_update",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
-    "registration_update", "set_column_type", "ask")
+    "registration_update", "set_column_type", "ask", "close")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Messages about the object a page shows, ignored from a page that has not

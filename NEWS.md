@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* A power button next to R's connection stops the viewer, as `viewer$close()` does (click it
+  twice). A page whose viewer was stopped says so and no longer tries to reconnect.
 * Cross-filter mode is on by default: the selection is the cells every source selects.
   `set_selection()` still turns it off.
 * The spatial view is a panel: move, split, or close it, and add it back from a `+` menu.
