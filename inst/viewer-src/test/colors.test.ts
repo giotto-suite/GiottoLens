@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { cellColorBuffer, DEFAULT_CELL, continuousColor, scaleStops, SCALE_PRESETS } from '../render/colors.ts';
+import {
+  cellColorBuffer, DEFAULT_CELL, continuousColor, scaleStops, SCALE_PRESETS, scalePosition, scaleRange,
+  medianOf, DIVERGENT_PRESETS, SEQUENTIAL_PRESETS, sliderToValue, valueToSlider, dragHandle, autoHandle, barColors,
+} from '../render/colors.ts';
+import { migrateConfig } from '../core/store.ts';
 
 describe('cellColorBuffer', () => {
   it('fills the default colour without a column', () => {
@@ -42,14 +46,14 @@ describe('cellColorBuffer', () => {
     expect(continuousColor(0.25, st)).toEqual([50, 100, 0, 220]);
     expect(continuousColor(0.5, st)).toEqual([100, 200, 0, 220]);
     expect(continuousColor(1, st)).toEqual([200, 0, 100, 220]);
-    expect(continuousColor(0.5, SCALE_PRESETS['blue-red'])).toEqual([128, 0, 128, 220]);
-    expect(continuousColor(0)).toEqual([0, 0, 255, 220]);   // blue-red by default
+    expect(continuousColor(0.5)).toEqual([255, 255, 255, 220]);
   });
   it('picks preset, custom and reversed scales', () => {
-    expect(scaleStops()).toEqual(SCALE_PRESETS['blue-red']);
+    expect(scaleStops()).toEqual(SCALE_PRESETS['blue-white-red']);
+    expect(scaleStops({ style: 'sequential' })).toEqual(SCALE_PRESETS.viridis);
     expect(scaleStops({ preset: 'viridis' })[0]).toEqual([0x44, 0x01, 0x54]);
     expect(scaleStops({ preset: 'custom', colors: [[1, 1, 1], [2, 2, 2]], reverse: true })).toEqual([[2, 2, 2], [1, 1, 1]]);
-    expect(scaleStops({ preset: 'nope' })).toEqual(SCALE_PRESETS['blue-red']);
+    expect(scaleStops({ preset: 'nope' })).toEqual(SCALE_PRESETS['blue-white-red']);
     const col = { name: 'v', kind: 'continuous' as const, values: Float64Array.from([0, 10]), min: 0, max: 10 };
     const { colors } = cellColorBuffer(2, col, {}, { preset: 'gray', reverse: true });
     expect([...colors.slice(0, 3)]).toEqual([255, 255, 255]);
@@ -59,7 +63,95 @@ describe('cellColorBuffer', () => {
     const col = { name: 'v', kind: 'continuous' as const, values: Float64Array.from([0, 10, NaN]), min: 0, max: 10 };
     const { colors, legend } = cellColorBuffer(3, col);
     expect(legend).toMatchObject({ type: 'continuous', column: 'v', min: 0, max: 10 });
-    expect([...colors.slice(0, 3)]).toEqual([0, 0, 255]);
-    expect([...colors.slice(4, 7)]).toEqual([255, 0, 0]);
+    expect(colors[4]).toBe(255);
+    expect(colors[0]).toBe(0);
+  });
+});
+
+describe("Giotto's gradient styles", () => {
+  it('lists every preset once, under one style', () => {
+    expect([...DIVERGENT_PRESETS, ...SEQUENTIAL_PRESETS].sort()).toEqual(Object.keys(SCALE_PRESETS).sort());
+  });
+  it('centers a divergent scale on the midpoint, stretched by the larger side', () => {
+    expect(scalePosition(2, 0, 10, 'divergent', 2)).toBe(0.5);
+    expect(scalePosition(10, 0, 10, 'divergent', 2)).toBe(1);
+    expect(scalePosition(0, 0, 10, 'divergent', 2)).toBe(0.375);
+    expect(scalePosition(5, 0, 10, 'sequential', 2)).toBe(0.5);
+  });
+  it('clamps values beyond the limits', () => {
+    expect(scalePosition(-5, 0, 10, 'sequential', 5)).toBe(0);
+    expect(scalePosition(50, 0, 10, 'sequential', 5)).toBe(1);
+    expect(scalePosition(50, 0, 10, 'divergent', 5)).toBe(1);
+  });
+  it('takes the median and the data range unless set', () => {
+    const col = { values: Float64Array.from([0, 0, 1, 3, NaN]), min: 0, max: 3 };
+    expect(medianOf(col.values)).toBe(0.5);
+    expect(scaleRange(col)).toEqual({ lo: 0, hi: 3, mid: 0.5, style: 'divergent' });
+    expect(scaleRange(col, { style: 'sequential', limits: [1, 2], midpoint: 9 }))
+      .toEqual({ lo: 1, hi: 2, mid: 9, style: 'sequential' });
+  });
+  it('colors the median white on the default scale', () => {
+    const col = { name: 'v', kind: 'continuous' as const, values: Float64Array.from([0, 1, 4]), min: 0, max: 4 };
+    const { colors, legend } = cellColorBuffer(3, col);
+    expect([...colors.slice(4, 7)]).toEqual([255, 255, 255]);
+    expect(legend).toMatchObject({ style: 'divergent', mid: 1, lo: 0, hi: 4 });
+    const seq = cellColorBuffer(3, col, {}, { style: 'sequential', limits: [0, 1] });
+    expect([...seq.colors.slice(4, 7)]).toEqual([...seq.colors.slice(8, 11)]);
+  });
+});
+
+describe('migrateConfig', () => {
+  it('keeps scales saved before styles as they looked', () => {
+    const m = migrateConfig({ colorBy: 'x', colorScales: { x: { preset: 'viridis' }, y: { reverse: true },
+      z: { preset: 'blue-white-red' } } }, 2);
+    expect(m.colorScales).toEqual({ x: { style: 'sequential', preset: 'viridis' },
+      y: { reverse: true, style: 'sequential', preset: 'blue-red' }, z: { style: 'sequential', preset: 'RdBu' } });
+    expect(migrateConfig({ colorScales: { x: {} } }, 3).colorScales).toEqual({ x: {} });
+    expect(migrateConfig({ genes: ['a'] }, 1).genes).toEqual([]);
+  });
+});
+
+describe('low / mid / high handles', () => {
+  const r = { lo: 0, hi: 10, min: 0, max: 10 };
+  it('map slider steps to values over the data range and back', () => {
+    expect(sliderToValue(0, 0, 10)).toBe(0);
+    expect(sliderToValue(500, 0, 10)).toBe(5);
+    expect(sliderToValue(1000, 2, 4)).toBe(4);
+    expect(valueToSlider(5, 0, 10)).toBe(500);
+    expect(valueToSlider(50, 0, 10)).toBe(1000);
+    expect(valueToSlider(1, 1, 1)).toBe(0);
+  });
+  it('move one handle and keep the others', () => {
+    expect(dragHandle('mid', 3, r)).toEqual({ midpoint: 3 });
+    expect(dragHandle('lo', 2, r)).toEqual({ limits: [2, 10] });
+    expect(dragHandle('hi', 7, { ...r, lo: 2 })).toEqual({ limits: [2, 7] });
+  });
+  it('keep low below high', () => {
+    expect(dragHandle('lo', 9, { ...r, hi: 5 })).toEqual({ limits: [4.99, 5] });
+    expect(dragHandle('hi', 1, { ...r, lo: 5 })).toEqual({ limits: [5, 5.01] });
+  });
+  it('go back to automatic at the data range or on double-click', () => {
+    expect(dragHandle('lo', 0, r)).toEqual({ limits: null });
+    expect(autoHandle('mid', r)).toEqual({ midpoint: null });
+    expect(autoHandle('lo', { ...r, lo: 2, hi: 7 })).toEqual({ limits: [0, 7] });
+    expect(autoHandle('hi', { ...r, hi: 7 })).toEqual({ limits: null });
+  });
+});
+
+describe('barColors', () => {
+  const stops: [number, number, number][] = [[0, 0, 0], [255, 255, 255]];
+  it('draws the data range, flat beyond the limits', () => {
+    const c = barColors({ min: 0, max: 10, lo: 2, hi: 8, mid: 5, style: 'sequential', stops }, 11);
+    expect(c[0]).toEqual([0, 0, 0]);
+    expect(c[2]).toEqual([0, 0, 0]);
+    expect(c[5]).toEqual([128, 128, 128]);
+    expect(c[8]).toEqual([255, 255, 255]);
+    expect(c[10]).toEqual([255, 255, 255]);
+  });
+  it('puts the middle color of a divergent scale at the midpoint', () => {
+    const div: [number, number, number][] = [[0, 0, 255], [255, 255, 255], [255, 0, 0]];
+    const c = barColors({ min: 0, max: 10, lo: 0, hi: 10, mid: 2, style: 'divergent', stops: div }, 11);
+    expect(c[2]).toEqual([255, 255, 255]);
+    expect(c[10]).toEqual([255, 0, 0]);
   });
 });

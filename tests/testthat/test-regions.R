@@ -194,5 +194,27 @@ test_that("the Regions panel saves the selection and compares, and a volcano pic
     expect_true(browser_wait(br, sprintf("window.__giottolens.store.getState().colorBy === '%s'", key)))
     expect_true(browser_wait(br, "window.__giottolens.state.colorLegend?.type === 'continuous'"))
     expect_false("g1" %in% dv$priv$meta_names())
+
+    # Genes share one scale: set for one, it stays for the next
+    v$set_color_scale(style = "sequential", preset = "magma", limits = c(0, 2))
+    v$color_by(.item_key("expression", "rna", "g2", name = "normalized"))
+    lg <- br$js("(() => { const l = window.__giottolens.state.colorLegend;
+        return { style: l.style, preset: l.scale.preset, lo: l.lo, hi: l.hi }; })()")
+    expect_identical(lg, list(style = "sequential", preset = "magma", lo = 0L, hi = 2L))
+
+    # Dragging the high handle on the bar to its middle moves the high end only
+    pt <- br$js("(() => { const h = document.querySelector('.scale-handle[data-handle=hi]').getBoundingClientRect();
+        const b = document.querySelector('.scale-bar').getBoundingClientRect();
+        return [h.left + h.width / 2, h.top + h.height / 2, b.left + b.width / 2]; })()")
+    mouse <- function(type, x, buttons) br$session$Input$dispatchMouseEvent(type = type, x = x,
+        y = pt[[2]], button = "left", buttons = buttons, clickCount = 1L)
+    mouse("mousePressed", pt[[1]], 1L)
+    mouse("mouseMoved", (pt[[1]] + pt[[3]]) / 2, 1L)
+    mouse("mouseMoved", pt[[3]], 1L)
+    mouse("mouseReleased", pt[[3]], 0L)
+    expect_true(browser_wait(br, "(() => { const l = window.__giottolens.state.colorLegend;
+        return l.lo === 0 && Math.abs(l.hi - (l.min + l.max) / 2) < 0.02 * (l.max - l.min); })()", 10))
+    sc <- v$state()$config$colorScales[["@expression"]]
+    expect_equal(unlist(sc$limits)[1L], 0)
     expect_identical(br$errors(), character())
 })

@@ -457,6 +457,21 @@
     .legend-overflow { font-size: 10px; color: var(--fg-4); padding-top: 2px; }
     .legend-gradient { height: 8px; border-radius: 4px; background: linear-gradient(to right, rgb(0,0,255), rgb(255,0,0)); margin-bottom: 3px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--fg-3); font-family: monospace; }
+    /* Legend bar with low / mid / high handles */
+    .scale-bar { position: relative; margin: 6px 5px 2px; cursor: pointer; touch-action: none; }
+    .scale-bar .legend-gradient { margin-bottom: 0; height: 10px; }
+    .scale-handle {
+      position: absolute; top: -3px; width: 8px; height: 16px; margin-left: -4px; box-sizing: border-box;
+      background: var(--fg-0); border: 1px solid var(--bg-1); border-radius: 2px; cursor: ew-resize;
+      box-shadow: 0 0 0 1px var(--fg-4);
+    }
+    .scale-h-mid { width: 10px; height: 10px; top: 0; margin-left: -5px; border-radius: 50%; }
+    .scale-handle.scale-h-auto { background: var(--fg-2); }
+    .scale-handle.scale-h-drag, .scale-handle:hover { background: var(--accent-fg); }
+    .scale-bar-labels { position: relative; height: 13px; margin: 2px 5px 0; font-size: 10px; color: var(--fg-2); font-family: monospace; }
+    .scale-bar-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+    .scale-style { padding: 2px 4px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 3px;
+      color: var(--fg-0); font-size: 10px; }
     .scale-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
     .scale-rev { display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--fg-2); cursor: pointer; }
     .scale-rev input { margin: 0; accent-color: var(--fg-4); }

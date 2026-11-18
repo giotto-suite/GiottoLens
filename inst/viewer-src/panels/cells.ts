@@ -2,9 +2,11 @@
 // from R by color_by()): a metadata column, or an item of the object chosen
 // with the picker (panels/picker.ts) and kept in the menu's "recent" group,
 // so genes never crowd the metadata list. "Treat as" for numeric columns
-// (and text whose values are all numbers, to continuous), and the
-// legend. A continuous column's legend edits its color scale: a preset menu
-// (or custom colors, 2 to 9, each editable), reverse and reset. A categorical
+// (and text whose values are all numbers, to continuous), and the legend. A
+// continuous column's legend edits its color scale with Giotto's options:
+// style (divergent or sequential), a preset menu (or custom colors, 2 to 9,
+// each editable), reverse, and low, mid and high handles on the bar (limits
+// and divergent midpoint; double-click: back to automatic), and reset. A categorical
 // column's legend edits each category's color, visibility and fill opacity.
 // Cell outline color, width and opacity below. A note until metadata arrives.
 import { state } from '../core/state.js';
@@ -13,7 +15,11 @@ import { store, actions } from '../core/store.ts';
 import { sendToR } from '../core/comms.js';
 // @ts-ignore: plain JS module
 import { escapeHtml } from '../ui/dom.js';
-import { SCALE_PRESETS, defaultPreset, MAX_SCALE_COLORS, continuousColor } from '../render/colors.ts';
+import {
+  MAX_SCALE_COLORS, continuousColor, DIVERGENT_PRESETS, SEQUENTIAL_PRESETS, scalePreset, scaleStyle,
+  SLIDER_STEPS, sliderToValue, valueToSlider, dragHandle, autoHandle, barColors,
+} from '../render/colors.ts';
+import type { ColorScale, ScaleHandle } from '../render/colors.ts';
 import type { Legend } from '../render/colors.ts';
 import type { PanelHandle } from './dock.ts';
 import { isItemKey, fieldLabel } from '../data/items.ts';
@@ -108,15 +114,26 @@ function syncRows(el: HTMLElement, lg: CategoricalLegend) {
 function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => ContinuousLegend) {
   const custom = lg.scale.preset === 'custom';
   const n = custom ? lg.scale.colors?.length ?? 0 : 0;
+  const opts = (ps: string[]) => ps.map(p => `<option value="${p}">${p}</option>`).join('');
   el.innerHTML =
     `<div class="scale-row">` +
-    `<select class="ctl-select scale-preset" title="color scale">` +
-    Object.keys(SCALE_PRESETS).map(p => `<option value="${p}">${p}</option>`).join('') +
-    `<option value="custom">custom</option></select>` +
+    `<select class="ctl-select scale-style" title="gradient style, as Giotto's gradient_style">` +
+    `<option value="divergent">divergent</option><option value="sequential">sequential</option></select>` +
+    `<select class="ctl-select scale-preset" title="colors">` +
+    `<optgroup label="divergent">${opts(DIVERGENT_PRESETS)}</optgroup>` +
+    `<optgroup label="sequential">${opts(SEQUENTIAL_PRESETS)}</optgroup>` +
+    `<option value="custom">custom</option></select></div>` +
+    `<div class="scale-row">` +
     `<label class="scale-rev" title="reverse the scale"><input type="checkbox" class="scale-reverse">reverse</label>` +
-    `<button class="scale-btn scale-reset" title="default scale">reset</button></div>` +
-    `<div class="legend-gradient"></div>` +
-    `<div class="legend-labels"><span></span><span></span></div>` +
+    `<button class="scale-btn scale-reset" title="Giotto's default scale">reset</button></div>` +
+    `<div class="scale-bar"><div class="legend-gradient"></div>` +
+    [['lo', 'low: values below take the low color; double-click: the minimum'],
+     ['mid', 'mid: the middle color; double-click: the median'],
+     ['hi', 'high: values above take the high color; double-click: the maximum']].map(([k, tip]) =>
+      `<span class="scale-handle scale-h-${k}" data-handle="${k}" title="${tip}"></span>`).join('') +
+    `</div>` +
+    `<div class="scale-bar-labels">` + ['lo', 'mid', 'hi'].map(k => `<span data-for="${k}"></span>`).join('') +
+    `</div>` +
     (custom
       ? `<div class="scale-colors">` +
         Array.from({ length: n }, (_, k) =>
@@ -129,9 +146,9 @@ function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => Contin
       : '');
 
   const column = lg.column;
-  el.ondblclick = null;
   el.onchange = (e: Event) => {
     const t = e.target as HTMLInputElement;
+    if (t.classList.contains('scale-style')) { actions.setColorScale(column, { style: t.value as ColorScale['style'] }); return; }
     if (t.classList.contains('scale-preset')) {
       if (t.value === 'custom') {
         // start from the colors on screen, at most 5
@@ -142,6 +159,55 @@ function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => Contin
       } else actions.setColorScale(column, { preset: t.value });
     } else if (t.classList.contains('scale-reverse'))
       actions.setColorScale(column, { reverse: t.checked });
+  };
+  // Handle drags recolor at most once a frame
+  let pending: Partial<ColorScale> | null = null;
+  let drag: HTMLElement | null = null;
+  const flush = () => {
+    const p = pending;
+    pending = null;
+    if (p) actions.setColorScale(column, p);
+  };
+  const barValue = (e: PointerEvent) => {
+    const c = current();
+    const rect = (el.querySelector('.scale-bar') as HTMLElement).getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / (rect.width || 1)));
+    return sliderToValue(f * SLIDER_STEPS, c.min, c.max);
+  };
+  const moveTo = (which: ScaleHandle, v: number) => {
+    const c = current();
+    const first = !pending;
+    const r = { lo: pending?.limits?.[0] ?? c.lo, hi: pending?.limits?.[1] ?? c.hi, min: c.min, max: c.max };
+    pending = { ...pending, ...dragHandle(which, v, r) };
+    if (first) requestAnimationFrame(flush);
+  };
+  el.onpointerdown = (e: PointerEvent) => {
+    const tgt = e.target as HTMLElement;
+    const bar = tgt.closest('.scale-bar');
+    if (!bar || e.button !== 0) return;
+    const c = current();
+    if (!(c.max > c.min)) return;
+    let h = tgt.closest('.scale-handle') as HTMLElement | null;
+    if (!h) {
+      // A press on the bar takes the nearest handle there
+      const v = barValue(e);
+      const at = { lo: c.lo, mid: c.mid, hi: c.hi };
+      const near = [...bar.querySelectorAll<HTMLElement>('.scale-handle')].filter(x => x.style.display !== 'none')
+        .map(x => [x, Math.abs(at[x.dataset.handle as ScaleHandle] - v)] as const)
+        .sort((p, q) => p[1] - q[1]);
+      h = near[0]?.[0] ?? null;
+      if (!h) return;
+      moveTo(h.dataset.handle as ScaleHandle, v);
+    }
+    e.preventDefault();
+    try { h.setPointerCapture(e.pointerId); } catch (_) { /* a synthetic pointer */ }
+    h.classList.add('scale-h-drag');
+    drag = h;
+  };
+  el.onpointermove = (e: PointerEvent) => { if (drag) moveTo(drag.dataset.handle as ScaleHandle, barValue(e)); };
+  el.onpointerup = el.onpointercancel = () => {
+    drag?.classList.remove('scale-h-drag');
+    drag = null;
   };
   el.oninput = (e: Event) => {
     const t = e.target as HTMLInputElement;
@@ -162,15 +228,38 @@ function buildScale(el: HTMLElement, lg: ContinuousLegend, current: () => Contin
     else return;
     actions.setColorScale(column, { colors });
   };
+  el.ondblclick = (e: Event) => {
+    const h = (e.target as HTMLElement).closest('.scale-handle') as HTMLElement | null;
+    if (!h) return;
+    const c = current();
+    actions.setColorScale(column, autoHandle(h.dataset.handle as ScaleHandle,
+      { lo: c.lo, hi: c.hi, min: c.min, max: c.max }));
+  };
 }
 
+const fmt = (x: number) => (Number.isInteger(x) ? String(x) : Math.abs(x) >= 100 ? x.toFixed(0) : x.toPrecision(3));
+
 function syncScale(el: HTMLElement, lg: ContinuousLegend) {
-  (el.querySelector('.scale-preset') as HTMLSelectElement).value = lg.scale.preset ?? defaultPreset();
+  (el.querySelector('.scale-style') as HTMLSelectElement).value = scaleStyle(lg.scale);
+  (el.querySelector('.scale-preset') as HTMLSelectElement).value = scalePreset(lg.scale);
   (el.querySelector('.scale-reverse') as HTMLInputElement).checked = !!lg.scale.reverse;
-  (el.querySelector('.legend-gradient') as HTMLElement).style.background = gradient(lg.stops);
-  const [lo, hi] = el.querySelectorAll('.legend-labels span');
-  lo.textContent = lg.min.toFixed(2);
-  hi.textContent = lg.max.toFixed(2);
+  // The bar spans the data range, in the color each value is drawn in
+  (el.querySelector('.legend-gradient') as HTMLElement).style.background = gradient(barColors(lg));
+  const divergent = lg.style === 'divergent';
+  const vals = { lo: lg.lo, mid: lg.mid, hi: lg.hi };
+  const auto = { lo: lg.scale.limits == null, mid: lg.scale.midpoint == null, hi: lg.scale.limits == null };
+  for (const k of ['lo', 'mid', 'hi'] as ScaleHandle[]) {
+    const show = k !== 'mid' || divergent;
+    const left = `${(valueToSlider(vals[k], lg.min, lg.max) / SLIDER_STEPS) * 100}%`;
+    const h = el.querySelector(`.scale-handle[data-handle=${k}]`) as HTMLElement;
+    h.style.display = show ? '' : 'none';
+    h.style.left = left;
+    h.classList.toggle('scale-h-auto', auto[k]);
+    const lab = el.querySelector(`.scale-bar-labels [data-for=${k}]`) as HTMLElement;
+    lab.style.display = show ? '' : 'none';
+    lab.style.left = left;
+    lab.textContent = fmt(vals[k]);
+  }
   el.querySelectorAll<HTMLElement>('.scale-stop').forEach(sp => {
     const inp = sp.querySelector('.scale-color') as HTMLInputElement;
     if (document.activeElement !== inp) inp.value = hex(lg.scale.colors![Number(sp.dataset.k)]);

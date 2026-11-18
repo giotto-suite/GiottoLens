@@ -126,7 +126,7 @@ export const initialConfig = (): Config => ({
 // the combine mode are left out: R restores those itself, since it evaluates
 // them. Bump CONFIG_VERSION and add a step to `migrate` when a saved field
 // changes meaning.
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 const UNSAVED: (keyof Config)[] = ['rules', 'combine'];
 type Saved = Partial<Config>;
 
@@ -161,9 +161,21 @@ export function mergeConfig(saved: unknown, current: LensState): LensState {
 }
 
 // A config saved by an older bundle. 2: genes by name (were indices into the
-// manifest's gene list, which differ between objects)
+// manifest's gene list, which differ between objects). 3: scales have a
+// style; one saved before keeps its look: sequential, blue-red when it named
+// no preset, and the 7-color blue-white-red as RdBu.
 export function migrateConfig(saved: unknown, version: number): Saved {
-  return (version < 2 ? { ...(saved as Saved), genes: [] } : saved) as Saved;
+  const s = { ...((saved ?? {}) as Saved) };
+  if (version < 2) s.genes = [];
+  if (version < 3 && s.colorScales) {
+    const out: Record<string, ColorScale> = {};
+    for (const [k, v] of Object.entries(s.colorScales)) {
+      const preset = v.preset == null ? 'blue-red' : v.preset === 'blue-white-red' ? 'RdBu' : v.preset;
+      out[k] = { ...v, style: v.style ?? 'sequential', preset };
+    }
+    s.colorScales = out;
+  }
+  return s;
 }
 
 export const store = createStore<LensState>()(subscribeWithSelector(persist((): LensState => ({

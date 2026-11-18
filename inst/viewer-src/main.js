@@ -12,7 +12,7 @@ import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, setViewState, onSetView } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
-import { cellColorBuffer } from './render/colors.ts';
+import { cellColorBuffer, columnScale } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
@@ -58,7 +58,7 @@ function recolorCells() {
   }
   const scale = col ? scaleKey(col) : null;
   const { colors, fill, legend } = cellColorBuffer(state.cells.n, data ?? null,
-    col ? s.categoryStyles[col] : undefined, scale ? s.colorScales[scale] : undefined);
+    col ? s.categoryStyles[col] : undefined, columnScale(scale, s.colorScales));
   if (legend?.type === 'continuous') legend.column = scale;
   state.cellColors  = colors;
   state.cellFill    = fill;

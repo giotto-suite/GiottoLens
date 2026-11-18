@@ -747,22 +747,35 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description Set the color scale of a continuous metadata column:
-        #'   a preset, or custom colors spaced evenly from the column's
-        #'   minimum to its maximum. The viewer's legend sets the same values.
-        #'   `NULL` arguments leave a setting as is.
-        #' @param column Continuous column; `NULL` for the column cells are
-        #'   colored by
-        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
-        #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
-        #'   `"gray"`, `"blue-white-red"`
+        #' @description Set the color scale of a continuous metadata column
+        #'   or of the gene, with the options of Giotto's plots
+        #'   (`gradient_style`, `cell_color_gradient`, `gradient_midpoint`,
+        #'   `gradient_limits`): a divergent scale centers its colors on a
+        #'   midpoint (default the median), a sequential one runs them from the
+        #'   low limit to the high one. Colors are a preset or custom ones,
+        #'   spaced evenly; values beyond the limits take the end colors. The
+        #'   default is Giotto's: divergent, `"blue-white-red"`; a sequential
+        #'   scale without a preset is `"viridis"`. Every gene shares one scale.
+        #'   The viewer's legend sets the same values. `NULL` arguments leave a
+        #'   setting as is.
+        #' @param column Continuous column, or `"@gene"` for the scale of the
+        #'   gene of `color_by_gene()`; `NULL` for what cells are colored by
+        #' @param preset Divergent: `"blue-white-red"`, `"RdBu"`, `"PuOr"`,
+        #'   `"PRGn"`; sequential: `"viridis"`, `"magma"`, `"inferno"`,
+        #'   `"plasma"`, `"cividis"`, `"turbo"`, `"gray"`, `"blue-red"`. Either
+        #'   kind works with either style
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
         #'   sets a custom scale
         #' @param reverse `TRUE` to run the scale high to low
-        #' @param reset `TRUE` to return the column to the default scale first
+        #' @param style `"divergent"` or `"sequential"`
+        #' @param midpoint Value at the middle color of a divergent scale;
+        #'   `NA` for the median
+        #' @param limits `c(low, high)`; `NA` for the data range
+        #' @param reset `TRUE` to return to the default scale first
         #' @returns The column styled, invisibly
         set_color_scale = function(column = NULL, preset = NULL, colors = NULL,
-                                   reverse = NULL, reset = FALSE) {
+                                   reverse = NULL, style = NULL, midpoint = NULL,
+                                   limits = NULL, reset = FALSE) {
             if (!is.null(column) && (!is.character(column) || length(column) != 1L))
                 stop("[LensViewer] `column` must be one column name", call. = FALSE)
             if (!is.null(preset) && (!is.character(preset) || length(preset) != 1L))
@@ -773,12 +786,27 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(reverse) && (!is.logical(reverse) || length(reverse) != 1L ||
                     is.na(reverse)))
                 stop("[LensViewer] `reverse` must be TRUE or FALSE", call. = FALSE)
+            if (!is.null(style))
+                style <- match.arg(style, c("divergent", "sequential"))
+            if (!is.null(midpoint)) {
+                if (length(midpoint) != 1L || !(is.na(midpoint) || is.numeric(midpoint)))
+                    stop("[LensViewer] `midpoint` must be one number, or NA", call. = FALSE)
+                midpoint <- if (is.na(midpoint)) "auto" else as.numeric(midpoint)
+            }
+            if (!is.null(limits)) {
+                if (length(limits) == 1L && is.na(limits)) limits <- "auto"
+                else if (!is.numeric(limits) || length(limits) != 2L || anyNA(limits) ||
+                         limits[1L] >= limits[2L])
+                    stop("[LensViewer] `limits` must be c(low, high) with low < high, or NA",
+                        call. = FALSE)
+                else limits <- as.list(as.numeric(limits))
+            }
             if (!is.null(colors))
                 colors <- lapply(unname(colors), function(cl)
                     as.list(as.integer(grDevices::col2rgb(cl)[, 1L])))
-            r <- private$request("set_color_scale", list(column = column,
-                preset = preset, colors = colors, reverse = reverse,
-                reset = isTRUE(reset)))
+            r <- private$request("set_color_scale", list(column = column, style = style,
+                preset = preset, colors = colors, reverse = reverse, midpoint = midpoint,
+                limits = limits, reset = isTRUE(reset)))
             invisible(r$column)
         },
 

@@ -18,8 +18,8 @@ A list of every preference's value, the set ones named in
 attribute \code{set}; invisibly when preferences were changed.
 }
 \description{
-Reads or sets defaults that every viewer starts from: the continuous color
-scale, category and transcript colors, the background, cell outlines and
+Reads or sets defaults that every viewer starts from: continuous color
+scales, category and transcript colors, the background, cell outlines and
 fill, the expression values the picker opens on and region comparisons
 read, the column cells are colored by at launch, and settings of an
 analysis. The viewer's
@@ -36,7 +36,12 @@ once.
 
 Preferences:
 \itemize{
-\item \code{scale_palette}: preset of continuous color scales, including the gene's.
+\item \code{seq_palette}, \code{div_palette}: palette of sequential and divergent color
+scales.
+\item \code{scale_style}: style of a continuous scale, \code{"divergent"} or
+\code{"sequential"}.
+\item \code{gene_style}: style of the color scale genes share (every expression
+item, adr/0024); \code{"default"} takes \code{scale_style}.
 \item \code{cat_palette}: colors of categories, \code{"default"}, \code{"vivid"} or
 \code{"okabe_ito"}.
 \item \code{tx_palette}: transcript colors, \code{"default"} or \code{"vivid"}.
@@ -59,7 +64,7 @@ cache).
 }
 \examples{
 \dontrun{
-lens_preferences(scale_palette = "magma", cat_palette = "okabe_ito")
-lens_preferences(reset = "scale_palette")
+lens_preferences(seq_palette = "magma", cat_palette = "okabe_ito")
+lens_preferences(reset = "seq_palette")
 }
 }

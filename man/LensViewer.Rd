@@ -567,10 +567,17 @@ close.
 \if{html}{\out{<a id="method-LensViewer-set_color_scale"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_color_scale}{}}}
 \subsection{\code{LensViewer$set_color_scale()}}{
-  Set the color scale of a continuous metadata column:
-a preset, or custom colors spaced evenly from the column's
-minimum to its maximum. The viewer's legend sets the same values.
-\code{NULL} arguments leave a setting as is.
+  Set the color scale of a continuous metadata column
+or of the gene, with the options of Giotto's plots
+(\code{gradient_style}, \code{cell_color_gradient}, \code{gradient_midpoint},
+\code{gradient_limits}): a divergent scale centers its colors on a
+midpoint (default the median), a sequential one runs them from the
+low limit to the high one. Colors are a preset or custom ones,
+spaced evenly; values beyond the limits take the end colors. The
+default is Giotto's: divergent, \code{"blue-white-red"}; a sequential
+scale without a preset is \code{"viridis"}. Every gene shares one scale.
+The viewer's legend sets the same values. \code{NULL} arguments leave a
+setting as is.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_color_scale(
@@ -578,6 +585,9 @@ minimum to its maximum. The viewer's legend sets the same values.
   preset = NULL,
   colors = NULL,
   reverse = NULL,
+  style = NULL,
+  midpoint = NULL,
+  limits = NULL,
   reset = FALSE
 )}
     \if{html}{\out{</div>}}
@@ -585,15 +595,20 @@ minimum to its maximum. The viewer's legend sets the same values.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
-colored by}
-      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
-\code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
-\code{"gray"}, \code{"blue-white-red"}}
+      \item{\code{column}}{Continuous column, or \code{"@gene"} for the scale of the
+gene of \code{color_by_gene()}; \code{NULL} for what cells are colored by}
+      \item{\code{preset}}{Divergent: \code{"blue-white-red"}, \code{"RdBu"}, \code{"PuOr"},
+\code{"PRGn"}; sequential: \code{"viridis"}, \code{"magma"}, \code{"inferno"},
+\code{"plasma"}, \code{"cividis"}, \code{"turbo"}, \code{"gray"}, \code{"blue-red"}. Either
+kind works with either style}
       \item{\code{colors}}{2 to 9 colors (names or hex strings), low to high;
 sets a custom scale}
       \item{\code{reverse}}{\code{TRUE} to run the scale high to low}
-      \item{\code{reset}}{\code{TRUE} to return the column to the default scale first}
+      \item{\code{style}}{\code{"divergent"} or \code{"sequential"}}
+      \item{\code{midpoint}}{Value at the middle color of a divergent scale;
+\code{NA} for the median}
+      \item{\code{limits}}{\code{c(low, high)}; \code{NA} for the data range}
+      \item{\code{reset}}{\code{TRUE} to return to the default scale first}
     }
     \if{html}{\out{</div>}}
   }

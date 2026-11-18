@@ -312,6 +312,21 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (`outline`, `txPalette`) take a new preference only while they hold the old one (`onPrefs`
   in `main.js`). The background applies only when set.
 
+### Continuous color scales
+
+- `render/colors.ts` follows GiottoVisuals' continuous options: `style` divergent (default;
+  centered on `midpoint`, default the median, stretched by the larger side as ggplot2's
+  `rescale_mid`) or sequential (low limit to high), `preset` or custom colors, `reverse`,
+  `limits` (clamped). Default colors per style are Giotto's (`DEFAULT_PRESET`), or the
+  `seq_palette` / `div_palette` preferences; `scale_style` and `gene_style` set the style of
+  a scale that names none (`scaleStyle()`, `columnScale()`). The legend (`panels/cells.ts`),
+  `set_color_scale` in `core/remote.js` and R's `set_color_scale()` take the same fields.
+  The legend's bar spans the data range (`barColors()`, `SLIDER_STEPS`) with low, mid and
+  high handles on it; `dragHandle()` / `autoHandle()` turn a drag or double-click into a
+  scale change, and drags recolor at most once a frame. Config version 3 gives scales saved
+  before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
+  the 7-color `blue-white-red` as `RdBu`.
+
 ### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value

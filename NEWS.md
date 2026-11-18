@@ -49,11 +49,20 @@
   colors the cells. Finished runs are kept under History. See adr/0021 and adr/0022.
 * Pushed charts: an interval param named `range` sends its extent to R (`panel_pick`).
 * Preferences: `lens_preferences()` and the viewer's Preferences panel (a tab beside Layers)
-  set defaults for every viewer: color palettes, the background, cell outlines and fill, the
+  set defaults for every viewer: sequential and divergent palettes, the scale style and the
+  expression scale's style, category and transcript palettes, the background, cell outlines and fill, the
   expression values the picker opens on and region comparisons read, the column cells are
   colored by at launch, and an analysis's threads, history length and network folder. Only
   preferences that are set are saved, so the others follow the installed defaults; launch
   arguments, R options and changes made in a viewer take precedence.
+* Continuous color scales take Giotto's options: `viewer$set_color_scale(style =)`
+  `"divergent"` (the default, as in Giotto's plots: centered on `midpoint`, default the
+  median) or `"sequential"`, `midpoint =` and `limits =` (values beyond take the end colors;
+  `NA` for automatic). The default colors are Giotto's: divergent blue, white, red;
+  sequential viridis. Divergent presets `RdBu`, `PuOr` and `PRGn` are added; the 7-color
+  scale that was `blue-white-red` is `RdBu`, and `blue-white-red` is Giotto's three colors.
+  The legend has a style menu and low, mid and high handles on the bar (double-click: back
+  to automatic). Scales saved before keep their look.
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See

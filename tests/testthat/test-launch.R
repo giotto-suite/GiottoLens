@@ -148,6 +148,10 @@ test_that("set_color_scale checks its arguments before sending", {
     expect_error(v$set_color_scale(colors = rep("red", 10)), "2 to 9 colors")
     expect_error(v$set_color_scale(colors = c("red", "notacolour")), "invalid color name")
     expect_error(v$set_color_scale(reverse = NA), "TRUE or FALSE")
+    expect_error(v$set_color_scale(style = "rainbow"), "should be one of")
+    expect_error(v$set_color_scale(midpoint = c(1, 2)), "`midpoint` must be one number")
+    expect_error(v$set_color_scale(limits = c(2, 1)), "low < high")
+    expect_error(v$set_color_scale(limits = 1), "low < high")
     expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
 })
 

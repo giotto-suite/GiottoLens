@@ -73,7 +73,9 @@ viewer$select(lens_cells(ids), source = "table")  # pick rows in the cell table
 viewer$save_region("tumor")                       # the selection, saved under a name; regions() lists them
 de <- viewer$compare_regions("tumor", "stroma")   # scran t-test as a job, docked as a volcano plot;
                                                   # b = NULL: every other cell
-viewer$set_color_scale("nr_feats", preset = "magma")        # continuous scale: preset, or
+viewer$set_color_scale("nr_feats", style = "sequential", preset = "viridis")  # Giotto's styles:
+viewer$set_color_scale("nr_feats", style = "divergent", midpoint = 100,      # divergent (default)
+                       limits = c(0, 500))                                   # or sequential
 viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors
 viewer$set_layer("tx", show = TRUE)
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
@@ -97,8 +99,8 @@ a$code()                                          # the Giotto calls, as R code
 
 # Preferences: defaults for every viewer (also the Preferences panel)
 lens_preferences()                                # every preference; attr "set": those set
-lens_preferences(scale_palette = "magma", cat_palette = "okabe_ito")
-lens_preferences(scale_palette = NULL)            # back to the built-in default
+lens_preferences(seq_palette = "magma", cat_palette = "okabe_ito")
+lens_preferences(seq_palette = NULL)              # back to the built-in default
 lens_preferences(reset = TRUE)
 ```
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { applyPrefs, prefs, prefIsSet, onPrefs, BUILTIN } from '../core/prefs.ts';
-import { defaultPreset, scaleStops, categoryPalette, cellColorBuffer, SCALE_PRESETS } from '../render/colors.ts';
+import { scaleStyle, scalePreset, scaleStops, columnScale, categoryPalette, cellColorBuffer,
+  SCALE_PRESETS } from '../render/colors.ts';
 import { prefOutline, prefTxPalette, prefSelection } from '../core/store.ts';
 import { PALETTE, PALETTE_OKABE_ITO } from '../core/constants.js';
 
@@ -8,14 +9,14 @@ afterEach(() => applyPrefs({ defaults: BUILTIN, set: {} }));
 
 describe('preferences', () => {
   it('take the default unless set, and follow new defaults', () => {
-    applyPrefs({ defaults: BUILTIN, set: { scale_palette: 'magma' } });
-    expect(prefs().scale_palette).toBe('magma');
-    expect(prefIsSet('scale_palette')).toBe(true);
-    expect(prefIsSet('cat_palette')).toBe(false);
-    applyPrefs({ defaults: { ...BUILTIN, scale_palette: 'cividis', cat_palette: 'vivid' },
-      set: { scale_palette: 'magma' } });
-    expect(prefs().scale_palette).toBe('magma');
-    expect(prefs().cat_palette).toBe('vivid');
+    applyPrefs({ defaults: BUILTIN, set: { seq_palette: 'magma' } });
+    expect(prefs().seq_palette).toBe('magma');
+    expect(prefIsSet('seq_palette')).toBe(true);
+    expect(prefIsSet('div_palette')).toBe(false);
+    applyPrefs({ defaults: { ...BUILTIN, seq_palette: 'cividis', div_palette: 'RdBu' },
+      set: { seq_palette: 'magma' } });
+    expect(prefs().seq_palette).toBe('magma');
+    expect(prefs().div_palette).toBe('RdBu');
   });
 
   it('tell listeners the old and new values', () => {
@@ -26,12 +27,23 @@ describe('preferences', () => {
     expect(seen).toEqual(['#0d1117', '#000000']);
   });
 
-  it('set the palette of scales without a preset', () => {
-    expect(defaultPreset()).toBe('blue-red');
-    expect(scaleStops({})).toEqual(SCALE_PRESETS['blue-red']);
-    applyPrefs({ defaults: BUILTIN, set: { scale_palette: 'magma' } });
+  it('set the default scale style and palettes', () => {
+    expect(scaleStyle({})).toBe('divergent');
+    expect(scalePreset({})).toBe('blue-white-red');
+    applyPrefs({ defaults: BUILTIN, set: { scale_style: 'sequential', seq_palette: 'magma' } });
+    expect(scaleStyle({})).toBe('sequential');
+    expect(scalePreset({})).toBe('magma');
     expect(scaleStops({})).toEqual(SCALE_PRESETS.magma);
-    expect(scaleStops({ preset: 'turbo' })).toEqual(SCALE_PRESETS.turbo);
+    expect(scalePreset({ preset: 'turbo' })).toBe('turbo');
+    expect(scaleStyle({ style: 'divergent' })).toBe('divergent');
+  });
+
+  it('give expression items their own style', () => {
+    expect(columnScale('@expression', {})).toBeUndefined();
+    applyPrefs({ defaults: BUILTIN, set: { gene_style: 'sequential' } });
+    expect(columnScale('@expression', {})).toEqual({ style: 'sequential' });
+    expect(columnScale('@expression', { '@expression': { style: 'divergent' } })).toEqual({ style: 'divergent' });
+    expect(columnScale('score', {})).toBeUndefined();
   });
 
   it('color categories by palette, under per-column styles', () => {

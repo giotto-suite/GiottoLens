@@ -8,25 +8,25 @@ local_pref_file <- function(env = parent.frame()) {
 test_that("preferences take the built-in default unless set, and only set ones are saved", {
     f <- local_pref_file()
     p <- lens_preferences()
-    expect_identical(p$scale_palette, "blue-red")
+    expect_identical(p$seq_palette, "viridis")
     expect_length(attr(p, "set"), 0L)
     expect_false(file.exists(f))
 
-    lens_preferences(scale_palette = "magma", background = "#1F2937",
+    lens_preferences(seq_palette = "magma", background = "#1F2937",
         outline_width = 2, tx_palette = "vivid")
     saved <- jsonlite::read_json(f)
-    expect_identical(sort(names(saved$set)), c("background", "outline_width", "scale_palette",
+    expect_identical(sort(names(saved$set)), c("background", "outline_width", "seq_palette",
         "tx_palette"))
     p <- lens_preferences()
-    expect_identical(p$scale_palette, "magma")
+    expect_identical(p$seq_palette, "magma")
     expect_identical(p$background, "#1f2937")
     expect_identical(p$cat_palette, "default")
     expect_identical(p$selection_color, "#ffdc32")
     expect_error(lens_preferences(selection_color = "yellow"), "#rrggbb")
-    expect_setequal(attr(p, "set"), c("scale_palette", "background", "outline_width", "tx_palette"))
+    expect_setequal(attr(p, "set"), c("seq_palette", "background", "outline_width", "tx_palette"))
 
-    lens_preferences(scale_palette = NULL)
-    expect_identical(lens_preferences()$scale_palette, "blue-red")
+    lens_preferences(seq_palette = NULL)
+    expect_identical(lens_preferences()$seq_palette, "viridis")
     lens_preferences(reset = "outline_width")
     expect_false("outline_width" %in% names(jsonlite::read_json(f)$set))
     lens_preferences(reset = TRUE)
@@ -36,7 +36,7 @@ test_that("preferences take the built-in default unless set, and only set ones a
 test_that("preferences are checked", {
     local_pref_file()
     expect_error(lens_preferences(nope = 1), "no preference 'nope'")
-    expect_error(lens_preferences(scale_palette = "rainbow"), "`scale_palette` must be one of")
+    expect_error(lens_preferences(seq_palette = "rainbow"), "`seq_palette` must be one of")
     expect_error(lens_preferences(outline_opacity = 2), "from 0 to 1")
     expect_error(lens_preferences(threads = 2.5), "whole number")
     expect_error(lens_preferences(background = "red"), "#rrggbb")
@@ -46,13 +46,13 @@ test_that("preferences are checked", {
 
 test_that("an unreadable or edited file keeps the valid preferences", {
     f <- local_pref_file()
-    writeLines('{"version": 1, "set": {"scale_palette": "magma", "threads": "many", "old": 1}}', f)
+    writeLines('{"version": 1, "set": {"seq_palette": "magma", "threads": "many", "old": 1}}', f)
     p <- lens_preferences()
-    expect_identical(p$scale_palette, "magma")
+    expect_identical(p$seq_palette, "magma")
     expect_identical(p$threads, 4L)
-    expect_identical(attr(p, "set"), "scale_palette")
+    expect_identical(attr(p, "set"), "seq_palette")
     writeLines("not json", f)
-    expect_identical(lens_preferences()$scale_palette, "blue-red")
+    expect_identical(lens_preferences()$seq_palette, "viridis")
 })
 
 test_that("preferences set R defaults", {
@@ -73,12 +73,12 @@ test_that("preferences set R defaults", {
 
 test_that("the viewer's Preferences panel sets and clears preferences", {
     local_pref_file()
-    .lens_pref_from_viewer(list(set = list(outline_color = "#00ff00", scale_palette = "plasma")))
+    .lens_pref_from_viewer(list(set = list(outline_color = "#00ff00", seq_palette = "plasma")))
     p <- lens_preferences()
     expect_identical(p$outline_color, "#00ff00")
-    expect_identical(p$scale_palette, "plasma")
-    .lens_pref_from_viewer(list(reset = list("scale_palette")))
-    expect_identical(lens_preferences()$scale_palette, "blue-red")
+    expect_identical(p$seq_palette, "plasma")
+    .lens_pref_from_viewer(list(reset = list("seq_palette")))
+    expect_identical(lens_preferences()$seq_palette, "viridis")
     .lens_pref_from_viewer(list(reset = TRUE))
     expect_length(attr(lens_preferences(), "set"), 0L)
 })

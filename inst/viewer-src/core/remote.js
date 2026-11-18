@@ -110,7 +110,7 @@ export function initRemote() {
     return { column: name };
   });
 
-  onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
+  onMessage('set_color_scale', ({ column, style, preset, colors, reverse, midpoint, limits, reset }) => {
     const field = column ?? store.getState().colorBy;
     if (field == null) throw new Error('no column given and cells are not colored by one');
     const col = fieldInfo(field);
@@ -124,8 +124,18 @@ export function initRemote() {
         colors.every(c => Array.isArray(c) && c.length === 3 && c.every(v => Number.isInteger(v) && v >= 0 && v <= 255))))
       throw new Error(`colors must be 2 to ${MAX_SCALE_COLORS} colors`);
     if (reverse != null && typeof reverse !== 'boolean') throw new Error('reverse must be TRUE or FALSE');
+    if (style != null && style !== 'divergent' && style !== 'sequential')
+      throw new Error("style must be 'divergent' or 'sequential'");
+    if (midpoint != null && midpoint !== 'auto' && !(typeof midpoint === 'number' && Number.isFinite(midpoint)))
+      throw new Error('midpoint must be a number');
+    if (limits != null && limits !== 'auto' && !(Array.isArray(limits) && limits.length === 2 &&
+        limits.every(v => typeof v === 'number' && Number.isFinite(v)) && limits[0] < limits[1]))
+      throw new Error('limits must be c(low, high) with low < high');
     if (reset) actions.resetColorScale(name);
     const patch = {};
+    if (style != null) patch.style = style;
+    if (midpoint != null) patch.midpoint = midpoint === 'auto' ? null : midpoint;
+    if (limits != null) patch.limits = limits === 'auto' ? null : limits;
     if (colors != null) { patch.preset = 'custom'; patch.colors = colors; }
     else if (preset != null) patch.preset = preset;
     if (reverse != null) patch.reverse = reverse;

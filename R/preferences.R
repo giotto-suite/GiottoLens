@@ -9,9 +9,15 @@
 # (one of `choices`), "number" (between `min` and `max`, whole with
 # `integer`), "color" ("#rrggbb") or "text"
 .lens_pref_spec <- function() list(
-    scale_palette = list(type = "choice", default = "blue-red",
-        choices = c("blue-red", "viridis", "magma", "inferno", "plasma", "cividis", "turbo",
-            "gray", "blue-white-red")),
+    seq_palette = list(type = "choice", default = "viridis",
+        choices = c("viridis", "magma", "inferno", "plasma", "cividis", "turbo", "gray",
+            "blue-red")),
+    div_palette = list(type = "choice", default = "blue-white-red",
+        choices = c("blue-white-red", "RdBu", "PuOr", "PRGn")),
+    scale_style = list(type = "choice", default = "divergent",
+        choices = c("divergent", "sequential")),
+    gene_style = list(type = "choice", default = "default",
+        choices = c("default", "divergent", "sequential")),
     cat_palette = list(type = "choice", default = "default",
         choices = c("default", "vivid", "okabe_ito")),
     tx_palette = list(type = "choice", default = "default", choices = c("default", "vivid")),
@@ -115,8 +121,8 @@
 
 #' Preferences for every viewer
 #'
-#' Reads or sets defaults that every viewer starts from: the continuous color
-#' scale, category and transcript colors, the background, cell outlines and
+#' Reads or sets defaults that every viewer starts from: continuous color
+#' scales, category and transcript colors, the background, cell outlines and
 #' fill, the expression values the picker opens on and region comparisons
 #' read, the column cells are colored by at launch, and settings of an
 #' analysis. The viewer's
@@ -131,7 +137,12 @@
 #' once.
 #'
 #' Preferences:
-#' * `scale_palette`: preset of continuous color scales, including the gene's.
+#' * `seq_palette`, `div_palette`: palette of sequential and divergent color
+#'   scales.
+#' * `scale_style`: style of a continuous scale, `"divergent"` or
+#'   `"sequential"`.
+#' * `gene_style`: style of the color scale genes share (every expression
+#'   item, adr/0024); `"default"` takes `scale_style`.
 #' * `cat_palette`: colors of categories, `"default"`, `"vivid"` or
 #'   `"okabe_ito"`.
 #' * `tx_palette`: transcript colors, `"default"` or `"vivid"`.
@@ -159,8 +170,8 @@
 #'   attribute `set`; invisibly when preferences were changed.
 #' @examples
 #' \dontrun{
-#' lens_preferences(scale_palette = "magma", cat_palette = "okabe_ito")
-#' lens_preferences(reset = "scale_palette")
+#' lens_preferences(seq_palette = "magma", cat_palette = "okabe_ito")
+#' lens_preferences(reset = "seq_palette")
 #' }
 #' @export
 lens_preferences <- function(..., reset = NULL) {

@@ -18,9 +18,13 @@ interface Group { title: string | null; items: Item[] }
 const SECTIONS: { title: string; groups: Group[] }[] = [
   { title: 'Colors', groups: [
     { title: 'Continuous', items: [
-      { id: 'scale_palette', label: 'palette', kind: 'palette',
-        options: ['blue-red', 'viridis', 'magma', 'inferno', 'plasma', 'cividis', 'turbo', 'gray', 'blue-white-red'],
-        title: 'preset of continuous color scales, the gene\'s included' },
+      { id: 'seq_palette', label: 'sequential palette', kind: 'palette',
+        options: ['viridis', 'magma', 'inferno', 'plasma', 'cividis', 'turbo', 'gray', 'blue-red'] },
+      { id: 'div_palette', label: 'divergent palette', kind: 'palette',
+        options: ['blue-white-red', 'RdBu', 'PuOr', 'PRGn'] },
+      { id: 'scale_style', label: 'default style', kind: 'select', options: ['divergent', 'sequential'] },
+      { id: 'gene_style', label: 'gene coloring', kind: 'select', options: ['default', 'divergent', 'sequential'],
+        title: 'style of the color scale genes share; default: the default style' },
     ] },
     { title: 'Categories', items: [
       { id: 'cat_palette', label: 'category palette', kind: 'catpal', options: ['default', 'vivid', 'okabe_ito'] },

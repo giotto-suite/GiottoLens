@@ -9,7 +9,10 @@
 // spatial view keeps the theme's.
 
 export interface Prefs {
-  scale_palette: string;
+  seq_palette: string;
+  div_palette: string;
+  scale_style: 'divergent' | 'sequential';
+  gene_style: 'default' | 'divergent' | 'sequential';
   cat_palette: 'default' | 'vivid' | 'okabe_ito';
   tx_palette: 'default' | 'vivid';
   background: string;
@@ -29,7 +32,8 @@ export type PrefName = keyof Prefs;
 
 // Used until R sends its defaults; the same as R's .lens_pref_spec()
 export const BUILTIN: Prefs = {
-  scale_palette: 'blue-red', cat_palette: 'default',
+  seq_palette: 'viridis', div_palette: 'blue-white-red', scale_style: 'divergent',
+  gene_style: 'default', cat_palette: 'default',
   tx_palette: 'default', background: '#0d1117', outline_color: '#000000', selection_color: '#ffdc32', outline_width: 1,
   outline_opacity: 0.8, fill_opacity: 0.9, expr_values: 'normalized', de_values: 'normalized',
   color_by: '', threads: 4, history: 10, network_dir: '',

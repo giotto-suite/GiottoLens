@@ -4,7 +4,7 @@
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
-import { cellColorBuffer } from '../render/colors.ts';
+import { cellColorBuffer, columnScale } from '../render/colors.ts';
 import { needColumns } from '../data/meta.ts';
 import { clientToWorld, worldToClient, fitZoom, dragPan, spaceHeld } from '../ui/dom.js';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
@@ -52,7 +52,7 @@ export function createScatterPanel(body, ctx) {
       return;
     }
     colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null,
-      store.getState().categoryStyles[name], store.getState().colorScales[name]).colors : state.cellColors;
+      store.getState().categoryStyles[name], columnScale(name, store.getState().colorScales)).colors : state.cellColors;
     pointData = null;
     render();
   }
