@@ -2,8 +2,8 @@
 # GiottoClass::spatValues(), one source per slot item (cell metadata of a
 # feature type, an expression matrix, a spatial enrichment, a dim reduction)
 # with the names it holds. Built at load from the object shown, so it lists
-# the snapshot's contents; kept until the next load. Pulls go through
-# viewer$gobject() (the snapshot loaded again) and add columns to the
+# the snapshot's contents; kept until the next load. Pulls run as jobs over
+# the object the jobs' daemon holds (adr/0025) and add columns to the
 # viewer's metadata, not to the object. A field that shows one item (the
 # page's color-by) names it by its item key instead (.item_key()); its values
 # are read on their own into the session's items/ folder (adr/0024).
