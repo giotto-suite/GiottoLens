@@ -330,7 +330,9 @@
     .an-hint:hover { background: var(--accent-bg); color: var(--fg-0); }
     .an-hint.an-weak { color: #fbbf24; border-color: #92400e; }
     .an-feats { flex: 1; min-width: 0; color: var(--fg-3); font-family: monospace; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* Preferences panel */
+    /* Preferences (ui/preferences.ts): a dialog like the project dialog's */
+    .start.pref-dialog { width: min(520px, calc(100% - 32px)); gap: 6px; }
+    .pref-dialog-body { margin: 0 -18px -16px; border-top: 1px solid var(--bg-2); }
     .pref-panel { padding: 0; }
     .pref-panel details { border-bottom: 1px solid var(--bg-2); }
     .pref-panel summary { list-style: none; cursor: pointer; padding: 6px 10px; display: flex; align-items: center; font-weight: 600; color: var(--fg-0); }

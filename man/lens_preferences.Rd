@@ -22,8 +22,8 @@ Reads or sets defaults that every viewer starts from: continuous color
 scales, category and transcript colors, the background, cell outlines and
 fill, the expression values the picker opens on and region comparisons
 read, the column cells are colored by at launch, and settings of an
-analysis. The viewer's
-Preferences panel sets the same. Only preferences that are set are saved;
+analysis. The Preferences dialog, opened by the gear in the viewer's tools
+bar, sets the same. Only preferences that are set are saved;
 the others take the built-in default of the installed GiottoLens, so they
 follow its defaults when it is updated. Launch arguments, R options and
 changes made in a viewer take precedence over preferences.

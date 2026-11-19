@@ -1,14 +1,15 @@
-// The Preferences panel: lens_preferences() in the viewer. Sections and sub
-// headings expand and collapse; a preference that was set is marked and has a
-// reset button, the others show the built-in default. Changes go to R, which
-// saves them and sends them back to every viewer (core/prefs.ts).
+// Preferences: lens_preferences() in the viewer, a dialog the tools bar's
+// gear opens over the page, as its folder button does the project dialog
+// (ui/start.ts). Sections and sub headings expand and collapse; a preference
+// that was set is marked and has a reset button, the others show the
+// built-in default. Changes go to R, which saves them and sends them back to
+// every viewer (core/prefs.ts).
 import { loadCatalog } from '../data/catalog.ts';
-import { expressionValues } from './regions-model.ts';
+import { expressionValues } from '../panels/regions-model.ts';
 import { sendToR } from '../core/comms.js';
 import { prefs, prefDefaults, prefIsSet, onPrefs, type PrefName } from '../core/prefs.ts';
 import { SCALE_PRESETS } from '../render/colors.ts';
 import { CATEGORY_PALETTES } from '../core/constants.js';
-import type { PanelHandle } from './dock.ts';
 
 type Kind = 'select' | 'palette' | 'catpal' | 'number' | 'range' | 'color' | 'text' | 'values';
 interface Item { id: PrefName; label: string; kind: Kind; options?: string[]; min?: number; max?: number;
@@ -169,7 +170,8 @@ function rCode(): string {
   return `lens_preferences(${set.map(it => `\n    ${it.id} = ${val(p[it.id])}`).join(',')})`;
 }
 
-export function createPreferencesPanel(body: HTMLElement): PanelHandle {
+// The preferences, in `body`; returns what stops them following changes
+function buildPreferences(body: HTMLElement): () => void {
   const root = el('div', 'ctl-body pref-panel');
   const sections = el('div', 'pref-sections');
   const foot = el('div', 'pref-foot');
@@ -209,8 +211,37 @@ export function createPreferencesPanel(body: HTMLElement): PanelHandle {
     code.textContent = rCode();
   };
   draw();
-  const off = onPrefs(() => draw());
-  return { destroy() { off(); } };
+  return onPrefs(() => draw());
+}
+
+// The tools bar's gear: the preferences in a dialog over the page, closed by
+// its ×, a click outside it or Escape
+export function initPreferencesButton(btn: HTMLElement, signal?: AbortSignal) {
+  let overlay: HTMLElement | null = null;
+  let stop = () => {};
+  const close = () => {
+    stop();
+    overlay?.remove();
+    overlay = null;
+    btn.classList.remove('active');
+  };
+  btn.addEventListener('click', () => {
+    if (overlay) { close(); return; }
+    overlay = el('div', 'start-overlay');
+    overlay.addEventListener('mousedown', ev => { if (ev.target === overlay) close(); });
+    const box = el('div', 'start pref-dialog');
+    const x = el('button', 'start-close', '\u00d7') as HTMLButtonElement;
+    x.title = 'close';
+    x.addEventListener('click', close);
+    const body = el('div', 'pref-dialog-body');
+    box.append(x, el('div', 'start-title', 'Preferences'), body);
+    overlay.append(box);
+    stop = buildPreferences(body);
+    document.body.append(overlay);
+    btn.classList.add('active');
+  });
+  window.addEventListener('keydown', ev => { if (ev.key === 'Escape' && overlay) close(); }, { signal });
+  signal?.addEventListener('abort', close);
 }
 
 // For tests

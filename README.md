@@ -98,7 +98,7 @@ a$set("leiden", resolution = 0.5)                 # reruns Leiden and the steps 
 a$run("niches")                                   # runs an added analysis
 a$code()                                          # the Giotto calls, as R code
 
-# Preferences: defaults for every viewer (also the Preferences panel)
+# Preferences: defaults for every viewer (also the gear in the tools bar)
 lens_preferences()                                # every preference; attr "set": those set
 lens_preferences(seq_palette = "magma", cat_palette = "okabe_ito")
 lens_preferences(seq_palette = NULL)              # back to the built-in default

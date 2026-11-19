@@ -12,6 +12,7 @@ import { invertSelection, filterMeta } from '../selection/selection.ts';
 import { escapeHtml } from '../ui/dom.js';
 import { initProjectButton } from '../ui/start.ts';
 import { jobsButton } from '../ui/jobs.ts';
+import { initPreferencesButton } from '../ui/preferences.ts';
 import { togglePanels, panelsShown, onLayoutChange, openAddMenu, type PanelHandle } from './dock.ts';
 
 export function createToolsPanel(body: HTMLElement): PanelHandle {
@@ -23,6 +24,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
     <button class="tool-btn" data-act="panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
     <button class="tool-btn" data-act="add" title="add a panel"><i data-lucide="plus"></i></button>
     <button class="tool-btn jobs-btn" data-act="jobs" title="jobs"><i data-lucide="activity"></i></button>
+    <button class="tool-btn" data-act="preferences" title="preferences: defaults for every viewer"><i data-lucide="settings"></i></button>
     <span class="tools-sep"></span>
     <button class="tool-btn" data-act="crossfilter" title="cross-filter mode (spatial ∩ scatter)"><i data-lucide="filter"></i></button>
     <button class="tool-btn" data-act="meta" title="select by metadata"><i data-lucide="text-search"></i></button>
@@ -32,6 +34,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   createIcons({ icons, root: bar });
 
   initProjectButton(bar.querySelector('[data-act=project]') as HTMLElement, off.signal);
+  initPreferencesButton(bar.querySelector('[data-act=preferences]') as HTMLElement, off.signal);
   const panels = bar.querySelector('[data-act=panels]') as HTMLElement;
   const showState = () => panels.classList.toggle('active', panelsShown());
   panels.addEventListener('click', () => { togglePanels(); showState(); });

@@ -2541,7 +2541,7 @@ LensViewer <- R6::R6Class("LensViewer",
                         analysis_history = , analysis_feature = , analysis_open =
                             priv$analysis_message(ws, parsed$type, dat),
                         ask = priv$answer(ws, parsed$id, dat),
-                        # The Preferences panel
+                        # The Preferences dialog (the tools bar's gear)
                         preferences_set = tryCatch(.lens_pref_from_viewer(dat),
                             error = function(e) {
                                 priv$add_log("error", list(where = "preferences",
@@ -2678,8 +2678,7 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
-    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers",
-    "preferences")
+    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
