@@ -88,7 +88,7 @@ const TYPES = {
   // Regions of the object's cells and their comparison, a tab beside the Data panel
   regions:     { create: createRegionsPanel, single: true, slot: 'sources',
                  available: () => !!state.cells && !!state.manifest?.catalog },
-  images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
+  images:      { create: createImagesPanel, single: true, slot: 'images', height: 220 },
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
   annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },
   layers:      { create: createLayersPanel, single: true, slot: 'layers', height: 130 },
@@ -588,6 +588,12 @@ export function onLayoutChange(fn: () => void): () => void {
 // Charts follow the metadata: rebuilt when a new table arrives
 export function refreshBuiltins(): void {
   for (const v of views.values()) if (typeOf(v.kind)?.meta) v.fill();
+}
+
+// Controls rebuilt from what they show (the images panels after an image is
+// added)
+export function refreshControls(kinds: string[]): void {
+  for (const v of views.values()) if (kinds.includes(v.kind)) v.fill();
 }
 
 // Charts that take the theme's colours when built (ui/theme.ts): rebuilt

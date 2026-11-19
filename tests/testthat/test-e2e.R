@@ -163,7 +163,7 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "annotations", "layers",
+    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "images", "annotations", "layers",
         "preferences"))
     expect_identical(br$errors(), character())
 })
@@ -604,7 +604,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers",
+    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "images", "annotations", "layers",
         "preferences"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
@@ -651,7 +651,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "annotations", "layers",
+    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "images", "annotations", "layers",
         "preferences"))))
     expect_identical(br$errors(), character())
 })
@@ -668,19 +668,19 @@ test_that("the controls dock in their own column; a closed one stays closed afte
 
     # The tools bar at the left edge, the spatial view, the charts with the
     # table a tab behind the histogram, then the controls in a column of their
-    # own on the right: cells and transcripts as tabs, then annotations, then
-    # layers with preferences as a tab (images and register come between them
-    # when there are images)
+    # own on the right: cells and transcripts as tabs, then images,
+    # annotations, then layers with preferences as a tab (register is a tab
+    # beside images when there are images)
     p <- v$panels()
     expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "table", "cells", "transcripts",
-        "annotations", "layers", "preferences"))
+        "images", "annotations", "layers", "preferences"))
     expect_identical(p$kind, p$id)
     expect_identical(length(unique(p$group[1:3])), 3L)
     expect_identical(p$group[4], p$group[5])
-    expect_false(any(p$group[6:10] %in% p$group[3:5]))
+    expect_false(any(p$group[6:11] %in% p$group[3:5]))
     expect_identical(p$group[6], p$group[7])
-    expect_identical(p$group[9], p$group[10])
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, FALSE))
+    expect_identical(p$group[10], p$group[11])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE))
     width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
 
@@ -1635,6 +1635,91 @@ test_that("the jobs button lists running jobs, cancels one, and keeps the finish
     expect_false(br$js(sprintf("%s.classList.contains('busy')", btn)))
     expect_length(v$jobs()$id, 0L)
     expect_identical(br$errors(), character())
+})
+
+test_that("the add image button adds a file R picks, ready to register", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    expect_true(pump_until(function() v$connected()))
+    expect_false("register" %in% v$panels()$id)
+    dock_tab(br, "images")
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=images] .img-add-status')?.textContent === 'no images'"))
+    pick_type <- function(br, type) {
+        br$js("document.querySelector('[data-panel=images] .img-add').click()")
+        expect_identical(br$js("[...document.querySelectorAll('.lens-modal .img-type-tile .img-type-title')].map(e => e.textContent)"),
+            list("10x Xenium image", "IF", "H&E"))
+        br$js(sprintf("document.querySelector('.lens-modal .img-type-tile[data-type=%s]').click()", type))
+        expect_false(br$js("!!document.querySelector('.lens-modal')"))
+    }
+
+    # Escape closes the type picker without asking R
+    br$js("document.querySelector('[data-panel=images] .img-add').click()")
+    expect_true(br$js("!!document.querySelector('.lens-modal')"))
+    br$js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+    expect_false(br$js("!!document.querySelector('.lens-modal')"))
+    expect_false(br$js("document.querySelector('[data-panel=images] .img-add').disabled"))
+
+    # Cancelled: nothing added
+    withr::local_options(GiottoLens.choose_file = function() NULL)
+    pick_type(br, "if")
+    expect_true(browser_wait(br, "!document.querySelector('[data-panel=images] .img-add').disabled"))
+    expect_length(v$describe()$images, 0L)
+
+    withr::local_options(GiottoLens.choose_file = function() fx$rgb_file)
+    pick_type(br, "if")
+    nm <- sub("\\.tif$", "", basename(fx$rgb_file))
+    expect_true(browser_wait(br, sprintf("window.__giottolens.state.images?.has('%s')", nm)))
+    expect_true(browser_wait(br, sprintf("document.querySelector('[data-panel=images] .img-add-status')?.textContent === 'added %s'", nm)))
+    expect_true(pump_until(function() "register" %in% v$panels()$id))
+    expect_true(isTRUE(v$state()$config$images[[nm]]$show))
+
+    # A name already taken is reported in the panel
+    withr::local_options(GiottoLens.choose_file = function() fx$rgb_file)
+    pick_type(br, "if")
+    expect_warning(expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=images] .img-add-status.img-add-error') !== null")),
+        "image names must be unique")
+
+    # From R, then the first registered against it
+    v$add_image(fx$image_file, name = "stain")
+    expect_true(browser_wait(br, "window.__giottolens.state.images?.has('stain')"))
+    kp <- data.frame(alignmentX = c(0, 600, 0, 300), alignmentY = c(0, 0, 600, 300))
+    kp$fixedX <- 2 * kp$alignmentX
+    kp$fixedY <- 2 * kp$alignmentY
+    v$register_image(nm, reference = "stain", keypoints = kp)
+    reg <- v$registration
+    expect_true(reg$fitted)
+    expect_equal(registration_matrix(reg, "reference"), diag(c(2, 2, 1)), tolerance = 1e-9)
+    expect_s4_class(v$registered_image(), "giottoAffineImage")
+
+    # A 10x Xenium image is placed in microns by its experiment.xenium
+    xen <- lens_xenium_fixture()
+    withr::local_options(GiottoLens.choose_file = function() xen$file)
+    pick_type(br, "xenium")
+    expect_true(browser_wait(br, "window.__giottolens.state.images?.has('ch0000_dapi')"))
+    ext <- br$js("window.__giottolens.state.images.get('ch0000_dapi').entry.extent")
+    expect_equal(unlist(ext), c(xmin = 0, xmax = 40, ymin = -50, ymax = 0))
+
+    # A reload opens the added images again
+    added <- jsonlite::fromJSON(rawToChar(
+        http_get(paste0(v$url, "session/images_added.json"))$content), simplifyVector = FALSE)
+    expect_identical(vapply(added, `[[`, "", "name"), c(nm, "stain", "ch0000_dapi"))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    ok <- browser_wait(br, "window.__giottolens?.state.images?.size === 3")
+    if (!ok) message("images after reload: ",
+        paste(unlist(tryCatch(br$js("[...(window.__giottolens?.state.images?.keys() ?? [])]"),
+            error = function(e) conditionMessage(e))), collapse = ", "),
+        "\nimages_added.json in the page: ", tryCatch(br$js(
+            "fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.status + ' ' + r.statusText).catch(e => String(e))"),
+            error = function(e) conditionMessage(e)),
+        "\nbrowser errors: ", paste(br$errors(), collapse = " | "),
+        "\nlog: ", paste(utils::capture.output(print(v$log(10))), collapse = "\n"))
+    expect_true(ok)
 })
 
 test_that("the power button stops the viewer, and a stopped viewer's page stops reconnecting", {

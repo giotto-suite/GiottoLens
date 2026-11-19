@@ -28,9 +28,10 @@
 # `image_files` (named paths), which have no place in data coordinates yet and
 # are drawn inside the data's extent (`place = "fit"`). Images whose source is
 # not a TIFF file (in memory, a VRT, a PNG) are skipped with a message.
+# `first`: the number of image files already served; keys continue from it.
 # Returns list(entries = manifest entries, files = k -> served path,
 #      sources = name -> the image's own file).
-.image_entries <- function(images, image_files = character()) {
+.image_entries <- function(images, image_files = character(), first = 0L) {
     entries <- list()
     files   <- list()
     sources <- character()
@@ -46,7 +47,7 @@
             info <- .tiff_info(path)
             extent <- c(0, info$width, -info$height, 0)
         }
-        k <- as.character(length(files))
+        k <- as.character(first + length(files))
         files[[k]] <<- normalizePath(path)
         sources[[nm]] <<- normalizePath(path)
         entry <- list(
@@ -72,22 +73,77 @@
 }
 
 # `image_files` of launch_lens(): named after the files when unnamed; names
-# must not repeat or match the object's images
-.check_image_files <- function(image_files, taken = character()) {
+# must not repeat or match the object's images. `caller` prefixes the errors.
+.check_image_files <- function(image_files, taken = character(), caller = "launch_lens") {
     if (is.null(image_files) || !length(image_files)) return(character())
     if (!is.character(image_files))
-        stop("[launch_lens] `image_files` must be file paths", call. = FALSE)
+        stop("[", caller, "] `image_files` must be file paths", call. = FALSE)
     nms <- names(image_files) %||% rep("", length(image_files))
     unnamed <- !nzchar(nms)
     nms[unnamed] <- sub("\\.(ome\\.)?[^.]+$", "", basename(image_files[unnamed]))
     dup <- unique(nms[duplicated(nms) | nms %in% taken])
     if (length(dup))
-        stop("[launch_lens] image names must be unique: ", paste(dup, collapse = ", "), call. = FALSE)
+        stop("[", caller, "] image names must be unique: ", paste(dup, collapse = ", "), call. = FALSE)
     missing <- !file.exists(image_files)
     if (any(missing))
-        stop("[launch_lens] image file(s) not found: ", paste(image_files[missing], collapse = ", "),
+        stop("[", caller, "] image file(s) not found: ", paste(image_files[missing], collapse = ", "),
             call. = FALSE)
     stats::setNames(as.character(image_files), nms)
+}
+
+# One file picked in a dialog on the machine R runs on: the function in
+# option `GiottoLens.choose_file` when set, else the macOS file dialog
+# (osascript), the Windows one (utils::choose.files()), RStudio's or Positron's
+# (rstudioapi), or Tk's. Returns the path, or NULL when the dialog is
+# cancelled.
+.choose_image_file <- function() {
+    chooser <- getOption("GiottoLens.choose_file")
+    path <- if (is.function(chooser)) chooser()
+    else if (Sys.info()[["sysname"]] == "Darwin") {
+        out <- suppressWarnings(system2("osascript", c("-e", shQuote("activate"), "-e",
+            shQuote('POSIX path of (choose file with prompt "Choose an image file (TIFF)")')),
+            stdout = TRUE, stderr = FALSE))
+        if (!is.null(attr(out, "status"))) NULL else out
+    } else if (.Platform$OS.type == "windows") {
+        utils::choose.files(caption = "Choose an image file (TIFF)", multi = FALSE,
+            filters = rbind(c("TIFF files (*.tif, *.tiff)", "*.tif;*.tiff"), c("All files (*.*)", "*.*")))
+    } else if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable() &&
+               rstudioapi::hasFun("selectFile")) {
+        rstudioapi::selectFile(caption = "Choose an image file (TIFF)")
+    } else if (capabilities("tcltk")) {
+        tcltk::tk_choose.files(caption = "Choose an image file (TIFF)", multi = FALSE)
+    } else {
+        stop("[LensViewer] no file dialog is available here; use viewer$add_image(file)",
+            call. = FALSE)
+    }
+    path <- as.character(path)
+    if (!length(path) || is.na(path[[1L]]) || !nzchar(path[[1L]])) return(NULL)
+    path[[1L]]
+}
+
+# A Xenium morphology image as Giotto's Xenium reader loads it
+# (importXenium()$load_image()): y negative and scaled to microns by the
+# pixel size in experiment.xenium. The Xenium output folder is the first of
+# the file's folder and the two above it that holds experiment.xenium.
+.xenium_image_file <- function(file, name) {
+    if (!requireNamespace("Giotto", quietly = TRUE))
+        stop("[LensViewer] 10x Xenium images are read with Giotto, which is not installed",
+            call. = FALSE)
+    dir <- dirname(normalizePath(file))
+    for (i in 0:2) {
+        if (file.exists(file.path(dir, "experiment.xenium"))) break
+        dir <- dirname(dir)
+    }
+    if (!file.exists(file.path(dir, "experiment.xenium")))
+        stop("[LensViewer] no experiment.xenium in the folder of '", file,
+            "' or the two above it; a 10x Xenium image must be inside its Xenium output folder",
+            call. = FALSE)
+    reader <- tryCatch(suppressWarnings(Giotto::importXenium(dir)), error = function(e)
+        stop("[LensViewer] Giotto could not read the Xenium output folder '", dir, "': ",
+            conditionMessage(e), call. = FALSE))
+    img <- reader$load_image(path = normalizePath(file), name = name, verbose = FALSE)
+    if (is.list(img)) img <- img[[1L]]
+    img
 }
 
 # A giottoAffineImage (flipped, rotated, registered) keeps its file and

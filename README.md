@@ -80,6 +80,7 @@ viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # cust
 viewer$set_layer("tx", show = TRUE)
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
+viewer$add_image("he.ome.tif", type = "he")       # a TIFF added after launch, to register
 viewer$register_image("he", reference = "dapi")   # landmark tool; result in viewer$registration
 write_registration(viewer$registration, "align")  # Xenium Explorer imagealignment.csv, keypoints.csv
 g <- viewer$add_registered_image(g)                # the registered image as a giottoAffineImage
@@ -158,7 +159,9 @@ counts; × drops one, and the bar's rules button hides them.
 - **Images:** the object's images under the cells, each from its own TIFF file by tile
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
   colour and contrast each and add up like the channels of one image; RGB images (H&E) are
-  recognised from the file and drawn in their own colours beneath them.
+  recognised from the file and drawn in their own colours beneath them. "add image" in the
+  images panel picks a TIFF in a file dialog R opens (IF, H&E, or a 10x Xenium image placed
+  in microns).
 - **Registration:** landmark pairs between an image (such as an H&E from
   `launch_lens(image_files =)`) and a reference image (DAPI), with flips and quarter turns, a
   live least-squares affine fit and per-pair residuals; saved as Xenium Explorer CSVs or added

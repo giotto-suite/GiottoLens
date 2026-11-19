@@ -63,6 +63,13 @@
   scale that was `blue-white-red` is `RdBu`, and `blue-white-red` is Giotto's three colors.
   The legend has a style menu and low, mid and high handles on the bar (double-click: back
   to automatic). Scales saved before keep their look.
+* `viewer$add_image(file, type = )` adds a TIFF after launch: shown, listed in the images and
+  register panels, and opened again by reloads and new tabs. `type = "if"` or `"he"` places
+  it inside the data's extent, to register by landmarks; `"xenium"` reads a 10x Xenium
+  morphology image with Giotto's Xenium reader and places it in microns. The images panel
+  has an "add image" button: a choice of type, then a file dialog R opens (option
+  `GiottoLens.choose_file` replaces it). Added images belong to the object shown and count
+  as Lens work for `set_object()`.
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See

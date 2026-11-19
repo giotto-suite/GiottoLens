@@ -149,7 +149,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `private$routes`, read per request; never capture them in a closure.
 - Everything that belongs to the object shown is reset by `load()` through `clear_object()`
   (config, rules, combine, pushed panels and their files, metadata and its files, column
-  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes,
+  types, annotations, registration, `cells_xy`, added images) or set by it (cell IDs, cell table, routes,
   the catalog).
   A new per-object field goes there, or a switch leaks it into the next object. Nothing is
   kept for an object not shown: keeping Lens work is a save's job.
@@ -161,7 +161,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
   (`.lens_untiled_max`, measured; update the comment when re-measuring).
 - `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
-  registration; settings alone are not counted) without `discard = TRUE`, and checks before
+  added images, registration; settings alone are not counted) without `discard = TRUE`, and checks before
   changing anything. A switch from the page will go through the same argument after the
   page's own confirmation; never add a second rule there.
 
@@ -404,6 +404,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   beside the served `files`.
 - `launch_lens(image_files =)` entries have `place: 'fit'`: drawn inside the manifest extent
   (`fitPlacement()`), not at their extent.
+- `add_image()` serves the file under the next key of `private$routes$images`, sends
+  `add_image` to the tabs, and lists the entry in `session/images_added.json`, which the page
+  opens after the manifest's images. A `"xenium"` image goes through
+  `Giotto::importXenium()$load_image()` (`.xenium_image_file()`) and is placed at its
+  extent; `"if"` and `"he"` are placed with `place: 'fit'`. The images panel's button sends
+  `choose_image`; R opens the dialog (`.choose_image_file()`, option
+  `GiottoLens.choose_file`) and answers `add_image_result`.
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
 
@@ -479,7 +486,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
+`set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
+`register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
 `select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,

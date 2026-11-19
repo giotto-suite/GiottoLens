@@ -60,6 +60,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
     \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
+    \item \href{#method-LensViewer-add_image}{\code{LensViewer$add_image()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
     \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
@@ -728,6 +729,51 @@ chosen for a dark background. Part of the saved config
       \item{\code{theme}}{\code{"dark"} (the default) or \code{"light"}}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-add_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-add_image}{}}}
+\subsection{\code{LensViewer$add_image()}}{
+  Add an image file to the viewer. It is shown and
+listed in the images and register panels, where it can be
+registered by landmarks
+(\code{register_image()}). Every connected tab opens it; tabs that
+connect later, and reloads, open it too. It belongs to the
+object shown and counts as Lens work for \code{set_object()}. The
+"add image" button of the images panel opens a file dialog on
+the machine R runs on and calls this with the chosen
+file, after a choice of image type; option
+\code{GiottoLens.choose_file} (a function returning a path) replaces
+the dialog.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$add_image(
+  file,
+  name = NULL,
+  type = c("if", "he", "xenium"),
+  timeout = 60
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{file}}{Path to a TIFF file the viewer can read by tile (see
+\code{\link[=launch_lens]{launch_lens()}} \code{image_files})}
+      \item{\code{name}}{Image name; default the file name without its extension}
+      \item{\code{type}}{\code{"if"} (immunofluorescence) or \code{"he"} (H&E): drawn
+inside the data's extent. \code{"xenium"}: a 10x Xenium morphology
+image, read with Giotto's Xenium reader
+(\code{Giotto::importXenium()$load_image()}) and drawn in microns by
+the pixel size in the Xenium output folder's \code{experiment.xenium}.}
+      \item{\code{timeout}}{Seconds to wait for the viewer to open the image}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The viewer, invisibly.
   }
 }
 

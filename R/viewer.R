@@ -933,6 +933,66 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Add an image file to the viewer. It is shown and
+        #'   listed in the images and register panels, where it can be
+        #'   registered by landmarks
+        #'   (`register_image()`). Every connected tab opens it; tabs that
+        #'   connect later, and reloads, open it too. It belongs to the
+        #'   object shown and counts as Lens work for `set_object()`. The
+        #'   "add image" button of the images panel opens a file dialog on
+        #'   the machine R runs on and calls this with the chosen
+        #'   file, after a choice of image type; option
+        #'   `GiottoLens.choose_file` (a function returning a path) replaces
+        #'   the dialog.
+        #' @param file Path to a TIFF file the viewer can read by tile (see
+        #'   [launch_lens()] `image_files`)
+        #' @param name Image name; default the file name without its extension
+        #' @param type `"if"` (immunofluorescence) or `"he"` (H&E): drawn
+        #'   inside the data's extent. `"xenium"`: a 10x Xenium morphology
+        #'   image, read with Giotto's Xenium reader
+        #'   (`Giotto::importXenium()$load_image()`) and drawn in microns by
+        #'   the pixel size in the Xenium output folder's `experiment.xenium`.
+        #' @param timeout Seconds to wait for the viewer to open the image
+        #' @return The viewer, invisibly.
+        add_image = function(file, name = NULL, type = c("if", "he", "xenium"), timeout = 60) {
+            type <- match.arg(type)
+            private$need_object("LensViewer$add_image")
+            if (!is.character(file) || length(file) != 1L || is.na(file))
+                stop("[LensViewer] `file` must be one file path", call. = FALSE)
+            if (!is.null(name) && (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)))
+                stop("[LensViewer] `name` must be one non-empty string", call. = FALSE)
+            files <- .check_image_files(stats::setNames(file, name %||% ""),
+                taken = private$image_names, caller = "LensViewer")
+            if (!.is_tiff(files[[1L]]))
+                stop("[LensViewer] '", file, "' is not a TIFF file", call. = FALSE)
+            imgs <- if (type == "xenium")
+                .image_entries(stats::setNames(list(.xenium_image_file(files[[1L]], names(files))),
+                    names(files)), first = length(private$routes$images))
+            else .image_entries(list(), files, first = length(private$routes$images))
+            if (!length(imgs$entries))
+                stop("[LensViewer] '", file, "' cannot be shown", call. = FALSE)
+            entry <- imgs$entries[[1L]]
+            k <- names(imgs$files)[[1L]]
+            private$routes$images[[k]] <- normalizePath(imgs$files[[k]], mustWork = TRUE)
+            if (self$connected()) {
+                r <- tryCatch(private$request("add_image", list(entry = entry), timeout = timeout),
+                    error = function(e) e)
+                if (inherits(r, "error")) {
+                    private$routes$images[[k]] <- NULL
+                    stop("[LensViewer] the viewer could not open '", file, "': ",
+                        sub("^\\[LensViewer\\] (add_image: )?", "", conditionMessage(r)), call. = FALSE)
+                }
+                json <- .encode_ws_message("add_image", list(entry = entry))
+                for (ws in as.list(private$conns)[-1L]) try(ws$send(json), silent = TRUE)
+            }
+            private$image_names <- c(private$image_names, entry$name)
+            private$image_files[[entry$name]] <- imgs$sources[[entry$name]]
+            private$added_images <- c(private$added_images, list(entry))
+            private$write_added_images()
+            private$add_log("add_image", paste0(entry$name, " (", type, ") = ", imgs$sources[[entry$name]]))
+            invisible(self)
+        },
+
         #' @description Show or hide an image, or set its colour or contrast;
         #'   `NULL` arguments leave a setting as is. Images draw under the
         #'   cells, each in its own colour, added together;
@@ -1564,6 +1624,7 @@ LensViewer <- R6::R6Class("LensViewer",
         conn_load   = NULL,     # env: connection id -> the load its page came from
         image_names = character(),
         image_files = character(),  # image name -> the image's own file
+        added_images = list(),      # manifest entries of add_image(), in order
         cell_ids    = NULL,
         cells       = NULL,     # source, launch mark and whether it is drawn
         spat_unit   = NULL,
@@ -1897,6 +1958,33 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(r$error))
                 stop("[LensViewer] ", type, ": ", r$error, call. = FALSE)
             r$data
+        },
+
+        # session/images_added.json: the images added after launch, opened
+        # by the viewer after the manifest's
+        write_added_images = function() {
+            jsonlite::write_json(private$added_images,
+                file.path(private$session, "images_added.json"),
+                auto_unbox = TRUE, digits = NA, null = "null")
+        },
+
+        # The "add image" button: a file dialog, then add_image(). Errors go
+        # to the tab that asked.
+        choose_image = function(ws, type = "if") {
+            r <- tryCatch({
+                type <- match.arg(type, c("if", "he", "xenium"))
+                file <- .choose_image_file()
+                if (is.null(file)) list(cancelled = TRUE)
+                else {
+                    self$add_image(file, type = type)
+                    list(added = utils::tail(private$image_names, 1L))
+                }
+            }, error = function(e) {
+                private$add_log("error", list(where = "add_image", message = conditionMessage(e)))
+                warning(.console_text(conditionMessage(e)), call. = FALSE)
+                list(error = sub("^\\[LensViewer\\] ", "", conditionMessage(e)))
+            })
+            try(ws$send(.encode_ws_message("add_image_result", r)), silent = TRUE)
         },
 
         drop_panel_file = function(id) {
@@ -2296,6 +2384,8 @@ LensViewer <- R6::R6Class("LensViewer",
         # set_object() refuses to drop work unless told to.
         clear_object = function() {
             private$close_analysis()
+            private$added_images <- list()
+            unlink(file.path(private$session, "images_added.json"))
             for (id in names(private$pushed)) private$drop_panel_file(id)
             .prune_meta_files(private$meta_dir(), character())
             .prune_meta_files(private$items_dir(), character())
@@ -2328,7 +2418,8 @@ LensViewer <- R6::R6Class("LensViewer",
         # without `discard = TRUE`. Settings are not counted.
         lens_work = function() {
             n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
-                region = length(private$region_sets), `pushed panel` = length(private$pushed))
+                region = length(private$region_sets), `pushed panel` = length(private$pushed),
+                `added image` = length(private$added_images))
             parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
             if (!is.null(self$registration)) parts <- c(parts, "image registration")
             if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
@@ -2459,6 +2550,11 @@ LensViewer <- R6::R6Class("LensViewer",
                                     call. = FALSE)
                                 .lens_pref_broadcast()
                             }),
+                        # The images panel's "add image" button
+                        choose_image = {
+                            type <- if (is.character(dat$type) && length(dat$type) == 1L) dat$type else "if"
+                            later::later(function() priv$choose_image(ws, type))
+                        },
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
                         panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {

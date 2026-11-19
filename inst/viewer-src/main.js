@@ -21,7 +21,7 @@ import { initSelectionBar, initRStatus } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
-import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
+import { initDock, placeControls, refreshBuiltins, refreshCharts, refreshControls, pushPanel, removePanel, panelHandle,
   showBuiltin } from './panels/dock.ts';
 import { initRegions, regionList } from './panels/regions.ts';
 import { initAnalysis, analysisModel } from './panels/analysis.js';
@@ -67,23 +67,45 @@ function recolorCells() {
 }
 
 // ── Images ────────────────────────────────────────────────────────────────────
-// Opened in manifest order; the first is shown. One that fails to open is
+// Opened in manifest order, then the ones R added after launch
+// (session/images_added.json); the first is shown. One that fails to open is
 // reported to R and left out.
 const IMAGE_COLORS = [[64, 128, 255], [0, 255, 128], [255, 64, 64], [255, 200, 0], [255, 0, 255], [0, 255, 255]];
+let imagePool = null;
+const pool = () => (imagePool ??= new ImagePool());
+
+function setImageDefaults(img, show) {
+  const channels = [...state.images.values()].filter(i => !i.rgb).length;
+  actions.setImage(img.entry.name, img.rgb ? { show, rgb: true } : {
+    show, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
+  });
+}
+
 async function loadImages(entries) {
-  if (!entries.length) return;
-  const pool = new ImagePool();
-  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool, state.manifest.extent)));
   state.images = new Map();
+  const added = await fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : [], () => []);
+  entries = [...entries, ...(Array.isArray(added) ? added : [])];
+  if (!entries.length) return;
+  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool(), state.manifest.extent)));
   opened.forEach((r, i) => {
     if (r.status === 'rejected') { reportError(r.reason, `image '${entries[i].name}' is not shown`); return; }
     const img = r.value, k = state.images.size;
     state.images.set(img.entry.name, img);
-    const channels = [...state.images.values()].filter(i => !i.rgb).length;
-    actions.setImage(img.entry.name, img.rgb ? { show: k === 0, rgb: true } : {
-      show: k === 0, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
-    });
+    setImageDefaults(img, k === 0);
   });
+}
+
+// An image R adds after launch (LensViewer$add_image()): opened, shown, and
+// listed in the images and register panels
+async function addImage(entry) {
+  if (state.images.has(entry.name)) throw new Error(`there is already an image '${entry.name}'`);
+  const img = await openImage(entry, pool(), state.manifest.extent);
+  state.images.set(img.entry.name, img);
+  setImageDefaults(img, true);
+  initRegistration();
+  placeControls();
+  refreshControls(['images', 'register']);
+  return { name: img.entry.name, rgb: img.rgb };
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -176,6 +198,7 @@ async function main() {
 
   // Analysis: the panel opens when R starts one (viewer$analysis())
   initAnalysis({ place: () => showBuiltin('analysis') });
+  onMessage('add_image', ({ entry }) => addImage(entry));
 
   onMessage('push_panel', pushPanel);
   onMessage('remove_panel', ({ id }) => { removePanel(id); });
@@ -188,6 +211,7 @@ async function main() {
   // Before R can ask about images
   await imagesLoaded;
   placeControls();   // the images and register panels, now that images are open
+  refreshControls(['images']);
   initRegistration();
 
   initRemote();
