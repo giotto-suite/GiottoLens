@@ -268,3 +268,16 @@ test_that("a link in a save does not bring a file from elsewhere into the projec
     expect_null(r$priv$config_json)
     expect_error(suppressMessages(r$v$save("second")), NA)
 })
+
+test_that("the working bundle is written as the work changes", {
+    old <- options(GiottoLens.autosave_interval = 0.1)
+    on.exit(options(old), add = TRUE)
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    state <- function() .read_bundle_json(file.path(r$priv$work, "state.json"))
+    r$v$save_region("top", r$priv$cell_ids[1:5])
+    expect_true(pump_until(function() identical(unlist(state()$region_names), "top")))
+    r$v$remove_region("top")
+    expect_true(pump_until(function() !length(state()$region_names)))
+    expect_false(file.exists(file.path(r$priv$work, "regions.parquet")))
+})
