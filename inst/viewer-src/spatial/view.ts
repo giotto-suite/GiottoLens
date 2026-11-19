@@ -66,7 +66,6 @@ const TEMPLATE = `
     <div class="tx-lasso-results" data-el="txResults"></div>
   </div>
   <div class="annot-popup" data-el="annotPopup">
-    <span class="annot-type" data-el="annotType"></span>
     <input class="annot-name" data-el="annotName" type="text" placeholder="name…" autocomplete="off" spellcheck="false">
   </div>`;
 

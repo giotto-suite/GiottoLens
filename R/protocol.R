@@ -56,18 +56,38 @@
             viewer$selection_rules <- dat[["rules"]]
         },
         annotations_update = {
-            viewer$annotations <- lapply(dat[["annotations"]], function(a) list(
-                id      = as.character(a[["id"]] %||% ""),
-                name    = as.character(a[["name"]] %||% ""),
-                type    = as.character(a[["type"]] %||% ""),
-                geojson = as.character(a[["geojson"]] %||% "")
-            ))
+            viewer$annotations <- .annotations_from_rows(dat[["annotations"]])
         },
         registration_update = {
             viewer$registration <- .parse_registration(dat)
         }
     )
     invisible(viewer)
+}
+
+# Annotations: R shows them as GeoJSON strings named by the annotations'
+# names, unique and never empty (the page sees to it). Messages and state.json
+# carry rows of {name, geojson}; saves made before names were unique may have
+# empty or repeated ones, which get default names.
+.annotations_from_rows <- function(rows) {
+    if (!length(rows)) return(list())
+    str <- function(v) { v <- as.character(unlist(v))[1L]; if (is.na(v)) "" else v }
+    stats::setNames(lapply(rows, function(a) str(a[["geojson"]])),
+        .annotation_names(vapply(rows, function(a) str(a[["name"]]), "")))
+}
+
+.annotations_rows <- function(a) {
+    lapply(seq_along(a), function(i) list(name = names(a)[[i]], geojson = a[[i]]))
+}
+
+# `nms` with empty and repeated ones (after the first) replaced by
+# annotation_<n>, n above any in use; as the page names new shapes
+.annotation_names <- function(nms) {
+    bad <- !nzchar(nms) | duplicated(nms)
+    used <- regmatches(nms[!bad], regexpr("^annotation_[0-9]+$", nms[!bad]))
+    n <- max(c(0L, as.integer(sub("^annotation_", "", used))))
+    nms[bad] <- paste0("annotation_", n + seq_len(sum(bad)))
+    nms
 }
 
 # ── Selection masks ──────────────────────────────────────────────────────────

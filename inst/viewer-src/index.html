@@ -133,13 +133,13 @@
       pointer-events: all; z-index: 10; min-width: 160px;
     }
     .annot-popup.visible { display: flex; }
-    .annot-type { font-size: 10px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.05em; }
     .annot-name {
       width: 100%; padding: 4px 8px; background: var(--bg-2);
       border: 1px solid var(--bg-3); border-radius: 4px;
       color: var(--fg-0); font-size: 12px; font-family: monospace; outline: none;
     }
     .annot-name:focus { border-color: var(--fg-4); }
+    .annot-name.invalid { border-color: #ef4444; }
 
     /* The transcripts panel (panels/transcripts.ts) */
     .gene-head { flex-shrink: 0; border-bottom: 1px solid var(--bg-2); }
@@ -439,12 +439,7 @@
     .annot-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 12px; cursor: pointer; user-select: none; }
     .annot-row:hover { background: var(--bg-2); }
     .annot-row.selected { background: var(--row-sel); }
-    .annot-type-tag { flex-shrink: 0; font-size: 9px; font-family: monospace; padding: 1px 4px; border-radius: 3px; text-transform: uppercase; }
-    .annot-type-tag.polygon   { background: var(--accent-bg); color: var(--accent-fg); }
-    .annot-type-tag.rectangle { background: var(--tag-green-bg); color: var(--tag-green-fg); }
-    .annot-type-tag.freehand  { background: var(--tag-amber-bg); color: var(--tag-amber-fg); }
     .annot-name-text { flex: 1; font-size: 11px; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .annot-unnamed { color: var(--fg-4); font-style: italic; }
     .annot-row-btn { background: none; border: none; padding: 2px; color: var(--fg-4); cursor: pointer; display: flex; align-items: center; flex-shrink: 0; }
     .annot-row-btn:hover { color: var(--fg-2); }
     .annot-row-btn svg { width: 12px; height: 12px; }

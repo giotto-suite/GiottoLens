@@ -31,13 +31,22 @@ test_that("cell_selection resolves the mask to cell IDs and keeps the rules", {
     expect_identical(v$selection, character(0))
 })
 
-test_that("annotations_update fills missing fields", {
+test_that("annotations are GeoJSON named by unique names", {
     v <- new.env()
     .handle_ws_message(v, list(type = "annotations_update", data = list(annotations = list(
-        list(id = "x", type = "polygon", geojson = "{}")
+        list(name = "tumor", geojson = "{1}"), list(name = "annotation_2", geojson = "{2}")
     ))))
-    expect_identical(v$annotations[[1]]$name, "")
-    expect_identical(v$annotations[[1]]$id, "x")
+    expect_identical(v$annotations, list(tumor = "{1}", annotation_2 = "{2}"))
+    expect_identical(.annotations_from_rows(.annotations_rows(v$annotations)), v$annotations)
+    .handle_ws_message(v, list(type = "annotations_update", data = list(annotations = list())))
+    expect_identical(v$annotations, list())
+    # Saves from before names were unique: empty and repeated ones get defaults
+    old <- list(list(id = "x", type = "polygon", name = "", geojson = "{1}"),
+        list(id = "y", type = "rectangle", name = "a", geojson = "{2}"),
+        list(id = "z", type = "freehand", name = "a", geojson = "{3}"),
+        list(name = "annotation_4", geojson = "{4}"), list(geojson = "{5}"))
+    expect_identical(names(.annotations_from_rows(old)),
+        c("annotation_5", "a", "annotation_6", "annotation_4", "annotation_7"))
 })
 
 test_that("outbound messages keep full coordinate precision", {
