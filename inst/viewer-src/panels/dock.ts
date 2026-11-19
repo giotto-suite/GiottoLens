@@ -43,7 +43,6 @@ import { createRegisterPanel } from './register.ts';
 import { createLayersPanel } from './layers.ts';
 import { createToolsPanel } from './tools.ts';
 import { createSpatialPanel } from '../spatial/view.ts';
-import { createPreferencesPanel } from './preferences.ts';
 // @ts-ignore: plain JS module
 import { abortAllTiles } from '../data/schedule.js';
 // @ts-ignore: plain JS module
@@ -92,7 +91,6 @@ const TYPES = {
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
   annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },
   layers:      { create: createLayersPanel, single: true, slot: 'layers', height: 130 },
-  preferences: { create: createPreferencesPanel, single: true, slot: 'layers', height: 130 },
 } satisfies Record<string, PanelType>;
 export type PanelKind = keyof typeof TYPES | 'spec';
 type BuiltinKind = keyof typeof TYPES;
@@ -458,7 +456,9 @@ function dropUnavailable(): void {
   if (!dock) return;
   for (const p of [...dock.panels]) {
     const kind = views.get(p.id)?.kind;
-    if (isSingle(kind) && !available(kind as BuiltinKind)) dock.removePanel(p);
+    // A kind no longer built in, from an older layout (the Preferences tab)
+    if (kind && kind !== 'spec' && !typeOf(kind)) dock.removePanel(p);
+    else if (isSingle(kind) && !available(kind as BuiltinKind)) dock.removePanel(p);
   }
 }
 

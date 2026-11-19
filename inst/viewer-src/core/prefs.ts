@@ -2,7 +2,7 @@
 // R sends the built-in defaults and the preferences that were set
 // ('preferences', handled in main.js); a preference that was not set takes
 // the default, so it follows the defaults of the installed GiottoLens. The
-// Preferences panel sends changes back ('preferences_set'). Colors read the
+// Preferences dialog (ui/preferences.ts) sends changes back ('preferences_set'). Colors read the
 // preferences when they draw; config fields that start from a preference
 // (the outline, the transcript palette) take a new preference while they
 // still hold the old one. The background applies only when set; unset, the

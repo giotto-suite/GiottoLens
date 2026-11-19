@@ -48,7 +48,7 @@
   as metadata columns beside pulled ones, docked charts and tables; a gene clicked in a table
   colors the cells. Finished runs are kept under History. See adr/0021 and adr/0022.
 * Pushed charts: an interval param named `range` sends its extent to R (`panel_pick`).
-* Preferences: `lens_preferences()` and the viewer's Preferences panel (a tab beside Layers)
+* Preferences: `lens_preferences()` and the viewer's Preferences dialog (the gear in the tools bar)
   set defaults for every viewer: sequential and divergent palettes, the scale style and the
   expression scale's style, category and transcript palettes, the background, cell outlines and fill, the
   expression values the picker opens on and region comparisons read, the column cells are

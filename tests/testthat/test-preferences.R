@@ -115,7 +115,7 @@ test_that("the viewer's built-in preferences match R's", {
     }
 })
 
-test_that("the Preferences panel shows and sets preferences in the page", {
+test_that("the tools bar's Preferences dialog shows and sets preferences in the page", {
     local_pref_file()
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
@@ -123,16 +123,24 @@ test_that("the Preferences panel shows and sets preferences in the page", {
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE, after = FALSE)
     expect_true(pump_until(function() v$connected(), 30))
-    expect_true(browser_wait(br, "[...document.querySelectorAll('.dv-tab')].some(t => t.textContent.trim() === 'preferences')", 30))
-    dock_tab(br, "preferences")
-    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=preferences] .pref-panel')", 30))
-    br$js("(() => { const d = document.querySelector('[data-panel=preferences] details[data-section=\"Colors/Categories\"]');
+    # A gear in the tools bar opens it over the page; it is not a panel
+    expect_false("preferences" %in% v$panels()$id)
+    gear <- "document.querySelector('[data-panel=tools] [data-act=preferences]')"
+    expect_true(browser_wait(br, sprintf("!!%s", gear), 30))
+    br$js(sprintf("%s.click()", gear))
+    expect_true(browser_wait(br, "!!document.querySelector('.start-overlay .pref-dialog .pref-panel')", 30))
+    expect_true(br$js(sprintf("%s.classList.contains('active')", gear)))
+    br$js("(() => { const d = document.querySelector('.pref-dialog details[data-section=\"Colors/Categories\"]');
         d.open = true; })()")
     br$js("(() => { const s = document.querySelector('[data-pref=cat_palette] select'); s.value = 'okabe_ito';
         s.dispatchEvent(new Event('change')); })()")
     expect_true(pump_until(function() identical(lens_preferences()$cat_palette, "okabe_ito"), 10))
     expect_true(browser_wait(br,
         "document.querySelector('[data-pref=cat_palette]').classList.contains('pref-set')", 10))
+    # Escape closes it
+    br$js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+    expect_true(browser_wait(br, "!document.querySelector('.start-overlay')", 10))
+    expect_false(br$js(sprintf("%s.classList.contains('active')", gear)))
     lens_preferences(outline_color = "#ff8000")
     expect_true(browser_wait(br,
         "JSON.stringify(window.__giottolens.store.getState().outline.color) === '[255,128,0]'", 10))

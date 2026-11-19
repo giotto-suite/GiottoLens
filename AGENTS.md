@@ -74,7 +74,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
-              jobs.ts (the tools bar's jobs button and popover; the page's list of jobs)
+              jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
+              preferences.ts (the tools bar's Preferences dialog)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
               scatter.js, histogram.js,
               density.ts (2D bins as one image), table.ts (the cell table), spec.js (pushed
@@ -306,7 +307,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `R/preferences.R` holds the built-in defaults (`.lens_pref_spec()`); the file saves only
   preferences that were set, and `.lens_pref(k)` reads one. `core/prefs.ts` `BUILTIN` must
   match `.lens_pref_spec()` (a test checks). R sends `preferences` (`defaults`, `set`) before
-  `restore` and to every open viewer after a change; the panel sends `preferences_set`.
+  `restore` and to every open viewer after a change; the Preferences dialog (the tools bar's
+  gear, over the page like the project dialog; not a dock panel) sends `preferences_set`.
 - Colors read `prefs()` when they draw (`render/colors.ts`: `defaultPreset()`,
   `categoryPalette()`, fill opacity). Config fields that start from a preference
   (`outline`, `txPalette`) take a new preference only while they hold the old one (`onPrefs`
