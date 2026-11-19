@@ -17,15 +17,18 @@ existed, as `viewer$save_state(path)` to any file or folder.
 Most of that work lives in R's memory: the config, rules, annotations, registration and
 pushed panel specs. The viewer's temp folder (`tempdir()/giottolens/<port>-<rand>/`) holds
 what the page reads: the manifest, the cell table, metadata, panel data, the item cache
-(adr/0024) and job progress files (adr/0025). R creates it readable by the user only, only R
-writes to it, and the server serves all of it.
+(adr/0024) and job progress files (adr/0025), all served. R deletes `tempdir()` when it exits
+normally; after a crash the folder is left under a random name nothing can find.
+
+A project is loose files. Who can read or change it is decided by the operating system's
+permissions on its folder, for the data, the snapshots and anything Lens writes alike.
 
 Two things limit where a save can go. GiottoDisk's `sourcePrune()` keeps only what a live
 snapshot reaches, so a save that points into the vault on its own protects nothing. And the
 first prototype (GiottoAtlas, 792c102) wrote its viewer files and manifest into an `atlas/`
 folder in the data's root and served that whole root without a token; the in-process server
 (2996cc3) and the token path (adr/0006) replaced it with mounted stores and a temp folder.
-What the server serves must not grow back to the project directory.
+What the server serves must not grow back to the whole project directory.
 
 ## Decision
 
@@ -55,52 +58,65 @@ Not stored: the stores, the cell table and the manifest (derived from the snapsh
 cache, job progress, the access token and the URL. Rules that list cells by position apply
 only when the fingerprint matches; other rules carry over.
 
-**Work is written as it happens.** Each viewer keeps a working bundle,
-`<project>/lens/session-<session id>/`, never served. When an object is shown, R writes its
-`bundle.json`; when state in memory changes, R rewrites that file's JSON; when working
-metadata or panel data is written to the temp folder, R writes the same parquet into the
-working bundle. Each file is replaced atomically (temp file, then rename). A save copies the
-working bundle into `lens/<name>.<id>/` within the project; nothing is exported from the temp
-folder. The working bundle is what survives a crash, and the one left by a closed viewer is
-the project's "last session".
+**The working bundle is the served session folder.** Each viewer keeps its work in
+`<project>/lens/session-<session id>/` and the server serves that folder to the page. When an
+object is shown, R writes its `bundle.json`; when state in memory changes, R rewrites the JSON;
+working metadata and panel data are written there once, as parquet, and read by the page from
+there. Each file is replaced atomically (temp file, then rename). A save copies the working
+bundle into `lens/<name>.<id>/` within the project; nothing is exported. Opening a saved
+bundle copies it into the viewer's working bundle, after R's checks, and serves that. The
+working bundle is what survives a crash, and the one left by a closed viewer is the project's
+"last session".
 
-| In the temp folder | In the bundle |
+Only disposable files stay in `tempdir()`, on a second served path: they are rewritten per
+load or are a cache, and on a project on a network file system the item cache would be slow.
+
+| File | Where |
 |---|---|
-| `manifest.json` | no: derived from the snapshot |
-| `cells-<load>.parquet` | no: only the cell fingerprint |
-| `metadata/` (pushed, pulls, ad-hoc) | values, plus key and history for pulls |
-| `panels/` | data, plus the spec from R's memory |
-| `items/` | no: a cache |
-| `jobs/<id>.progress` | no: transient |
-| (R's memory) config, rules, annotations, registration | JSON |
+| config, rules, annotations, registration (from R's memory) | working bundle, JSON |
+| `metadata/` (pushed, pulls, ad-hoc) | working bundle: values, plus key and history for pulls |
+| `panels/` | working bundle: data, plus the spec from R's memory |
+| `manifest.json` | temp: derived from the snapshot |
+| `cells-<load>.parquet` | temp: derived; the bundle keeps only the cell fingerprint |
+| `items/` | temp: a cache |
+| `jobs/<id>.progress` | temp: transient |
 
-**The served folder stays private.** The temp folder stays in `tempdir()`. In the project,
-anyone who can write to the project could change the files the page reads as R's output, or
-place a symbolic link there that the server would follow (only stores are checked for links,
-when they are mounted), so a leaked token would expose any file the user can read. What the
-page needs from a bundle is written into the temp folder, or sent over the WebSocket.
+**The folder is named by the session id, never the token.** The token is the credential for
+the running viewer; in a folder name, anyone who can list the project would learn it and could
+read and drive that viewer. The session id is random and independent of the token (adr/0018).
+Where files sit on disk is invisible to HTTP clients: someone without the token cannot reach
+them through the server wherever they are, so serving from the project protects as much
+against outside access as serving from `tempdir()`.
 
-**A bundle is untrusted input.** Projects are shared, with more than one writer intended, so
-a bundle may come from someone else:
+**Access is the project's.** GiottoLens has no users and no per-save access control: anyone
+who can read the project can read its bundles and working bundles, as they can its data.
+Anyone who can write it is trusted as a collaborator, as they already are by the stores the
+viewer serves and the snapshots `loadGiotto()` deserializes. Per-user permissions would need
+identities and a process that checks them, a hosted app, which GiottoLens is not. What
+GiottoLens guards is narrower: it must not give access beyond what the file system gives.
 
-- JSON and parquet only, never `rds` or `qs2`: reading one deserializes R objects from a
-  file someone else may have written.
-- Rules are parsed into rule objects and checked, never evaluated as code. Labels,
-  descriptions and panel specs are shown as text in the page, never as HTML.
+- The token and the localhost bind keep anyone who cannot read the files from reading them
+  through the viewer.
+- The server does not follow a symbolic link out of what it serves. Today stores are checked
+  once, when mounted (`.links_outside()`); a served folder inside the project, the working
+  bundle as well as stores, needs a check that holds while it is served.
 - A bundle the page asks for is opened only if its name is one R listed for the open
   project; a name is never joined into a path unchecked.
-- Nothing secret goes in: not the token, not the URL. The session id is random and is not
-  the token (adr/0018).
+- Nothing secret goes in a bundle: not the token, not the URL.
+
+Bundles are JSON and parquet, never `rds` or `qs2`: they can be read without R, and loading
+one runs no deserialization of R objects. Rules are parsed into rule objects and checked,
+never evaluated as code; labels, descriptions and panel specs are shown as text in the page,
+never as HTML.
 
 ## Consequences
 
 - Lens writes into the project in three ways: hand-over snapshots (adr/0018), job outputs
-  in the vault, and bundles in `lens/`. SECURITY.md says so; what the server serves does not
-  change.
-- Working metadata and panel data are written twice, once to each folder. They are single
-  columns and small tables.
-- Anyone who can read the project can read its bundles, working bundles included, as they
-  can its data. Lists hide working bundles, as the start page hides automatic snapshots.
+  in the vault, and bundles in `lens/`. SECURITY.md says so.
+- While a viewer runs, part of what it serves is in the project. Lists hide working
+  bundles, as the start page hides automatic snapshots.
+- Seeing which saves are yours needs an owner on saves and snapshots: a label for browsing,
+  not access control (a preference, and a field in GiottoDisk's `snapshot.json`).
 - Once saves exist, only work changed since the last save counts as work: `set_object()`
   without `discard`, `close(discard = FALSE)` and `launch_lens(port =)` over a running viewer
   refuse only that (#21, adr/0017). Internal teardown never refuses.
@@ -125,11 +141,14 @@ a bundle may come from someone else:
 - **In `tools::R_user_dir()`:** per user and per machine; other writers on the project never
   see it.
 - **Working metadata as vault artifacts:** pruned unless a snapshot reaches them.
-- **The temp folder itself in the project:** the served folder becomes writable by every
-  writer of the project. It also gains little: most of the work is in R's memory, and most of
-  the folder is derived or cache.
-- **Working metadata in the project only, served by R's call handler from a list of files R
-  wrote:** one write instead of two, but those reads move onto R's main thread.
+- **Serve from `tempdir()` and keep a working bundle in sync in the project:** two copies of
+  the same files, every write done twice. `tempdir()`'s private permissions guard only against
+  other local users, which the project's permissions decide anyway.
+- **The working bundle readable by its owner only (`chmod 0700`):** a privacy the project does
+  not otherwise have, and no effect on Windows.
+- **The folder named by the token:** gives the credential to anyone who can list the project.
+- **Everything in the project, the item cache included:** a cache read and written on every
+  gene pick, slow on a network file system, in a shared folder.
 - **Pulls stored as item keys, read again on open:** smaller bundles, but opening needs the
   daemon and the snapshot loaded (about 12 s cold on the Atera section, then about 0.5 s per
   item), and pulls need a path of their own.

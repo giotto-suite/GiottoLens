@@ -28,8 +28,11 @@ Besides that temporary folder, GiottoLens writes:
 - **in your user data directory:** the list of recent projects.
 
 None of this is served. Of a project, the server serves only the stores and image files it
-mounted; the project folder itself is never served. Anyone who can read the project can read
-what GiottoLens wrote into it, as they can your data.
+mounted; the project folder itself is never served.
+
+Who can read or change what GiottoLens writes into a project is decided by the project
+folder's permissions, as for your data: GiottoLens has no users and no per-user access
+control.
 
 ## How it is protected
 

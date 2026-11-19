@@ -118,9 +118,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 ### Serving (`R/server.R`)
 
-- The project folder is never served: only mounted stores, image files and the temp dir.
-  Lens writes into the project (hand-over snapshots, adr/0018; saves to come, adr/0026) but never
-  serves what it writes there. Everything is under `/lens/<token>/` (random
+- The project folder is never served: only mounted stores, image files and the temp dir (and,
+  to come, the viewer's own working bundle, adr/0026). A folder or file name never carries the
+  token. Everything is under `/lens/<token>/` (random
   per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
   `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
   - `/lens/<token>/`: bundle, from the package;
