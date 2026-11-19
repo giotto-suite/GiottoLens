@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
+  (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, regions,
   pushed panels and metadata, column types, added images, an image registration, comparisons
   and the viewer's settings) with the snapshot shown, in the project's `lens/` folder.

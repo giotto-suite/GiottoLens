@@ -40,21 +40,26 @@
 }
 
 # Spatial units with cells (polygons or spatial locations) and feature types
-# with points, from a snapshot's manifest.json; NULL fields if it has none
+# with points, from a snapshot's manifest.json; NULL fields if it has none.
+# "cell" / "rna" come first when present: the page's pickers open on the first.
 .manifest_keys <- function(file) {
     if (!file.exists(file)) return(list())
     m <- jsonlite::fromJSON(file, simplifyVector = FALSE)$slots
     key <- function(slot, k) unique(unlist(lapply(m[[slot]], function(r) r$keys[[k]])))
+    first <- function(have, lead) if (length(have)) union(intersect(lead, have), have)
     list(
-        spat_units = unique(c(key("spatial_info", "name"), key("spatial_locs", "spat_unit"))),
-        feat_types = key("feat_info", "feat_type")
+        spat_units = first(unique(c(key("spatial_info", "name"),
+            key("spatial_locs", "spat_unit"))), "cell"),
+        feat_types = first(key("feat_info", "feat_type"), "rna")
     )
 }
 
 # The spatial unit and feature type to show of `x` when not given (NA): the
-# first of `prefer`, then the object's defaults (its active ones, else those of
-# its first expression), then "cell" / "rna", that it has cells or points for;
-# else its first, else NULL. Given ones (NULL included) are kept.
+# first of `prefer`, then "cell" / "rna", then the object's defaults (its active
+# ones, else those of its first expression), that it has cells or points for;
+# else its first, else NULL. Given ones (NULL included) are kept. "cell" / "rna"
+# lead the object's active ones because the start page, which reads only the
+# manifest, cannot see them: both ways of opening a snapshot agree.
 .default_keys <- function(x, spat_unit = NA, feat_type = NA, prefer_unit = NULL,
                           prefer_feat = NULL) {
     auto <- function(key) is.atomic(key) && length(key) == 1L && is.na(key)
@@ -65,10 +70,10 @@
     quiet <- function(expr) tryCatch(suppressWarnings(expr), error = function(e) NULL)
     if (auto(spat_unit))
         spat_unit <- pick(union(names(x@spatial_info), names(x@spatial_locs)),
-            c(prefer_unit, quiet(GiottoClass::set_default_spat_unit(gobject = x)), "cell"))
+            c(prefer_unit, "cell", quiet(GiottoClass::set_default_spat_unit(gobject = x))))
     if (auto(feat_type))
-        feat_type <- pick(names(x@feat_info), c(prefer_feat,
-            quiet(GiottoClass::set_default_feat_type(gobject = x, spat_unit = spat_unit)), "rna"))
+        feat_type <- pick(names(x@feat_info), c(prefer_feat, "rna",
+            quiet(GiottoClass::set_default_feat_type(gobject = x, spat_unit = spat_unit))))
     list(spat_unit = spat_unit, feat_type = feat_type)
 }
 
