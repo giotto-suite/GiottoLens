@@ -19,7 +19,7 @@ test_that(".write_metadata writes one file per column in cell order", {
     # Levels come from the cells in the viewer ("z" is only on the extra row)
     expect_identical(unlist(msg$columns[[3]]$levels), "y")
     urls <- vapply(msg$columns, `[[`, "", "url")
-    expect_match(urls, "^session/metadata/(a_b|a_b_1|lab)-[0-9a-f]{32}\\.parquet$")
+    expect_match(urls, "^work/metadata/(a_b|a_b_1|lab)-[0-9a-f]{32}\\.parquet$")
     expect_setequal(list.files(dir), basename(urls))
 
     col <- function(i) arrow::read_parquet(file.path(dir, basename(urls[i])))$value

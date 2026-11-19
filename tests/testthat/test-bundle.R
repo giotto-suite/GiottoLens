@@ -1,0 +1,215 @@
+# The viewer's work is kept in a working bundle in the project and saved as a
+# bundle beside it (R/bundle.R, adr/0026).
+
+# A viewer on the bins fixture written into a project of its own
+bundle_viewer <- function(td = tempfile("lensproj_")) {
+    bx <- lens_bins_fixture()
+    v <- suppressMessages(launch_lens(bx$mem, spat_unit = "bin", feat_type = NULL,
+        open = FALSE, project = td))
+    list(v = v, bx = bx, td = td, priv = get("private", v$.__enclos_env__),
+        done = function() { v$close(discard = TRUE); unlink(td, recursive = TRUE) })
+}
+
+# Some of every kind of work, for a viewer from bundle_viewer()
+add_work <- function(r) {
+    v <- r$v
+    ids <- r$priv$cell_ids
+    suppressMessages(v$push_metadata(data.frame(cell_ID = ids,
+        half = ifelse(seq_along(ids) <= 450L, "left", "right"), score = seq_along(ids))))
+    v$set_column_type("score", "categorical")
+    v$select(lens_categories("half", "left"))
+    v$select(lens_cells(ids[1:3]), source = "picked", replace = FALSE)
+    v$save_region("top", ids[1:20])
+    big <- data.frame(cell_ID = ids, x = seq_along(ids), y = 1)
+    big <- big[rep(seq_len(nrow(big)), 6L), ]
+    suppressMessages(v$push_panel(list(mark = "point",
+        encoding = list(x = list(field = "x"), y = list(field = "y"))), data = big, id = "big"))
+    suppressMessages(v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3), id = "small"))
+    r$priv$config_json <- '{"version":3,"colorBy":"half"}'
+    invisible(r)
+}
+
+test_that("work goes to the working bundle in the project and is served under work/", {
+    skip_if_not_installed("curl")
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    w <- r$priv$work
+    expect_identical(w, normalizePath(file.path(r$td, "lens",
+        paste0("session-", r$priv$session_id))))
+    expect_false(grepl(r$priv$token, w, fixed = TRUE))
+    add_work(r)
+    url <- r$priv$cached_meta$columns[[1L]]$url
+    expect_match(url, "^work/metadata/")
+    expect_true(file.exists(file.path(w, sub("^work/", "", url))))
+    expect_match(r$priv$pushed$big$data_url, "^work/panels/")
+    res <- http_get(paste0(r$v$url, url))
+    expect_identical(res$status_code, 200L)
+    expect_identical(res$content, readBin(file.path(w, sub("^work/", "", url)), "raw", 1e6))
+    expect_identical(http_get(paste0(r$v$url, "work/../bundle.json"))$status_code, 404L)
+    # A link placed in the working bundle that leads out of it is not followed
+    secret <- tempfile("secret_")
+    writeLines("secret", secret)
+    on.exit(unlink(secret), add = TRUE)
+    file.symlink(secret, file.path(w, "metadata", "leak.parquet"))
+    expect_identical(http_get(paste0(r$v$url, "work/metadata/leak.parquet"))$status_code, 404L)
+    expect_true(r$priv$write_state(force = TRUE))
+    st <- jsonlite::fromJSON(file.path(w, "state.json"), simplifyVector = FALSE)
+    expect_setequal(names(st$rules), c("r", "picked"))
+    expect_identical(unlist(st$region_names), "top")
+    b <- jsonlite::fromJSON(file.path(w, "bundle.json"))
+    expect_identical(b$kind, "session")
+    expect_identical(b$snapshot, r$priv$snapshot)
+    expect_identical(b$cells$n, 900L)
+    expect_identical(readLines(file.path(w, "config.json")), r$priv$config_json)
+})
+
+test_that("a save copies the work, keeps its snapshot and counts as saved", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    expect_error(r$v$save("a.b"), "letters, digits")
+    expect_error(r$v$save("session-x"), "working bundles")
+    add_work(r)
+    snap <- GiottoDisk::snapshotInfo(r$priv$project)
+    GiottoDisk::snapshotMetadata(r$priv$project, snap$name[[1L]], keep = FALSE)
+    expect_match(r$priv$unsaved_work(), "2 rules, 1 region, 2 pushed panels")
+    tag <- suppressMessages(r$v$save("first", description = "for the paper", labels = c("x", "y")))
+    expect_match(tag, "^first\\.[a-z0-9]{8}$")
+    dir <- file.path(r$td, "lens", tag)
+    b <- jsonlite::fromJSON(file.path(dir, "bundle.json"))
+    expect_identical(b$kind, "save")
+    expect_identical(b$name, "first")
+    expect_identical(b$description, "for the paper")
+    expect_identical(b$labels, c("x", "y"))
+    expect_null(b$pid)
+    expect_true(GiottoDisk::snapshotInfo(r$priv$project)$keep[[1L]])
+    st <- jsonlite::fromJSON(file.path(dir, "state.json"), simplifyVector = FALSE)
+    expect_true(all(file.exists(file.path(dir, .bundle_files(st)))))
+    expect_true(file.exists(file.path(dir, "config.json")))
+    expect_null(r$priv$unsaved_work())
+    s <- r$v$saves()
+    expect_identical(s$name, "first")
+    expect_identical(s$description, "for the paper")
+    expect_identical(s$labels, "x, y")
+    expect_error(r$v$save("first"), "exists; pass `overwrite = TRUE`")
+    r$v$save_region("bottom", r$priv$cell_ids[880:900])
+    expect_match(r$priv$unsaved_work(), "2 regions")
+    expect_error(r$v$set_object(r$bx$mem, spat_unit = "bin", feat_type = NULL, project = tempfile()),
+        "work not saved: .*save it with save\\(name\\)")
+    tag2 <- suppressMessages(r$v$save("first", overwrite = TRUE))
+    expect_false(dir.exists(dir))
+    expect_identical(r$v$saves()$name, "first")
+    expect_true(dir.exists(file.path(r$td, "lens", tag2)))
+    r$v$delete_save("first")
+    expect_identical(nrow(r$v$saves()), 0L)
+})
+
+test_that("a save opens with its snapshot and its work", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    sel <- r$v$selection
+    suppressMessages(r$v$save("first"))
+    r$v$close()
+    v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
+    on.exit(v2$close(discard = TRUE), add = TRUE)
+    p2 <- get("private", v2$.__enclos_env__)
+    expect_error(v2$open_save("../first"), "no save '../first'")
+    suppressMessages(v2$open_save("first"))
+    expect_identical(p2$snapshot, r$priv$snapshot)
+    expect_identical(p2$spat_unit, "bin")
+    expect_setequal(names(p2$rule_set), c("r", "picked"))
+    expect_setequal(v2$selection, sel)
+    expect_identical(v2$regions(), data.frame(name = "top", cells = 20L))
+    expect_identical(p2$meta_names(), c("half", "score"))
+    expect_identical(p2$meta_entry("score")$kind, "categorical")
+    expect_identical(p2$col_types$score, "categorical")
+    expect_identical(as.numeric(p2$meta_column("half") == "left")[1:2], c(1, 1))
+    expect_setequal(names(p2$pushed), c("big", "small"))
+    expect_true(file.exists(file.path(p2$work, sub("^work/", "", p2$pushed$big$data_url))))
+    expect_identical(p2$config_json, '{"version":3,"colorBy":"half"}')
+    expect_null(p2$unsaved_work())
+    expect_output(print(v2), "save: +first\\.")
+    # Nothing changed: another object can be shown without `discard`
+    expect_no_error(suppressMessages(v2$open_project(r$td)))
+})
+
+test_that("work not saved stays in the project when the viewer closes, and opens again", {
+    r <- bundle_viewer()
+    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
+    add_work(r)
+    w <- r$priv$work
+    expect_message(r$v$close(), "work not saved .* is kept in")
+    expect_true(dir.exists(w))
+    v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
+    on.exit(v2$close(discard = TRUE), add = TRUE)
+    s <- v2$saves(sessions = TRUE)
+    left <- s[s$kind == "session", ]
+    expect_identical(left$name, basename(w))
+    expect_false(left$live)
+    expect_identical(nrow(v2$saves()), 0L)
+    suppressMessages(v2$open_save(basename(w)))
+    expect_false(dir.exists(w))
+    expect_identical(v2$regions()$name, "top")
+    # Taken over, and still not saved
+    expect_match(get("private", v2$.__enclos_env__)$unsaved_work(), "1 region")
+})
+
+test_that("close(discard = TRUE) deletes work not saved", {
+    r <- bundle_viewer()
+    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
+    add_work(r)
+    w <- r$priv$work
+    r$v$close(discard = TRUE)
+    expect_false(dir.exists(w))
+    expect_error(r$v$close(discard = NA), "TRUE or FALSE")
+})
+
+test_that("a running viewer's work cannot be opened or deleted by another", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    r$priv$write_state(force = TRUE)
+    v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
+    on.exit(v2$close(discard = TRUE), add = TRUE)
+    name <- basename(r$priv$work)
+    expect_true(v2$saves(sessions = TRUE)$live[[1L]])
+    expect_error(v2$open_save(name), "still running")
+    expect_error(v2$delete_save(name), "still running")
+    expect_error(r$v$open_save(name), "own work")
+})
+
+test_that("rules naming cells by position are left out when the cells differ", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    tag <- suppressMessages(r$v$save("first"))
+    f <- file.path(r$td, "lens", tag, "bundle.json")
+    b <- jsonlite::fromJSON(f, simplifyVector = FALSE)
+    b$cells$md5 <- "0"
+    writeLines(.bundle_json(b), f)
+    expect_warning(suppressMessages(r$v$open_save("first", discard = TRUE)),
+        "left out: metadata, rules naming cells by position, rules on columns left out, panels linked to cells")
+    expect_identical(length(r$priv$rule_set), 0L)
+    expect_identical(names(r$priv$pushed), "small")
+    expect_null(r$priv$cached_meta)
+})
+
+test_that("a save whose snapshot was deleted does not open", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    suppressMessages(r$v$save("first"))
+    f <- list.files(file.path(r$td, "lens"), "^first\\.", full.names = TRUE)
+    b <- jsonlite::fromJSON(file.path(f, "bundle.json"), simplifyVector = FALSE)
+    b$snapshot <- "gone.00000000"
+    writeLines(.bundle_json(b), file.path(f, "bundle.json"))
+    expect_error(r$v$open_save("first", discard = TRUE), "'gone.00000000' that 'first' was made on was deleted")
+})
+
+test_that("saving needs an object in a project", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$save("x"), "nowhere to save")
+    expect_error(v$saves(), "no project open")
+})

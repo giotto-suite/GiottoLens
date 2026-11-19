@@ -90,7 +90,7 @@ test_that("Lens work is not dropped by opening without discard", {
     on.exit(v$close(), add = TRUE)
     v$annotations <- list(list(id = "a", name = "x", type = "polygon", geojson = "{}"))
     proj <- bx$g@source@path
-    expect_error(v$open_project(proj), "1 annotation; pass `discard = TRUE`")
+    expect_error(v$open_project(proj), "1 annotation; save it with save\\(name\\), or pass `discard = TRUE`")
     expect_error(v$checkout("fixture"), "1 annotation")
     res <- ask(v, op = "open", path = proj, name = "fixture")
     expect_identical(res$code, "work")

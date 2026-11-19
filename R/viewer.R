@@ -3,8 +3,10 @@
 #' Launch the GiottoLens viewer
 #'
 #' Starts a combined HTTP + WebSocket server via httpuv and opens the viewer.
-#' The viewer bundle and the GiottoDisk stores are served in place; only the
-#' manifest and pushed metadata are written, to a per-viewer temp directory.
+#' The viewer bundle and the GiottoDisk stores are served in place. The
+#' manifest and cell table go to a per-viewer temp directory; the work done in
+#' the viewer goes to its working bundle in the object's project, from which
+#' `viewer$save()` makes a save (adr/0026).
 #' Tile data goes through a Range-aware handler so the viewer reads only the
 #' columns it draws.
 #'
@@ -33,7 +35,7 @@
 #'   launches without cells.
 #' @param port       Port for the HTTP + WebSocket server. `NULL` (default)
 #'   picks a free one. Launching on the port of a running viewer closes that
-#'   viewer first.
+#'   viewer first, which keeps its unsaved work as for `viewer$close()`.
 #' @param host       Interface to listen on. The default only accepts
 #'   connections from this machine; use `"0.0.0.0"` to expose the viewer and
 #'   its data to the network.
@@ -404,10 +406,11 @@ LensViewer <- R6::R6Class("LensViewer",
             private$routes$images <- list()
             private$session   <- file.path(tempdir(), "giottolens",
                 paste0(port, "-", .rand_id(8L)))
-            for (d in c("metadata", "items"))
-                dir.create(file.path(private$session, d), recursive = TRUE, showWarnings = FALSE)
+            dir.create(file.path(private$session, "items"), recursive = TRUE, showWarnings = FALSE)
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
+            private$set_work()
             private$start_server(host)
+            private$autosave()
             assign(as.character(port), self, envir = .lens_registry)
             tryCatch(if (is.null(object)) private$load_empty(project) else private$load(object),
                 error = function(e) {
@@ -432,10 +435,11 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   with `keep = TRUE`.
         #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark,project
         #'   As in [launch_lens()]
-        #' @param discard Whether to drop the current object's rules,
-        #'   annotations, pushed panels and image registration. With any of
-        #'   them and `discard = FALSE` (default), nothing changes and an error
-        #'   names them.
+        #' @param discard Whether to drop the current object's work not saved
+        #'   (rules, annotations, regions, pushed panels, added images, an image
+        #'   registration, an analysis). With any and `discard = FALSE`
+        #'   (default), nothing changes and an error names them; save them
+        #'   first with `save()`.
         set_object = function(x, gpolygons = NULL, feat_type = "rna", spat_unit = "cell",
                               images = NULL, image_files = NULL, mark = NULL,
                               project = NULL, discard = FALSE) {
@@ -496,6 +500,113 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Save the work done in the viewer on the object shown:
+        #'   rules, annotations, regions, pushed panels and metadata, column
+        #'   types, added images, an image registration, comparisons and the
+        #'   viewer's settings, with the snapshot shown, which is kept
+        #'   (`keep = TRUE`). Written to `lens/<name>.<id>/` in the project
+        #'   (adr/0026). An analysis is not saved yet. Open it again with
+        #'   `open_save()`.
+        #' @param name Save name: letters, digits, `_` and `-`
+        #' @param description,labels Optional text and labels to find it by
+        #' @param overwrite Whether to replace a save of the same name
+        #' @returns The save's folder name, `<name>.<id>`, invisibly
+        save = function(name, description = NULL, labels = NULL, overwrite = FALSE) {
+            site <- "LensViewer$save"
+            private$need_object(site)
+            if (is.null(private$project))
+                stop("[", site, "] the viewer shows layers, not an object in a project: ",
+                    "there is nowhere to save", call. = FALSE)
+            name <- .check_save_name(name, site)
+            if (!is.null(description) && (!is.character(description) || length(description) != 1L))
+                stop("[", site, "] `description` must be one string", call. = FALSE)
+            if (!is.null(labels) && (!is.character(labels) || anyNA(labels)))
+                stop("[", site, "] `labels` must be a character vector", call. = FALSE)
+            old <- .lens_saves(private$project)
+            old <- old[old$name == name, , drop = FALSE]
+            if (nrow(old) && !isTRUE(overwrite))
+                stop("[", site, "] a save named '", name, "' exists; pass `overwrite = TRUE` ",
+                    "to replace it", call. = FALSE)
+            snap <- private$snapshot_name()
+            private$write_state(force = TRUE)
+            id <- tolower(.rand_id(8L))
+            tag <- paste0(name, ".", id)
+            b <- private$bundle_info("save")
+            b$created <- b$updated
+            b$host <- b$pid <- NULL
+            b$name <- name
+            b$id <- id
+            b$description <- description
+            b$labels <- as.list(labels)
+            dir <- file.path(.lens_dir(private$project), tag)
+            .copy_bundle(private$work, dir, b)
+            unlink(old$dir, recursive = TRUE)
+            # What a save was made on is never pruned
+            suppressMessages(GiottoDisk::snapshotMetadata(private$project, snap, keep = TRUE))
+            private$saved_sig <- private$work_sig()
+            private$saved_tag <- tag
+            private$add_log("save", tag)
+            message("[LensViewer] saved '", name, "' in ", dir)
+            invisible(tag)
+        },
+
+        #' @description The saves of the project shown, newest first
+        #' @param sessions Whether to list the working bundles of viewers that
+        #'   ended with work not saved too (`kind = "session"`; `live` is
+        #'   `TRUE` for a viewer still running, `NA` for one on another
+        #'   machine)
+        #' @returns A data.frame: `name` (what `open_save()` takes), `kind`,
+        #'   `created`, `updated`, `snapshot` (the tag of the snapshot it was
+        #'   made on), `description`, `labels`, `live`
+        saves = function(sessions = FALSE) {
+            if (is.null(private$project))
+                stop("[LensViewer$saves] no project open", call. = FALSE)
+            out <- .lens_saves(private$project, sessions = isTRUE(sessions))
+            out[setdiff(names(out), "dir")]
+        },
+
+        #' @description Show a save of the project shown: its snapshot, then
+        #'   its work. Rules that name cells by position are dropped if the
+        #'   cells differ from those it was saved with. A working bundle left
+        #'   by a viewer that ended (`saves(sessions = TRUE)`) is opened the
+        #'   same way, and removed once this viewer has taken it over.
+        #' @param name A save's name, as `saves()` lists it
+        #' @param discard As in `set_object()`
+        open_save = function(name, discard = FALSE) {
+            site <- "LensViewer$open_save"
+            if (is.null(private$project))
+                stop("[", site, "] no project open; call open_project() first", call. = FALSE)
+            hit <- .find_save(private$project, name, site)
+            if (hit$kind == "session") {
+                if (identical(normalizePath(hit$dir), private$work))
+                    stop("[", site, "] '", name, "' is this viewer's own work", call. = FALSE)
+                if (isTRUE(hit$live))
+                    stop("[", site, "] '", name, "' is the work of a viewer still running",
+                        call. = FALSE)
+            }
+            private$check_work(site, discard)
+            private$open_bundle(private$project, hit, site)
+            invisible(self)
+        },
+
+        #' @description Delete a save of the project shown. Its snapshot stays
+        #'   kept.
+        #' @param name A save's name, as `saves()` lists it
+        delete_save = function(name) {
+            site <- "LensViewer$delete_save"
+            if (is.null(private$project))
+                stop("[", site, "] no project open", call. = FALSE)
+            hit <- .find_save(private$project, name, site)
+            if (hit$kind == "session" && (identical(normalizePath(hit$dir), private$work) ||
+                    isTRUE(hit$live)))
+                stop("[", site, "] '", name, "' is the work of a viewer still running",
+                    call. = FALSE)
+            unlink(hit$dir, recursive = TRUE)
+            if (identical(private$saved_tag, basename(hit$dir))) private$saved_tag <- NULL
+            private$add_log("delete_save", name)
+            invisible(self)
+        },
+
         #' @description Send a typed message to every connected tab
         #' @param type Message type
         #' @param data Payload (converted with jsonlite)
@@ -538,7 +649,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 given <- gsub("[^A-Za-z0-9_]", "_", names(casts)[!is.na(casts)])
                 private$col_types[given] <- NULL
             }
-            out <- .write_metadata(meta, file.path(private$session, "metadata"),
+            out <- .write_metadata(meta, private$meta_dir(),
                 private$cell_ids, types = unlist(private$col_types))
             rm(meta)
             private$col_types[out$dropped] <- NULL
@@ -988,6 +1099,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$image_names <- c(private$image_names, entry$name)
             private$image_files[[entry$name]] <- imgs$sources[[entry$name]]
             private$added_images <- c(private$added_images, list(entry))
+            private$added_args[[entry$name]] <- list(file = file, name = entry$name, type = type)
             private$write_added_images()
             private$add_log("add_image", paste0(entry$name, " (", type, ") = ", imgs$sources[[entry$name]]))
             invisible(self)
@@ -1279,6 +1391,7 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!length(ids))
                 stop("[", site, "] no cells to save; select cells first", call. = FALSE)
             private$region_sets[[name]] <- ids
+            private$region_md5[[name]] <- .strings_md5(ids)
             private$add_log("region", list(name = name, cells = length(ids)))
             private$send_regions(open = TRUE)
             invisible(ids)
@@ -1300,6 +1413,7 @@ LensViewer <- R6::R6Class("LensViewer",
         remove_region = function(name) {
             private$region_ids(name, "LensViewer$remove_region")
             private$region_sets[[name]] <- NULL
+            private$region_md5[[name]] <- NULL
             private$send_regions()
             invisible(self)
         },
@@ -1455,11 +1569,11 @@ LensViewer <- R6::R6Class("LensViewer",
                     rows$`_idx` <- idx[!is.na(idx)] - 1L
                 }
                 if (nrow(rows) > 5000L) {
-                    dir <- file.path(private$session, "panels")
+                    dir <- file.path(private$work, "panels")
                     dir.create(dir, showWarnings = FALSE)
                     f <- sprintf("%s_%.0f.parquet", id, as.numeric(Sys.time()) * 1000)
                     arrow::write_parquet(rows, file.path(dir, f))
-                    payload$data_url <- paste0("session/panels/", f)
+                    payload$data_url <- paste0("work/panels/", f)
                 } else {
                     payload$spec$data <- list(values = rows)
                 }
@@ -1568,8 +1682,16 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Stop the server and remove this viewer's temp files.
         #'   The power button next to R's connection in the viewer does the
-        #'   same; open tabs say the viewer is stopped.
-        close = function() {
+        #'   same; open tabs say the viewer is stopped. Work not saved stays in
+        #'   the project, as its working bundle, which `open_save()` opens
+        #'   again (`saves(sessions = TRUE)` lists it).
+        #' @param discard Whether to delete work not saved instead
+        close = function(discard = FALSE) {
+            if (!isTRUE(discard) && !isFALSE(discard))
+                stop("[LensViewer$close] `discard` must be TRUE or FALSE", call. = FALSE)
+            unsaved <- if (!is.null(private$server) && !is.null(private$project) && private$loaded)
+                private$unsaved_work()
+            if (!is.null(unsaved) && !discard) private$write_state(force = TRUE)
             private$stop_jobs()
             private$close_analysis()
             if (!is.null(private$server)) {
@@ -1582,6 +1704,12 @@ LensViewer <- R6::R6Class("LensViewer",
                 private$server <- NULL
                 rm(list = ls(private$conns), envir = private$conns)
                 unlink(private$session, recursive = TRUE)
+                if (!is.null(unsaved) && !discard) {
+                    message("[LensViewer] work not saved (", unsaved, ") is kept in ",
+                        private$work, "; open it again with open_save(\"",
+                        basename(private$work), "\")")
+                } else if (!is.null(private$work)) unlink(private$work, recursive = TRUE)
+                private$work <- NULL
                 key <- as.character(self$port)
                 if (identical(.lens_registry[[key]], self))
                     rm(list = key, envir = .lens_registry)
@@ -1602,6 +1730,8 @@ LensViewer <- R6::R6Class("LensViewer",
                 cat("  project:     ", private$project@path, "\n")
             if (!is.null(private$snapshot))
                 cat("  snapshot:    ", private$snapshot, "\n")
+            if (!is.null(private$saved_tag))
+                cat("  save:        ", private$saved_tag, "\n")
             cat("  connected:   ", length(private$conns), "tab(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
@@ -1829,8 +1959,9 @@ LensViewer <- R6::R6Class("LensViewer",
             added
         },
 
-        # The column files (one per column: the only copy of the metadata)
-        meta_dir = function() file.path(private$session, "metadata"),
+        # The column files (one per column: the only copy of the metadata), in
+        # the working bundle
+        meta_dir = function() file.path(private$work, "metadata"),
         # Items read on their own (color_by() an item, the `item` ask): one
         # file each, kept for the object shown; their entries by item key
         items_dir = function() file.path(private$session, "items"),
@@ -1868,7 +1999,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     if (!res %in% names(vals))
                         stop("'", ref$item, "' was not found in the object", call. = FALSE)
                     out <- .write_metadata(data.frame(cell_ID = vals$cell_ID, item = vals[[res]]),
-                        private$items_dir(), private$cell_ids, site = site, served = "items")
+                        private$items_dir(), private$cell_ids, site = site, served = "session/items")
                     entry <- out$msg$columns[[1L]]
                     entry$name <- key
                     private$item_files[[key]] <- entry
@@ -1989,7 +2120,7 @@ LensViewer <- R6::R6Class("LensViewer",
 
         drop_panel_file = function(id) {
             url <- private$pushed[[id]]$data_url
-            if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
+            if (!is.null(url)) unlink(file.path(private$work, sub("^work/", "", url)))
         },
 
         add_log = function(action, detail) {
@@ -2040,6 +2171,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$feat_type   <- object$feat_type
             private$catalog_data <- catalog
             private$loaded      <- TRUE
+            private$set_work()
             if (!is.null(private$project)) .add_recent(private$project@path)
             private$reload_tabs()
         },
@@ -2057,6 +2189,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$feat_type <- private$snapshot <- NULL
             private$project <- project
             private$loaded <- FALSE
+            private$set_work()
             if (!is.null(project)) .add_recent(project@path)
             private$reload_tabs()
         },
@@ -2128,10 +2261,11 @@ LensViewer <- R6::R6Class("LensViewer",
         check_work = function(site, discard) {
             if (!isTRUE(discard) && !isFALSE(discard))
                 stop("[", site, "] `discard` must be TRUE or FALSE", call. = FALSE)
-            work <- if (private$loaded && !discard) private$lens_work()
+            work <- if (private$loaded && !discard) private$unsaved_work()
             if (!is.null(work))
-                stop("[", site, "] the current object has ", work,
-                    "; pass `discard = TRUE` to drop them", call. = FALSE)
+                stop("[", site, "] the current object has work not saved: ", work,
+                    "; save it with save(name), or pass `discard = TRUE` to drop it",
+                    call. = FALSE)
         },
 
         # A request from the page (`ask`), answered to that page only with
@@ -2176,9 +2310,9 @@ LensViewer <- R6::R6Class("LensViewer",
                         snapshots = .project_snapshots(src)))
                 },
                 open = {
-                    work <- if (private$loaded && !isTRUE(dat$discard)) private$lens_work()
+                    work <- if (private$loaded && !isTRUE(dat$discard)) private$unsaved_work()
                     if (!is.null(work))
-                        return(list(error = paste0("the current object has ", work),
+                        return(list(error = paste0("the current object has work not saved: ", work),
                             code = "work"))
                     src  <- .project_source(str1(dat$path), "LensViewer")
                     name <- str1(dat$name)
@@ -2256,6 +2390,237 @@ LensViewer <- R6::R6Class("LensViewer",
                 keep = keep, creator = "GiottoLens", session = private$session_id,
                 method = if (requireNamespace("qs2", quietly = TRUE)) "qs2" else "rds",
                 verbose = FALSE))
+        },
+
+        # ── The working bundle and saves (R/bundle.R, adr/0026) ──
+        work         = NULL,     # the working bundle's directory, normalized
+        work_created = NULL,
+        object_uid   = NULL,     # objUID() of the snapshot shown
+        cells_fp     = NULL,     # .cells_fingerprint() of the cells shown
+        saved_sig    = NULL,     # work_sig() as last saved or opened
+        written_sig  = NULL,     # what the working bundle last got
+        written_regions = NULL,  # region_md5 as regions.parquet last got it
+        saved_tag    = NULL,     # the save last made or opened
+        added_args   = list(),   # add_image() arguments by image name, to add them again
+        region_md5   = list(),   # region name -> md5 of its cell IDs
+        registration_msg = NULL, # the last registration_update, as the page sent it
+
+        # The working bundle: lens/session-<session id>/ in the project of the
+        # object shown, else a folder in the temp dir. Served as work/.
+        set_work = function() {
+            dir <- if (!is.null(private$project) && private$loaded)
+                file.path(.lens_dir(private$project), .work_name(private$session_id))
+            else file.path(private$session, "work")
+            for (d in c("metadata", "panels"))
+                dir.create(file.path(dir, d), recursive = TRUE, showWarnings = FALSE)
+            private$work <- normalizePath(dir)
+            private$routes$work <- private$work
+            private$work_created <- as.numeric(Sys.time())
+            private$written_sig <- private$written_regions <- NULL
+            private$object_uid <- if (!is.null(private$project) && !is.null(private$snapshot)) {
+                info <- GiottoDisk::snapshotInfo(private$project)
+                uid <- info$object[info$tag == private$snapshot]
+                if (length(uid) && !is.na(uid[[1L]])) uid[[1L]]
+            }
+            private$cells_fp <- if (!is.null(private$cell_ids)) .cells_fingerprint(private$cell_ids)
+            private$saved_sig <- private$work_sig()
+        },
+
+        # The work, as state.json holds it. Regions are in regions.parquet,
+        # comparison tables in de/; here only what tells them apart.
+        state_list = function() list(
+            rules = private$rule_set, combine = private$combine,
+            annotations = self$annotations, registration = private$registration_msg,
+            regions = private$region_md5, pushed = private$pushed,
+            meta = private$cached_meta, meta_values = private$meta_values,
+            col_types = private$col_types, added = unname(private$added_args),
+            de = lapply(names(private$de), function(id) c(list(id = id,
+                file = paste0("de/", id, ".parquet")),
+                private$de[[id]][setdiff(names(private$de[[id]]), "table")]))),
+        work_sig = function() .bundle_json(private$state_list()),
+
+        bundle_info = function(kind) list(format = .bundle_format, kind = kind,
+            created = private$work_created, updated = as.numeric(Sys.time()),
+            creator = "GiottoLens", session = private$session_id,
+            host = Sys.info()[["nodename"]], pid = Sys.getpid(),
+            snapshot = private$snapshot, object = private$object_uid,
+            spat_unit = private$spat_unit, feat_type = private$feat_type,
+            cells = private$cells_fp),
+
+        # Write the working bundle when the work or the config changed since
+        # the last write (or always, with `force`)
+        write_state = function(force = FALSE) {
+            if (!private$loaded || is.null(private$work) || !dir.exists(private$work))
+                return(invisible(FALSE))
+            st <- private$state_list()
+            sig <- .bundle_json(list(st, private$config_json))
+            if (!force && identical(sig, private$written_sig)) return(invisible(FALSE))
+            w <- private$work
+            regions <- file.path(w, "regions.parquet")
+            if (length(private$region_sets)) {
+                if (!identical(private$region_md5, private$written_regions)) {
+                    tmp <- tempfile(".tmp", tmpdir = w)
+                    arrow::write_parquet(data.frame(
+                        region = rep(names(private$region_sets), lengths(private$region_sets)),
+                        cell_ID = unlist(private$region_sets, use.names = FALSE)), tmp)
+                    file.rename(tmp, regions)
+                }
+            } else unlink(regions)
+            st$regions <- length(private$region_sets) > 0L
+            st$region_names <- as.list(names(private$region_sets))
+            if (length(private$de)) dir.create(file.path(w, "de"), showWarnings = FALSE)
+            for (d in st$de) {
+                f <- file.path(w, d$file)
+                if (!file.exists(f)) arrow::write_parquet(private$de[[d$id]]$table, f)
+            }
+            .write_json_atomic(st, file.path(w, "state.json"))
+            if (!is.null(private$config_json))
+                .write_text_atomic(private$config_json, file.path(w, "config.json"))
+            .write_json_atomic(private$bundle_info("session"), file.path(w, "bundle.json"))
+            private$written_sig <- sig
+            private$written_regions <- private$region_md5
+            invisible(TRUE)
+        },
+
+        # Write the working bundle every second or so while the viewer runs
+        # (option GiottoLens.autosave_interval, seconds)
+        autosave = function() {
+            later::later(function() {
+                if (is.null(private$server)) return()
+                tryCatch(private$write_state(), error = function(e)
+                    private$add_log("error", list(where = "autosave", message = conditionMessage(e))))
+                private$autosave()
+            }, getOption("GiottoLens.autosave_interval", 1))
+        },
+
+        # The work not saved, as text, or NULL: lens_work() when it changed
+        # since the last save or opening, and an analysis, which is not saved
+        unsaved_work = function() {
+            work <- private$lens_work()
+            if (is.null(work)) return(NULL)
+            if (!identical(private$work_sig(), private$saved_sig)) return(work)
+            if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
+                "an analysis (analyses are not saved yet)"
+        },
+
+        # Show bundle `hit` (a row of .lens_saves()) of project `src`: its
+        # snapshot, then its work
+        open_bundle = function(src, hit, site) {
+            dir <- hit$dir
+            b <- .read_bundle_json(file.path(dir, "bundle.json"))
+            st <- .read_bundle_json(file.path(dir, "state.json"))
+            if (is.null(b) || is.null(st))
+                stop("[", site, "] '", hit$name, "' cannot be read", call. = FALSE)
+            info <- GiottoDisk::snapshotInfo(src)
+            snap <- info$name[info$tag == (b$snapshot %||% "")]
+            if (!length(snap))
+                stop("[", site, "] the snapshot '", b$snapshot %||% "?", "' that '", hit$name,
+                    "' was made on was deleted", call. = FALSE)
+            cfg <- file.path(dir, "config.json")
+            config <- if (file.exists(cfg)) paste(readLines(cfg, warn = FALSE, encoding = "UTF-8"),
+                collapse = "\n")
+            str1 <- function(v) if (is.character(v) && length(v) == 1L) v else NA
+            private$open_snapshot(src, snap[[1L]], spat_unit = str1(b$spat_unit),
+                feat_type = str1(b$feat_type), site = site)
+            private$restore_state(dir, st, b, config, site)
+            if (hit$kind == "save") {
+                private$saved_sig <- private$work_sig()
+                private$saved_tag <- basename(dir)
+            } else unlink(dir, recursive = TRUE)
+            private$write_state(force = TRUE)
+            private$add_log("open_save", hit$name)
+            message("[LensViewer] the viewer opened '", hit$name, "' of ", src@path)
+        },
+
+        # The work of bundle `dir` (`st` its state.json, `b` its bundle.json)
+        # onto the object just shown, its files copied into the working bundle
+        restore_state = function(dir, st, b, config, site) {
+            w <- private$work
+            for (f in .bundle_files(st)) {
+                dest <- file.path(w, f)
+                dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+                file.copy(file.path(dir, f), dest, overwrite = TRUE)
+            }
+            fp <- private$cells_fp
+            same <- identical(as.integer(b$cells$n), as.integer(fp$n)) &&
+                identical(b$cells$md5, fp$md5)
+            dropped <- character()
+            private$config_json <- config
+            # Metadata and panel rows are in the order of the cells saved with
+            if (same) {
+                if (is.list(st$meta) && is.list(st$meta$columns)) {
+                    private$cached_meta <- st$meta
+                    private$meta_values <- lapply(st$meta_values %||% list(),
+                        function(v) as.numeric(unlist(v)))
+                }
+            } else if (length(st$meta$columns)) dropped <- c(dropped, "metadata")
+            private$col_types <- lapply(st$col_types %||% list(), function(v) as.character(unlist(v)))
+            ok_rule <- function(r) !inherits(tryCatch(.validate_rule(r, site), error = function(e) e), "error")
+            rules <- Filter(ok_rule, st$rules %||% list())
+            if (!same && any(vapply(rules, .rule_has_ids, NA))) {
+                rules <- Filter(Negate(.rule_has_ids), rules)
+                dropped <- c(dropped, "rules naming cells by position")
+            }
+            # Rules on metadata left out cannot be evaluated
+            ctx <- private$eval_ctx()
+            evaluates <- function(r) !inherits(tryCatch(.eval_rule(r, ctx), error = function(e) e), "error")
+            if (!all(vapply(rules, evaluates, NA))) {
+                rules <- Filter(evaluates, rules)
+                dropped <- c(dropped, "rules on columns left out")
+            }
+            private$rule_set <- rules
+            if (isTRUE(st$combine %in% c("and", "or"))) private$combine <- st$combine
+            if (length(rules)) {
+                hit <- .combine_rules(rules, private$eval_ctx(), private$combine)
+                self$selection <- private$cell_ids[hit]
+                self$selection_rules <- unname(rules)
+            }
+            self$annotations <- lapply(st$annotations %||% list(), function(a) list(
+                id = as.character(a$id %||% ""), name = as.character(a$name %||% ""),
+                type = as.character(a$type %||% ""), geojson = as.character(a$geojson %||% "")))
+            if (is.list(st$registration)) {
+                private$registration_msg <- st$registration
+                self$registration <- .parse_registration(st$registration)
+            }
+            if (isTRUE(st$regions) && file.exists(file.path(w, "regions.parquet"))) {
+                r <- arrow::read_parquet(file.path(w, "regions.parquet"))
+                r <- r[r$cell_ID %in% private$cell_ids, , drop = FALSE]
+                order <- intersect(as.character(unlist(st$region_names)), unique(r$region))
+                for (n in order) {
+                    private$region_sets[[n]] <- r$cell_ID[r$region == n]
+                    private$region_md5[[n]] <- .strings_md5(private$region_sets[[n]])
+                }
+            }
+            # Rows linked to cells carry their index (`_idx`)
+            linked <- function(p) if (!is.null(p$data_url))
+                "_idx" %in% arrow::open_dataset(file.path(w, sub("^work/", "", p$data_url)))$schema$names
+                else "_idx" %in% names(p$spec$data$values[[1L]] %||% list())
+            pushed <- Filter(function(p) is.character(p$id) && length(p$id) == 1L &&
+                (is.null(p$data_url) || (startsWith(p$data_url, "work/panels/") &&
+                    file.exists(file.path(w, sub("^work/", "", p$data_url))))) &&
+                (same || !linked(p)), st$pushed %||% list())
+            if (length(pushed) < length(st$pushed)) dropped <- c(dropped, "panels linked to cells")
+            private$pushed <- stats::setNames(pushed, vapply(pushed, function(p) p$id, ""))
+            seqs <- suppressWarnings(as.integer(sub("^panel-", "", names(private$pushed))))
+            private$panel_seq <- max(c(0L, seqs), na.rm = TRUE)
+            for (d in st$de %||% list()) {
+                f <- file.path(w, d$file %||% "")
+                if (!is.character(d$id) || !file.exists(f)) next
+                private$de[[d$id]] <- c(d[setdiff(names(d), c("id", "file"))],
+                    list(table = as.data.frame(arrow::read_parquet(f))))
+            }
+            seqs <- suppressWarnings(as.integer(sub("^de-", "", names(private$de))))
+            private$de_seq <- max(c(0L, seqs), na.rm = TRUE)
+            for (a in st$added %||% list()) {
+                r <- tryCatch(self$add_image(as.character(a$file), name = as.character(a$name),
+                    type = as.character(a$type)), error = function(e) e)
+                if (inherits(r, "error")) warning("[", site, "] image '", a$name,
+                    "' was not added again: ", conditionMessage(r), call. = FALSE)
+            }
+            if (length(dropped))
+                warning("[", site, "] the cells differ from those saved; left out: ",
+                    paste(unique(dropped), collapse = ", "), call. = FALSE)
+            invisible()
         },
 
         # Jobs (R/jobs.R, adr/0025)
@@ -2385,9 +2750,11 @@ LensViewer <- R6::R6Class("LensViewer",
         clear_object = function() {
             private$close_analysis()
             private$added_images <- list()
+            private$added_args   <- list()
             unlink(file.path(private$session, "images_added.json"))
-            for (id in names(private$pushed)) private$drop_panel_file(id)
-            .prune_meta_files(private$meta_dir(), character())
+            # Its working bundle: saved, or dropped by choice (check_work())
+            if (!is.null(private$work)) unlink(private$work, recursive = TRUE)
+            private$work <- NULL
             .prune_meta_files(private$items_dir(), character())
             private$item_files   <- list()
             # Their jobs were cancelled by load(); answered here, as the
@@ -2396,6 +2763,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 for (w in read$waits) w(list(error = "the object shown changed"))
             private$item_reads   <- list()
             private$region_sets  <- list()
+            private$region_md5   <- list()
             private$de           <- list()
             private$owned        <- list()
             private$config_json  <- NULL
@@ -2409,6 +2777,8 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cells_xy     <- NULL
             self$annotations     <- list()
             self$registration    <- NULL
+            private$registration_msg <- NULL
+            private$saved_tag    <- NULL
             self$selection       <- NULL
             self$selection_rules <- NULL
         },
@@ -2598,6 +2968,8 @@ LensViewer <- R6::R6Class("LensViewer",
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
                                 error = function(e) warning("[LensViewer] message error: ",
                                     .console_text(conditionMessage(e)), call. = FALSE))
+                            if (parsed$type == "registration_update")
+                                priv$registration_msg <- dat
                             if (parsed$type == "cell_selection") {
                                 priv$sel_seq <- priv$sel_seq + 1L
                                 rules <- dat$rules %||% list()
