@@ -12,14 +12,17 @@ import { spatialView } from '../spatial/current.ts';
 
 const TYPE_ABBR: Record<string, string> = { polygon: 'poly', rectangle: 'rect', freehand: 'free' };
 
+// Clamped to the fitted view's maxZoom: once the controller has moved the
+// camera its view state carries maxZoomX/maxZoomY and no maxZoom
 function zoomTo(a: Annotation) {
-  const vs = spatialView()?.viewState;
+  const view = spatialView();
+  const vs = view?.viewState;
   if (!vs) return;
   const xs = a.coords.map(p => p[0]), ys = a.coords.map(p => p[1]);
   const xmin = Math.min(...xs), xmax = Math.max(...xs);
   const ymin = Math.min(...ys), ymax = Math.max(...ys);
   const zoom = Math.min(fitZoom(Math.max(xmax - xmin, 1), Math.max(ymax - ymin, 1)) - 0.4,
-                        vs.maxZoom);
+                        view.initialViewState?.maxZoom ?? Infinity);
   setViewState(withZoom({ ...vs, target: [(xmin + xmax) / 2, (ymin + ymax) / 2, 0] }, zoom));
 }
 

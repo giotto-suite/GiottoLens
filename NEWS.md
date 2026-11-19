@@ -156,6 +156,8 @@
   places a chart next to them. A closed control stays closed after a reload.
 * `viewer$panels()` lists panels in layout order, and a chart pushed without `ref` goes next to
   the charts.
+* An annotation's zoom button no longer zooms the view far out after the view was moved by
+  hand.
 
 # GiottoLens 0.1.5
 

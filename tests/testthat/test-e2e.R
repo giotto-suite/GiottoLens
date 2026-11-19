@@ -1478,6 +1478,36 @@ test_that("set_view sets the zoom after the view was zoomed by hand", {
     expect_identical(br$errors(), character())
 })
 
+test_that("zoom to an annotation after the view was zoomed by hand", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "!!document.querySelector('.r-status.connected')"))
+    v$push_polygons("POLYGON((5 -95,15 -95,15 -85,5 -85,5 -95))")
+    zoom <- function() br$js("window.__giottolens.spatial.deck.getViewports()[0].zoom")
+    z0 <- zoom()
+
+    # The controller's view state has maxZoomX/maxZoomY, not maxZoom
+    r <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
+        deltaX = 0, deltaY = -500)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z0)))
+
+    dock_tab(br, "annotations")
+    expect_true(browser_wait(br, "!!document.querySelector('.annot-row-nav')"))
+    br$js("document.querySelector('.annot-row-nav').click()")
+    expect_true(browser_wait(br,
+        "Math.abs(window.__giottolens.spatial.viewState.target[0] - 10) < 1e-6"))
+    expect_true(is.finite(zoom()))
+    expect_gt(zoom(), z0)
+    expect_identical(br$errors(), character())
+})
+
 test_that("a type change redraws a histogram of the column once it loads", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
