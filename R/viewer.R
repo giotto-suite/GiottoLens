@@ -1680,8 +1680,9 @@ LensViewer <- R6::R6Class("LensViewer",
         close = function(discard = FALSE) {
             if (!isTRUE(discard) && !isFALSE(discard))
                 stop("[LensViewer$close] `discard` must be TRUE or FALSE", call. = FALSE)
-            unsaved <- if (!is.null(private$server) && !is.null(private$project) && private$loaded)
-                private$unsaved_work()
+            # An analysis alone is not in the working bundle: nothing to keep
+            unsaved <- if (!is.null(private$server) && !is.null(private$project) &&
+                    private$loaded && private$work_changed()) private$lens_work()
             if (!is.null(unsaved) && !discard) private$write_state(force = TRUE)
             private$stop_jobs()
             private$close_analysis()
@@ -2513,10 +2514,14 @@ LensViewer <- R6::R6Class("LensViewer",
         unsaved_work = function() {
             work <- private$lens_work()
             if (is.null(work)) return(NULL)
-            if (!identical(private$work_sig(), private$saved_sig)) return(work)
+            if (private$work_changed()) return(work)
             if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
                 "an analysis (analyses are not saved yet)"
         },
+        # Whether there is work a save would keep that changed since the last
+        # save or opening
+        work_changed = function() !is.null(private$lens_work()) &&
+            !identical(private$work_sig(), private$saved_sig),
 
         # open_save() in project `src`, also from the start page
         open_save_in = function(src, name, discard, site) {
@@ -2545,8 +2550,8 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!length(snap))
                 stop("[", site, "] the snapshot '", b$snapshot %||% "?", "' that '", hit$name,
                     "' was made on was deleted", call. = FALSE)
-            cfg <- file.path(dir, "config.json")
-            config <- if (file.exists(cfg)) paste(readLines(cfg, warn = FALSE, encoding = "UTF-8"),
+            cfg <- .bundle_file(dir, "config.json")
+            config <- if (!is.null(cfg)) paste(readLines(cfg, warn = FALSE, encoding = "UTF-8"),
                 collapse = "\n")
             str1 <- function(v) if (is.character(v) && length(v) == 1L) v else NA
             private$open_snapshot(src, snap[[1L]], spat_unit = str1(b$spat_unit),
@@ -2566,9 +2571,11 @@ LensViewer <- R6::R6Class("LensViewer",
         restore_state = function(dir, st, b, config, site) {
             w <- private$work
             for (f in .bundle_files(st)) {
+                src <- .bundle_file(dir, f)
+                if (is.null(src)) next
                 dest <- file.path(w, f)
                 dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-                file.copy(file.path(dir, f), dest, overwrite = TRUE)
+                file.copy(src, dest, overwrite = TRUE)
             }
             fp <- private$cells_fp
             same <- identical(as.integer(b$cells$n), as.integer(fp$n)) &&
@@ -2578,7 +2585,12 @@ LensViewer <- R6::R6Class("LensViewer",
             # Metadata and panel rows are in the order of the cells saved with
             if (same) {
                 if (is.list(st$meta) && is.list(st$meta$columns)) {
-                    private$cached_meta <- st$meta
+                    # A column whose file was not copied is left out
+                    read <- vapply(st$meta$columns, function(cl) is.character(cl$url) &&
+                        file.exists(file.path(w, sub("^work/", "", cl$url))), NA)
+                    if (!all(read)) dropped <- c(dropped, "metadata files that could not be read")
+                    st$meta$columns <- st$meta$columns[read]
+                    private$cached_meta <- if (length(read) && any(read)) st$meta
                     private$meta_values <- lapply(st$meta_values %||% list(),
                         function(v) as.numeric(unlist(v)))
                 }
@@ -2647,8 +2659,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     "' was not added again: ", conditionMessage(r), call. = FALSE)
             }
             if (length(dropped))
-                warning("[", site, "] the cells differ from those saved; left out: ",
-                    paste(unique(dropped), collapse = ", "), call. = FALSE)
+                warning("[", site, "] left out: ", paste(unique(dropped), collapse = ", "),
+                    if (!same) " (the cells differ from those saved)", call. = FALSE)
             invisible()
         },
 

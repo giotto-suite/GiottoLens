@@ -49,8 +49,19 @@
 
 .write_json_atomic <- function(x, path) .write_text_atomic(.bundle_json(x), path)
 
+# File `f` of bundle `dir`, or NULL unless it is a regular file inside it.
+# Others may write to the project: a link there must not bring a file from
+# elsewhere into this viewer's working bundle, where they could read it.
+.bundle_file <- function(dir, f) {
+    path <- file.path(dir, f)
+    if (!file.exists(path) || dir.exists(path) || nzchar(Sys.readlink(path))) return(NULL)
+    if (!startsWith(normalizePath(path), paste0(normalizePath(dir), "/"))) return(NULL)
+    path
+}
+
 .read_bundle_json <- function(path) {
-    if (!file.exists(path)) return(NULL)
+    path <- .bundle_file(dirname(path), basename(path))
+    if (is.null(path)) return(NULL)
     tryCatch(jsonlite::fromJSON(path, simplifyVector = FALSE), error = function(e) NULL)
 }
 
@@ -147,12 +158,13 @@
     dir.create(stage, recursive = TRUE)
     on.exit(unlink(stage, recursive = TRUE), add = TRUE)
     state <- .read_bundle_json(file.path(from, "state.json")) %||% list()
-    files <- c("state.json", if (file.exists(file.path(from, "config.json"))) "config.json",
+    files <- c("state.json", if (!is.null(.bundle_file(from, "config.json"))) "config.json",
         .bundle_files(state))
     for (f in unique(files)) {
+        src <- .bundle_file(from, f)
         dest <- file.path(stage, f)
         dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-        if (!file.copy(file.path(from, f), dest))
+        if (is.null(src) || !file.copy(src, dest))
             stop("[LensViewer] could not copy ", f, " into the save", call. = FALSE)
     }
     .write_json_atomic(bundle, file.path(stage, "bundle.json"))

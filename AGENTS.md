@@ -190,7 +190,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `close()` keeps work not saved in the project (a working bundle of an ended viewer, listed
   by `saves(sessions = TRUE)`, opened by `open_save()` and then removed); `close(discard =
   TRUE)` deletes it. A bundle is opened only by a name `.lens_saves()` lists, never a path.
-- Bundles are JSON and parquet; never `saveRDS()`/`qs2` into one.
+- Bundles are JSON and parquet; never `saveRDS()`/`qs2` into one. Read a bundle's files only
+  through `.bundle_file()` (a regular file inside it, no link): copies land in the project.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 

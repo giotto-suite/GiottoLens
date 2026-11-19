@@ -243,3 +243,28 @@ test_that("the page saves, lists saves and opens one", {
     expect_match(res$data$save, "^first\\.")
     expect_identical(r$v$regions()$name, "top")
 })
+
+test_that("a link in a save does not bring a file from elsewhere into the project", {
+    skip_on_os("windows")
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    tag <- suppressMessages(r$v$save("first"))
+    dir <- file.path(r$td, "lens", tag)
+    secret <- tempfile("secret_")
+    writeLines("secret", secret)
+    on.exit(unlink(secret), add = TRUE)
+    unlink(file.path(dir, "config.json"))
+    file.symlink(secret, file.path(dir, "config.json"))
+    col <- list.files(file.path(dir, "metadata"), full.names = TRUE)[[1L]]
+    unlink(col)
+    file.symlink(secret, col)
+    expect_warning(suppressMessages(r$v$open_save("first", discard = TRUE)),
+        "metadata files that could not be read")
+    expect_identical(r$priv$meta_names(), "score")
+    copied <- list.files(r$priv$work, recursive = TRUE, full.names = TRUE)
+    expect_false(any(vapply(copied, function(f)
+        length(grepRaw("secret", readBin(f, "raw", file.size(f)), fixed = TRUE)) > 0L, NA)))
+    expect_null(r$priv$config_json)
+    expect_error(suppressMessages(r$v$save("second")), NA)
+})

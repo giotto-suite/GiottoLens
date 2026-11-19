@@ -111,6 +111,9 @@ GiottoLens guards is narrower: it must not give access beyond what the file syst
   are small, so reading them on R's thread costs little.
 - A bundle the page asks for is opened only if its name is one R listed for the open
   project; a name is never joined into a path unchecked.
+- A file is read from a bundle only if it is a regular file inside it (`.bundle_file()`).
+  Opening or saving copies files into the project, where others can read them; a link
+  placed in a bundle would otherwise copy a file from elsewhere there.
 - Nothing secret goes in a bundle: not the token, not the URL.
 
 Bundles are JSON and parquet, never `rds` or `qs2`: they can be read without R, and loading
