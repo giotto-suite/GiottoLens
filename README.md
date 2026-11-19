@@ -30,7 +30,7 @@ viewer$close()
 
 `launch_lens()` serves the viewer on `127.0.0.1` and a free port, under a random path that
 changes every launch, and opens it in the browser or viewer pane. Treat `viewer$url` like a
-password while the viewer runs (see [SECURITY.md](SECURITY.md)). Nothing is copied or written next to your data. Use `host = "0.0.0.0"` to
+password while the viewer runs (see [SECURITY.md](SECURITY.md)). The project folder is never served, only the stores the viewer mounts. Use `host = "0.0.0.0"` to
 expose it to the network, and `url_prefix` when the browser reaches R through a proxy or port
 forward (for example R on an HPC node).
 

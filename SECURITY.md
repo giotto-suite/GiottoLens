@@ -13,11 +13,23 @@ While a viewer runs (`launch_lens()` until `viewer$close()`), its server serves:
 - a temporary folder with the cell table and any metadata or panel data you pushed;
 - a WebSocket through which the page and R exchange selections and commands.
 
-Nothing is written next to your data, and the server cannot run R code sent from the
-browser: it only accepts a fixed set of message types. Through them, the start page can ask
-R to list the snapshots of a GiottoDisk project and to show one: any project the R user can
-read, found by its `giottodir.json`. It cannot list other folders or create projects. The
+The server cannot run R code sent from the browser: it only accepts a fixed set of message
+types. Through them, the start page can ask R to list the snapshots of a GiottoDisk project
+and to show one: any project the R user can read, found by its `giottodir.json`. It cannot list other folders or create projects. The
 paths of your recent projects are sent to the page.
+
+## What is written
+
+Besides that temporary folder, GiottoLens writes:
+
+- **into the project of the object shown:** a snapshot of the object when the viewer shows
+  an object with changes that no snapshot holds yet (`lens_<date>_<time>`), and, with
+  `launch_lens(project =)`, an object that was only in memory;
+- **in your user data directory:** the list of recent projects.
+
+None of this is served. Of a project, the server serves only the stores and image files it
+mounted; the project folder itself is never served. Anyone who can read the project can read
+what GiottoLens wrote into it, as they can your data.
 
 ## How it is protected
 
