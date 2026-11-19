@@ -131,6 +131,26 @@ lens_bins_fixture <- local({
     }
 })
 
+# A Xenium output folder with what Giotto's Xenium reader needs to load a
+# morphology image: experiment.xenium (pixel size 0.5), an expression file,
+# and morphology_focus/ch0000_dapi.tif of 80 x 100 pixels
+lens_xenium_fixture <- local({
+    fx <- NULL
+    function() {
+        testthat::skip_if_not_installed("Giotto")
+        if (!is.null(fx)) return(fx)
+        dir <- tempfile("xenium")
+        dir.create(file.path(dir, "morphology_focus"), recursive = TRUE)
+        writeLines('{"pixel_size": 0.5}', file.path(dir, "experiment.xenium"))
+        file.create(file.path(dir, "cell_feature_matrix.h5"))
+        file <- file.path(dir, "morphology_focus", "ch0000_dapi.tif")
+        terra::writeRaster(terra::rast(matrix(100L, 100L, 80L)), file, filetype = "COG",
+            datatype = "INT2U", gdal = c("BLOCKSIZE=256"))
+        fx <<- list(dir = dir, file = file)
+        fx
+    }
+})
+
 # The routes a viewer's app reads (see .lens_app())
 lens_routes <- function(mounts = list(), images = list()) {
     e <- new.env(parent = emptyenv())

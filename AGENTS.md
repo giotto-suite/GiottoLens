@@ -39,6 +39,17 @@ R/
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
                the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
+  catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
+               spatValues() call over it (.pull_items(), .pull_plan()); item keys
+               (.item_key(), .parse_item_key(), adr/0024)
+  jobs.R       jobs: the viewer's mirai daemon holding the object shown, its helpers
+               (.jw_object(), .jw_run(), .lens_progress()), adr/0025
+  regions.R    region names, the comparison job (.region_de()), its expression source
+               (.de_source()) and volcano spec (.de_volcano()), adr/0020
+  analysis.R   LensAnalysis (step keys rooted at the snapshot, the poll loop over jobs through
+               .AnalysisWorker, results to the viewer), the daemon side (.aw_*), adr/0021
+  analysis-*.R the analysis steps and catalog: parameters, menu choices, run/result (adr/0022)
+  preferences.R lens_preferences(): built-in defaults, the preferences file, broadcast to viewers
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -49,6 +60,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   core/       state.js (runtime), store.ts (config + selection), persist.ts (config saved
               through R), comms.js (protocol), remote.js (R commands), constants.js
   data/       parquet.ts (reads, transfer modes, codecs), point-decode.ts, cells.ts, meta.ts,
+              catalog.ts (the object's sources, fetched once), items.ts (item keys, the
+              item cache, fields: a column or an item),
               tiles.js, schedule.js, wkb.ts, tx-decode.ts + tx-worker.ts + tx-pool.js,
               images.ts (pixel sources per level), j2k.ts + img-worker.ts + img-pool.ts,
               registration.ts (affines, landmark fit, flips and turns)
@@ -60,12 +73,18 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               (spatialView(): the open view, or null)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
-              (landmark tool, image pane), start.ts (start page and project dialog, through askR())
+              (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
+              jobs.ts (the tools bar's jobs button and popover; the page's list of jobs)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
               scatter.js, histogram.js,
-              density.ts (2D bins as one image), spec.js (pushed Vega-Lite), controls.js (chart
+              density.ts (2D bins as one image), table.ts (the cell table), spec.js (pushed
+              Vega-Lite), controls.js (chart
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
-              images.ts, register.ts, annotations.ts, layers.ts (layer visibility, opacity)
+              data.ts (the Data panel: what to pull from the object, through askR()),
+              regions.ts (the Regions panel; regions-model.ts its helpers),
+              analysis.js + analysis-model.ts (the Analysis panel),
+              picker.ts (the popover a field picks a column or an item with), images.ts,
+              register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -130,7 +149,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `private$routes`, read per request; never capture them in a closure.
 - Everything that belongs to the object shown is reset by `load()` through `clear_object()`
   (config, rules, combine, pushed panels and their files, metadata and its files, column
-  types, annotations, registration, `cells_xy`) or set by it (cell IDs, cell table, routes).
+  types, annotations, registration, `cells_xy`, added images) or set by it (cell IDs, cell table, routes,
+  the catalog).
   A new per-object field goes there, or a switch leaks it into the next object. Nothing is
   kept for an object not shown: keeping Lens work is a save's job.
 - A giotto object is shown from a snapshot in its project (adr/0018): `handover()` runs
@@ -141,7 +161,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
   (`.lens_untiled_max`, measured; update the comment when re-measuring).
 - `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
-  registration; settings alone are not counted) without `discard = TRUE`, and checks before
+  added images, registration; settings alone are not counted) without `discard = TRUE`, and checks before
   changing anything. A switch from the page will go through the same argument after the
   page's own confirmation; never add a second rule there.
 
@@ -167,6 +187,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `r`), combined with AND (cross-filter, the default in both `store.ts` and R), or OR. Rules evaluate to `Uint8Array` masks
   over all cells, never only loaded tiles; masks are a cache keyed by rule object (rules are
   never mutated). Selections cross the socket as base64 bitmasks (LSB first).
+- The cell table's rows are the other sources' selection (`maskExcept()`), never its own
+  rule, so picking rows does not change them; its picks are an `ids` rule (source `table`,
+  or `table:<id>`). It asks R for the IDs of the rows in view only (`cell_ids`, at most
+  5000): the page keeps them for display, bounded, and keys nothing by them.
 - `R/rules.R` and `selection/rules.ts` implement the same evaluation; change both together
   (the e2e tests compare them). `lens_cells()` is R-only and resolves to an `ids` rule.
 - Metadata is written in cell order; categorical columns as 0-based codes (-1 = NA) with levels.
@@ -174,6 +198,25 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   named by content; the payload gives each column its `url`. The files are the only copy: R
   keeps the payload (`cached_meta`) and reads columns through `private$meta_column()`; never
   hold the pushed data.frame. Files of the current and the previous payload are kept.
+- Pulled columns (`pull()`, the Data panel) and items come from one `spatValues()` call
+  (`.plan_values()`) run as a job over the daemon's object, never `gobject()` on the main
+  thread. The `item` and `pull` asks answer when their job ends (`ask()` returns NULL and
+  calls `reply`); asks for an item being read share its job (`need_item()`). Pulled columns
+  are added to the payload (`.merge_meta()`); `push_metadata()` replaces it. A pull names a dim reduction axis
+  `<reduction>_<axis>`, as `prep_meta()` does; `columnFor()` in `data/catalog.ts` names
+  columns the same way, so change both together. Payload entries are read with `$`, which
+  partial-matches: no new field may start with an existing one's name (`number_text`, not
+  `numeric_text`).
+- A field that shows one value (store `colorBy`) holds a metadata column name or an item
+  key (adr/0024): `@` and slot, feature type, source name, method and item, percent-encoded
+  and joined by `/`. `.item_key()` (R) and `itemKey()` (`data/items.ts`) write the same
+  string; change both together (the tests check one key on each side). Items never enter
+  the metadata: R reads one into `session/items/` once per object (`read_item()`, cleared by
+  `clear_object()`), and the page keeps them in its item cache (128 MB, least recently used
+  out, the colour-by item pinned). Read a field's values with `fieldColumn()` /
+  `needFields()`, which take either. Expression items share one colour scale
+  (`scaleKey()`). `color_by()` reads an item before its request, so the page does not ask
+  back while R waits.
 - In the browser `state.metaInfo` lists every column and `state.meta` holds the loaded ones.
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
@@ -208,20 +251,104 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 6)
+### Jobs (adr/0025)
+
+- Work R does for the page that takes more than a moment runs as a job: private
+  `start_job(label, fun, args, apply, ref, on_end, progress)` (or `run_job()` to wait),
+  never on the main thread. `fun(g, ...)` runs in the viewer's mirai daemon over the object
+  shown, which the daemon loads from the project path and snapshot name once and keeps
+  (`cleanup = FALSE`); `apply()` runs on the main thread, and only if the object shown has not
+  changed (`load_seq`). `load()` cancels running jobs; `close()` stops the daemon.
+- The daemon runs installed packages only: `fun` and the helpers run there as plain functions
+  (`.job_fun()`), calling packages by `pkg::`. arrow loads first (`.job_packages`). Never
+  `library()` in a job.
+- A job writes to the project's vault (the daemon's artifact dump); never a temp source.
+- Cancelling interrupts (`stop_mirai()`, dispatcher on); a cancel rejects the job's promise
+  like an error, so it is told apart by the job's own flag.
+
+### Analysis (adr/0021, adr/0022)
+
+- `viewer$analysis()` makes the `LensAnalysis` of the object shown (`private$lens_analysis`),
+  or the page does with `analysis_open` when the Analysis panel opens. Nothing runs until a
+  step is run or a parameter set (`started`). `clear_object()` closes it; `lens_work()` counts
+  it once a step has run.
+- Steps run as jobs: `.AnalysisWorker` gives the poll loop (`tick()`) `call()`/`read()` over
+  `start_job()`. Daemon-side functions (`.aw_*`) take the held object first and keep the
+  analysis in the daemon's `.lens_a`: the base object (the snapshot with the analysis's unit
+  and type active), the step cache by key (capped by `GiottoLens.analysis_cache_mb`) and
+  spatial networks. `.aw_init()` sets it up before the first job, and again when a step finds
+  it gone (`lens_missing_input`).
+- Step keys are a step's parameters and its input's key, rooted at `snapshot:<tag>`
+  (`step_keys()`). A gene from a result table is an item key whose `method` is
+  `analysis:<hash of the step key>`; `need_item()` asks the analysis for its job
+  (`item_job()`, `.aw_item()`), so its values never change under its key.
+- The analysis's metadata columns go through `own_columns("analysis", df)`: they replace its
+  previous columns beside pushed and pulled ones, and rules on dropped columns go.
+- Step `run()`/`result()` run in the daemon with globalenv as their environment: they call
+  packages with `::` and the `.lens_*` helpers `.aw_init()` assigns (`.aw_helpers()`), never
+  package internals. `view()` and `pick()` run on the main thread. Progress is the job's
+  (`.lens_progress()`, and a progressr handler for Giotto's `with_pbar()`).
+- Spatial networks: `.lens_network()` keys a network by an md5 of the sorted cell IDs, their
+  coordinates and the network settings, keeps it in the daemon and writes it to
+  `network_dir`. A step using another step's network includes that step's key and waits for
+  it (`network_dep()`).
+- The analysis's spatial unit and feature type are active on its base object; steps call
+  Giotto without `spat_unit`/`feat_type`.
+- Parameter types `values` and `spatial_network` are menus `LensAnalysis` fills
+  (`values_schema()`, `network_schema()`; sent as `type = "choice"`). Steps read them with
+  `.lens_values(p)` (`.values_of()`) and `.lens_net(p)` (`.network_of()`), which also take
+  the value from the nearest step above. Result names of the Preprocessing steps come from
+  `.lens_names()` (`.pre_names()`); the viewer gets the cluster and cell type column names
+  in `analysis_markers` (`columns`).
+
+### Preferences
+
+- `R/preferences.R` holds the built-in defaults (`.lens_pref_spec()`); the file saves only
+  preferences that were set, and `.lens_pref(k)` reads one. `core/prefs.ts` `BUILTIN` must
+  match `.lens_pref_spec()` (a test checks). R sends `preferences` (`defaults`, `set`) before
+  `restore` and to every open viewer after a change; the panel sends `preferences_set`.
+- Colors read `prefs()` when they draw (`render/colors.ts`: `defaultPreset()`,
+  `categoryPalette()`, fill opacity). Config fields that start from a preference
+  (`outline`, `txPalette`) take a new preference only while they hold the old one (`onPrefs`
+  in `main.js`). The background applies only when set.
+
+### Continuous color scales
+
+- `render/colors.ts` follows GiottoVisuals' continuous options: `style` divergent (default;
+  centered on `midpoint`, default the median, stretched by the larger side as ggplot2's
+  `rescale_mid`) or sequential (low limit to high), `preset` or custom colors, `reverse`,
+  `limits` (clamped). Default colors per style are Giotto's (`DEFAULT_PRESET`), or the
+  `seq_palette` / `div_palette` preferences; `scale_style` and `gene_style` set the style of
+  a scale that names none (`scaleStyle()`, `columnScale()`). The legend (`panels/cells.ts`),
+  `set_color_scale` in `core/remote.js` and R's `set_color_scale()` take the same fields.
+  The legend's bar spans the data range (`barColors()`, `SLIDER_STEPS`) with low, mid and
+  high handles on it; `dragHandle()` / `autoHandle()` turn a drag or double-click into a
+  scale change, and drags recolor at most once a frame. Config version 3 gives scales saved
+  before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
+  the 7-color `blue-white-red` as `RdBu`.
+
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
 - The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
   answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
-  (adr/0019). An ask is never queued while disconnected.
+  (adr/0019); the Data panel's `catalog`, `pull`, and the item cache's `item`, answered only to a page showing the
+  current load (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
+  earlier load). The Regions panel's `region` (save, remove, select, compare; a compare
+  answered when its job ends) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
   older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
+- Jobs: R broadcasts `job` `{id, label, ref, state, message?, progress?}` as each starts, reports
+  progress and ends (`running`, `done`, `error`, `cancelled`), and sends the running ones to a
+  tab on `ready`; the page cancels one with the `cancel_job` ask. The page keeps the running
+  jobs and the last few finished ones (`ui/jobs.ts`), shown in the tools bar's jobs popover
+  only, never the status line.
 - `close()` sends `closed` to every tab before stopping; a page that has it stops
   reconnecting (status `closed`). The page's stop button sends `close`, which R handles on
   the next `later` turn, never inside the server's own callback.
@@ -277,6 +404,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   beside the served `files`.
 - `launch_lens(image_files =)` entries have `place: 'fit'`: drawn inside the manifest extent
   (`fitPlacement()`), not at their extent.
+- `add_image()` serves the file under the next key of `private$routes$images`, sends
+  `add_image` to the tabs, and lists the entry in `session/images_added.json`, which the page
+  opens after the manifest's images. A `"xenium"` image goes through
+  `Giotto::importXenium()$load_image()` (`.xenium_image_file()`) and is placed at its
+  extent; `"if"` and `"he"` are placed with `place: 'fit'`. The images panel's button sends
+  `choose_image`; R opens the dialog (`.choose_image_file()`, option
+  `GiottoLens.choose_file`) and answers `add_image_result`.
 - Image state is `config.images` by name (`show`, and `color` and `contrast`, or `rgb`) plus `layers.img`;
   R's `set_image()` and `set_layer("img")` map onto it.
 
@@ -340,6 +474,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A panel's brush is drawn from its rule, not kept in the chart: the histogram redraws when
   its rule changes elsewhere, and a pushed chart's `ids` rule keeps `params.brush` (the
   extent by field) so a rebuilt chart can draw it again.
+- A pushed spec's point param named `pick` sends the clicked row's fields to R
+  (`panel_pick`, not the click that ends a drag). R acts on picks of a panel it knows: a
+  comparison's volcano plot colours that page's cells by the gene's item key.
 - A range or rectangle brush drag is live (adr/0013): `beginLive`/`moveLive` while the
   button is down, the rule set once on release. Panels that show counts register with
   `addLiveConsumer()` (a bin per cell) and cache their totals over all cells; never set a
@@ -349,10 +486,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_theme()`, `set_image()`, `register_image()`, `clear_registration()`,
-`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `push_panel()`, `remove_panel()`,
+`set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
+`register_image()`, `clear_registration()`,
+`registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
+`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
+`select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
 `panels()`, `push_polygons()`,
-`screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
+`analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
 `lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as
 having a consumer.

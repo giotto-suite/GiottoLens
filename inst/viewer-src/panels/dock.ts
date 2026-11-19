@@ -5,10 +5,10 @@
 // Each panel has a stable id: R's selection rules, push_panel(id =) and the
 // saved layout all refer to it, so moving a panel changes nothing else. The
 // layout is config (store `layout`): it is saved through R and restored after
-// a reload. Charts (scatter, histogram, density) are rebuilt from metadata;
+// a reload. Charts (scatter, histogram, density, table) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// Controls (cells, transcripts, images, annotations, register, layers) are one
-// per viewer, with their kind as id, and keep their own state in the store
+// Controls (cells, transcripts, data, regions, images, annotations, register, layers)
+// are one per viewer, with their kind as id, and keep their own state in the store
 // (adr/0016). So are the spatial view, which can be closed and opened again
 // from a "+" menu, and the tools bar, which cannot be closed.
 // Why dockview-core 4, and why R holds the saved config: adr/0009.
@@ -34,14 +34,20 @@ import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createCellsPanel } from './cells.ts';
 import { createTranscriptsPanel } from './transcripts.ts';
+import { createDataPanel } from './data.ts';
+import { createTablePanel } from './table.ts';
+import { createRegionsPanel } from './regions.ts';
 import { createImagesPanel } from './images.ts';
 import { createAnnotationsPanel } from './annotations.ts';
 import { createRegisterPanel } from './register.ts';
 import { createLayersPanel } from './layers.ts';
 import { createToolsPanel } from './tools.ts';
 import { createSpatialPanel } from '../spatial/view.ts';
+import { createPreferencesPanel } from './preferences.ts';
 // @ts-ignore: plain JS module
 import { abortAllTiles } from '../data/schedule.js';
+// @ts-ignore: plain JS module
+import { createAnalysisPanel } from './analysis.js';
 
 // The built-in panels. A chart (`meta`) shows a note until metadata arrives
 // and is rebuilt when it changes; there can be several. A `single` panel is
@@ -68,14 +74,25 @@ const TYPES = {
   scatter:     { create: createScatterPanel, meta: true },
   histogram:   { create: createHistogramPanel, meta: true },
   density:     { create: createDensityPanel, meta: true },
+  table:       { create: createTablePanel, meta: true },
   // Two tabs at most per slot: more do not fit the column's tab bar
   cells:       { create: createCellsPanel, single: true, slot: 'data', available: () => !!state.cells },
   transcripts: { create: createTranscriptsPanel, single: true, slot: 'data',
                  available: () => !!state.manifest?.layers?.transcripts },
-  images:      { create: createImagesPanel, single: true, slot: 'images', height: 220, available: hasImages },
+  // A giotto object shown: R has a catalog to pull from
+  data:        { create: createDataPanel, single: true, slot: 'sources',
+                 available: () => !!state.cells && !!state.manifest?.catalog },
+  // The object's analysis (viewer$analysis()): opened from "+" or when R starts one
+  analysis:    { create: createAnalysisPanel, single: true,
+                 available: () => !!state.cells && !!state.manifest?.catalog },
+  // Regions of the object's cells and their comparison, a tab beside the Data panel
+  regions:     { create: createRegionsPanel, single: true, slot: 'sources',
+                 available: () => !!state.cells && !!state.manifest?.catalog },
+  images:      { create: createImagesPanel, single: true, slot: 'images', height: 220 },
   register:    { create: createRegisterPanel, single: true, slot: 'images', height: 220, available: hasImages },
   annotations: { create: createAnnotationsPanel, single: true, slot: 'annotations', height: 150 },
   layers:      { create: createLayersPanel, single: true, slot: 'layers', height: 130 },
+  preferences: { create: createPreferencesPanel, single: true, slot: 'layers', height: 130 },
 } satisfies Record<string, PanelType>;
 export type PanelKind = keyof typeof TYPES | 'spec';
 type BuiltinKind = keyof typeof TYPES;
@@ -313,6 +330,17 @@ function newId(kind: string): string {
   for (let i = 2; ; i++) if (!dock.getPanel(`${kind}-${i}`)) return `${kind}-${i}`;
 }
 
+// A built-in panel brought forward (opened if closed), as R asks when it
+// gives the panel something new: a saved region
+export function showBuiltin(kind: BuiltinKind): void {
+  if (!dock || !available(kind)) return;
+  if (!dock.getPanel(kind)) {
+    actions.setPanelClosed(kind, false);
+    if (isControl(kind)) placeControls(); else addBuiltin(kind);
+  }
+  dock.getPanel(kind)?.api.setActive();
+}
+
 function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): void {
   if (!dock) return;
   if (isSingle(kind)) {
@@ -320,6 +348,8 @@ function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): 
     const open = dock.getPanel(kind);
     if (open) { open.api.setActive(); return; }
   }
+  // Opened from "+" with no place given, the Analysis panel goes where it opens from R
+  if (kind === 'analysis' && !position) { placeAnalysis(); return; }
   const p = dock.addPanel({ id: isSingle(kind) ? kind : newId(kind), component: kind, title: kind,
     ...(position && { position }) });
   // A view opened again in a group of its own gets its usual width, after the
@@ -340,6 +370,8 @@ function defaultLayout(host: HTMLElement): void {
   const tabs = host.clientHeight > 0 && host.clientHeight < 420;
   dock.addPanel({ id: 'histogram', component: 'histogram', title: 'histogram',
     position: { referencePanel: 'scatter', direction: tabs ? 'within' : 'below' }, inactive: tabs });
+  dock.addPanel({ id: 'table', component: 'table', title: 'table',
+    position: { referencePanel: 'histogram', direction: 'within' }, inactive: true });
   placeControls();
   placeFixed(host, true);
 }
@@ -431,12 +463,16 @@ function dropUnavailable(): void {
 }
 
 // Where a pushed panel goes without a `ref`: next to the active chart, else
-// the last one active, else any chart, never among the controls nor beside
-// the spatial view or the tools bar
+// the last one active, else any chart, never among the controls, beside
+// the spatial view or the tools bar, or in the Analysis panel's group
 let lastChart: string | null = null;
+const isChart = (p?: IDockviewPanel | null) => {
+  const kind = p ? views.get(p.id)?.kind : undefined;
+  return !!p && !isSingle(kind) && kind !== 'analysis' &&
+    !p.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
+};
 function chartRef(): IDockviewPanel | undefined {
   if (!dock) return undefined;
-  const isChart = (p?: IDockviewPanel | null) => !!p && !isSingle(views.get(p.id)?.kind);
   if (isChart(dock.activePanel)) return dock.activePanel!;
   const last = lastChart ? dock.getPanel(lastChart) : undefined;
   return isChart(last) ? last : dock.panels.find(isChart);
@@ -497,7 +533,7 @@ export function initDock(host: HTMLElement): void {
     if (!byR.delete(p.id) && payloads.has(p.id)) sendToR('panel_closed', { id: p.id });
     payloads.delete(p.id);
   });
-  dock.onDidActivePanelChange(p => { if (p && !isSingle(views.get(p.id)?.kind)) lastChart = p.id; });
+  dock.onDidActivePanelChange(p => { if (isChart(p)) lastChart = p!.id; });
   dock.onDidLayoutChange(() => {
     const w = dock?.getPanel('tools')?.group.api.width;
     if (!toolsHold && w) toolsWidth = w;
@@ -554,6 +590,12 @@ export function refreshBuiltins(): void {
   for (const v of views.values()) if (typeOf(v.kind)?.meta) v.fill();
 }
 
+// Controls rebuilt from what they show (the images panels after an image is
+// added)
+export function refreshControls(kinds: string[]): void {
+  for (const v of views.values()) if (kinds.includes(v.kind)) v.fill();
+}
+
 // Charts that take the theme's colours when built (ui/theme.ts): rebuilt
 // when it changes. The scatter is dark in both themes.
 const THEMED = new Set<PanelKind>(['histogram', 'density', 'spec']);
@@ -580,8 +622,10 @@ export function pushPanel(p: PanelPayload): void {
   if (p.ref && !ref) reportError(new Error(`no panel '${p.ref}'; placed next to the charts`), 'push_panel');
   ref ??= chartRef();
   const where = p.where ?? 'tab';
+  // A tab next to the Analysis panel goes beside its group instead
+  const beside = where === 'tab' && !!ref && ref.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
   const position: AddPanelOptions['position'] = !ref ? { direction: 'left' }
-    : { referencePanel: ref, direction: where === 'tab' ? 'within' : where };
+    : { referencePanel: ref, direction: beside ? 'right' : where === 'tab' ? 'within' : where };
   const title = p.title ?? (typeof p.spec?.title === 'string' ? p.spec.title : null) ?? p.id;
   dock.addPanel({ id: p.id, component: 'spec', title, ...(position && { position }) });
 }
@@ -604,3 +648,15 @@ export function listPanels(): { id: string; kind: string; title: string; group: 
 
 // For tests and the browser console: a panel's handle (its Vega view, ...)
 export const panelHandle = (id: string): PanelHandle | null => views.get(id)?.panel ?? null;
+
+// Where the Analysis panel opens: beside the tools bar, left of the spatial
+// view, a third of the page wide; kept where the user or a restored layout
+// put it
+function placeAnalysis(): void {
+  if (!dock || dock.getPanel('analysis')) return;
+  const view = dock.getPanel('spatial'), tools = dock.getPanel('tools');
+  const position: AddPanelOptions['position'] = view ? { referencePanel: view, direction: 'left' }
+    : tools ? { referenceGroup: tools.group.id, direction: 'right' } : { direction: 'left' };
+  const p = dock.addPanel({ id: 'analysis', component: 'analysis', title: 'analysis', position });
+  p.group.api.setSize({ width: Math.round(window.innerWidth / 3) });
+}

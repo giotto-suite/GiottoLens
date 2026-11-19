@@ -404,8 +404,8 @@ LensViewer <- R6::R6Class("LensViewer",
             private$routes$images <- list()
             private$session   <- file.path(tempdir(), "giottolens",
                 paste0(port, "-", .rand_id(8L)))
-            dir.create(file.path(private$session, "metadata"),
-                recursive = TRUE, showWarnings = FALSE)
+            for (d in c("metadata", "items"))
+                dir.create(file.path(private$session, d), recursive = TRUE, showWarnings = FALSE)
             self$url <- paste0(url_prefix, .lens_root(private$token), "/")
             private$start_server(host)
             assign(as.character(port), self, envir = .lens_registry)
@@ -552,7 +552,10 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Show a numeric metadata column as categories (one
         #'   per distinct value, at most 1000) or as a continuous scale.
-        #'   Integer and double columns are continuous by default. The
+        #'   Integer and double columns are continuous by default. A text
+        #'   column whose values are all numbers can be shown as continuous;
+        #'   it is numeric from then on, so shown as categories again its
+        #'   labels are the numbers. The
         #'   viewer's "treat as" menu in the cells panel sets the same. Rules
         #'   on the column are dropped, and the metadata is sent again.
         #'   The setting is kept for later `push_metadata()` calls, unless
@@ -569,9 +572,9 @@ LensViewer <- R6::R6Class("LensViewer",
             entry <- private$meta_entry(column)
             if (is.null(entry))
                 stop("[LensViewer] no metadata column '", column, "'", call. = FALSE)
-            if (!isTRUE(entry$numeric))
-                stop("[LensViewer] '", column, "' is not numeric; only numeric columns ",
-                    "change type", call. = FALSE)
+            if (!isTRUE(entry$numeric) && !(isTRUE(entry$number_text) && type == "continuous"))
+                stop("[LensViewer] '", column, "' is not numeric; only numeric columns, ",
+                    "and text columns whose values are all numbers, change type", call. = FALSE)
             if (entry$kind != type) {
                 re <- .retype_meta(private$meta_dir(), entry, type,
                     private$meta_values[[column]])
@@ -581,6 +584,50 @@ LensViewer <- R6::R6Class("LensViewer",
                 private$publish_meta(list(msg = msg), drop_rules_on = column)
             }
             private$col_types[[column]] <- type
+            invisible(self)
+        },
+
+        #' @description What the object shown holds that `pull()` can add to
+        #'   the viewer's metadata: one row per source and item, from the
+        #'   cell metadata, expression matrices, spatial enrichments and dim
+        #'   reductions of the spatial unit shown. Listed when the object is
+        #'   loaded; the viewer's Data panel shows the same.
+        #' @returns A data.frame with columns `source` (an id), `slot`,
+        #'   `feat_type`, `name` (the matrix, enrichment or reduction; `NA`
+        #'   for cell metadata), `item` and `key` (the item's key, which
+        #'   `color_by()` takes).
+        catalog = function() {
+            .catalog_table(private$need_catalog("LensViewer$catalog"))
+        },
+
+        #' @description Add values from the object shown to the viewer's
+        #'   metadata: one [GiottoClass::spatValues()] call, run as a job (see
+        #'   `jobs()`) over the object the jobs' process holds. Pulled columns are
+        #'   added to the metadata already shown, replacing a column of the
+        #'   same name; they belong to the viewer, not to the object. The
+        #'   viewer's Data panel pulls the same way.
+        #'
+        #'   An item pulled from two sources at once is named
+        #'   `<source>_<item>`; dim reduction axes are named
+        #'   `<reduction>_<axis>`, as `push_metadata()` names them.
+        #' @param x Item names, each in one source only, or rows of
+        #'   `catalog()`, with a `type` column if wanted
+        #' @param types How the viewer treats each item: a named list or
+        #'   vector, item -> `"categorical"` or `"continuous"` (see
+        #'   `set_column_type()`). Left out, as the values are.
+        #' @param wait Whether to wait for the pull to end. `FALSE` returns
+        #'   at once with the job's id (for `cancel_job()`); the columns are
+        #'   added when it ends.
+        #' @returns The viewer, invisibly; with `wait = FALSE`, the job's id
+        pull = function(x, types = NULL, wait = TRUE) {
+            site <- "LensViewer$pull"
+            items <- .pull_items(private$need_catalog(site), x, types)
+            if (!isTRUE(wait)) return(invisible(private$pull_items(items, function(r)
+                if (r$state == "error") warning("[", site, "] ", r$message, call. = FALSE))))
+            out <- NULL
+            private$pull_items(items, function(r) out <<- r)
+            while (is.null(out)) later::run_now(0.05)
+            if (out$state != "done") stop("[", site, "] ", out$message, call. = FALSE)
             invisible(self)
         },
 
@@ -649,10 +696,21 @@ LensViewer <- R6::R6Class("LensViewer",
             private$request("set_view", list(target = target, zoom = zoom, bounds = bounds))
         },
 
-        #' @description Colour cells by a pushed metadata column (`NULL` for none)
-        #' @param column Column name
+        #' @description Colour cells by a metadata column, or by one item of
+        #'   the object shown (a gene, an enrichment or dim reduction column,
+        #'   a cell metadata column of the object) without adding it to the
+        #'   metadata. `NULL` for none.
+        #' @param column A metadata column name; an item key (the `key`
+        #'   column of `catalog()`); or one row of `catalog()`
         color_by = function(column = NULL) {
-            private$request("set_color_by", list(column = column))
+            site <- "LensViewer$color_by"
+            if (is.data.frame(column)) {
+                if (nrow(column) != 1L || !all(c("source", "item") %in% names(column)))
+                    stop("[", site, "] `column` must be one row of catalog()", call. = FALSE)
+                column <- .item_keys(private$need_catalog(site), column)
+            }
+            item <- if (.is_item_key(column)) private$read_item(column, site)
+            private$request("set_color_by", Filter(Negate(is.null), list(column = column, item = item)))
             invisible(self)
         },
 
@@ -689,22 +747,35 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description Set the color scale of a continuous metadata column:
-        #'   a preset, or custom colors spaced evenly from the column's
-        #'   minimum to its maximum. The viewer's legend sets the same values.
-        #'   `NULL` arguments leave a setting as is.
-        #' @param column Continuous column; `NULL` for the column cells are
-        #'   colored by
-        #' @param preset One of `"blue-red"` (the default), `"viridis"`,
-        #'   `"magma"`, `"inferno"`, `"plasma"`, `"cividis"`, `"turbo"`,
-        #'   `"gray"`, `"blue-white-red"`
+        #' @description Set the color scale of a continuous metadata column
+        #'   or of the gene, with the options of Giotto's plots
+        #'   (`gradient_style`, `cell_color_gradient`, `gradient_midpoint`,
+        #'   `gradient_limits`): a divergent scale centers its colors on a
+        #'   midpoint (default the median), a sequential one runs them from the
+        #'   low limit to the high one. Colors are a preset or custom ones,
+        #'   spaced evenly; values beyond the limits take the end colors. The
+        #'   default is Giotto's: divergent, `"blue-white-red"`; a sequential
+        #'   scale without a preset is `"viridis"`. Every gene shares one scale.
+        #'   The viewer's legend sets the same values. `NULL` arguments leave a
+        #'   setting as is.
+        #' @param column Continuous column, or `"@gene"` for the scale of the
+        #'   gene of `color_by_gene()`; `NULL` for what cells are colored by
+        #' @param preset Divergent: `"blue-white-red"`, `"RdBu"`, `"PuOr"`,
+        #'   `"PRGn"`; sequential: `"viridis"`, `"magma"`, `"inferno"`,
+        #'   `"plasma"`, `"cividis"`, `"turbo"`, `"gray"`, `"blue-red"`. Either
+        #'   kind works with either style
         #' @param colors 2 to 9 colors (names or hex strings), low to high;
         #'   sets a custom scale
         #' @param reverse `TRUE` to run the scale high to low
-        #' @param reset `TRUE` to return the column to the default scale first
+        #' @param style `"divergent"` or `"sequential"`
+        #' @param midpoint Value at the middle color of a divergent scale;
+        #'   `NA` for the median
+        #' @param limits `c(low, high)`; `NA` for the data range
+        #' @param reset `TRUE` to return to the default scale first
         #' @returns The column styled, invisibly
         set_color_scale = function(column = NULL, preset = NULL, colors = NULL,
-                                   reverse = NULL, reset = FALSE) {
+                                   reverse = NULL, style = NULL, midpoint = NULL,
+                                   limits = NULL, reset = FALSE) {
             if (!is.null(column) && (!is.character(column) || length(column) != 1L))
                 stop("[LensViewer] `column` must be one column name", call. = FALSE)
             if (!is.null(preset) && (!is.character(preset) || length(preset) != 1L))
@@ -715,12 +786,27 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(reverse) && (!is.logical(reverse) || length(reverse) != 1L ||
                     is.na(reverse)))
                 stop("[LensViewer] `reverse` must be TRUE or FALSE", call. = FALSE)
+            if (!is.null(style))
+                style <- match.arg(style, c("divergent", "sequential"))
+            if (!is.null(midpoint)) {
+                if (length(midpoint) != 1L || !(is.na(midpoint) || is.numeric(midpoint)))
+                    stop("[LensViewer] `midpoint` must be one number, or NA", call. = FALSE)
+                midpoint <- if (is.na(midpoint)) "auto" else as.numeric(midpoint)
+            }
+            if (!is.null(limits)) {
+                if (length(limits) == 1L && is.na(limits)) limits <- "auto"
+                else if (!is.numeric(limits) || length(limits) != 2L || anyNA(limits) ||
+                         limits[1L] >= limits[2L])
+                    stop("[LensViewer] `limits` must be c(low, high) with low < high, or NA",
+                        call. = FALSE)
+                else limits <- as.list(as.numeric(limits))
+            }
             if (!is.null(colors))
                 colors <- lapply(unname(colors), function(cl)
                     as.list(as.integer(grDevices::col2rgb(cl)[, 1L])))
-            r <- private$request("set_color_scale", list(column = column,
-                preset = preset, colors = colors, reverse = reverse,
-                reset = isTRUE(reset)))
+            r <- private$request("set_color_scale", list(column = column, style = style,
+                preset = preset, colors = colors, reverse = reverse, midpoint = midpoint,
+                limits = limits, reset = isTRUE(reset)))
             invisible(r$column)
         },
 
@@ -815,6 +901,25 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Set the color selected cells draw in, in the spatial
+        #'   view (dots, and outlines once zoomed in) and in scatter panels.
+        #'   Part of the saved config (`state()$config$selectionColor`).
+        #' @param color Colour, as a name or hex string (`"#00e5ff"`);
+        #'   `NULL` goes back to the `selection_color` preference (see
+        #'   [lens_preferences()]), yellow unless set
+        set_selection_color = function(color = NULL) {
+            if (is.null(color)) {
+                private$request("set_selection_color", list(reset = TRUE))
+                return(invisible(self))
+            }
+            if (!is.character(color) || length(color) != 1L)
+                stop("[LensViewer] `color` must be one color name or hex string",
+                    call. = FALSE)
+            color <- as.integer(grDevices::col2rgb(color)[, 1L])
+            private$request("set_selection_color", list(color = as.list(color)))
+            invisible(self)
+        },
+
         #' @description Show the viewer's panels and controls dark or light.
         #'   The spatial view and scatter plots stay dark in both: their
         #'   colors (the selection, uncolored cells, image channels) are
@@ -825,6 +930,66 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.character(theme) || length(theme) != 1L || !theme %in% c("dark", "light"))
                 stop("[LensViewer] `theme` must be \"dark\" or \"light\"", call. = FALSE)
             private$request("set_theme", list(theme = theme))
+            invisible(self)
+        },
+
+        #' @description Add an image file to the viewer. It is shown and
+        #'   listed in the images and register panels, where it can be
+        #'   registered by landmarks
+        #'   (`register_image()`). Every connected tab opens it; tabs that
+        #'   connect later, and reloads, open it too. It belongs to the
+        #'   object shown and counts as Lens work for `set_object()`. The
+        #'   "add image" button of the images panel opens a file dialog on
+        #'   the machine R runs on and calls this with the chosen
+        #'   file, after a choice of image type; option
+        #'   `GiottoLens.choose_file` (a function returning a path) replaces
+        #'   the dialog.
+        #' @param file Path to a TIFF file the viewer can read by tile (see
+        #'   [launch_lens()] `image_files`)
+        #' @param name Image name; default the file name without its extension
+        #' @param type `"if"` (immunofluorescence) or `"he"` (H&E): drawn
+        #'   inside the data's extent. `"xenium"`: a 10x Xenium morphology
+        #'   image, read with Giotto's Xenium reader
+        #'   (`Giotto::importXenium()$load_image()`) and drawn in microns by
+        #'   the pixel size in the Xenium output folder's `experiment.xenium`.
+        #' @param timeout Seconds to wait for the viewer to open the image
+        #' @return The viewer, invisibly.
+        add_image = function(file, name = NULL, type = c("if", "he", "xenium"), timeout = 60) {
+            type <- match.arg(type)
+            private$need_object("LensViewer$add_image")
+            if (!is.character(file) || length(file) != 1L || is.na(file))
+                stop("[LensViewer] `file` must be one file path", call. = FALSE)
+            if (!is.null(name) && (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(name)))
+                stop("[LensViewer] `name` must be one non-empty string", call. = FALSE)
+            files <- .check_image_files(stats::setNames(file, name %||% ""),
+                taken = private$image_names, caller = "LensViewer")
+            if (!.is_tiff(files[[1L]]))
+                stop("[LensViewer] '", file, "' is not a TIFF file", call. = FALSE)
+            imgs <- if (type == "xenium")
+                .image_entries(stats::setNames(list(.xenium_image_file(files[[1L]], names(files))),
+                    names(files)), first = length(private$routes$images))
+            else .image_entries(list(), files, first = length(private$routes$images))
+            if (!length(imgs$entries))
+                stop("[LensViewer] '", file, "' cannot be shown", call. = FALSE)
+            entry <- imgs$entries[[1L]]
+            k <- names(imgs$files)[[1L]]
+            private$routes$images[[k]] <- normalizePath(imgs$files[[k]], mustWork = TRUE)
+            if (self$connected()) {
+                r <- tryCatch(private$request("add_image", list(entry = entry), timeout = timeout),
+                    error = function(e) e)
+                if (inherits(r, "error")) {
+                    private$routes$images[[k]] <- NULL
+                    stop("[LensViewer] the viewer could not open '", file, "': ",
+                        sub("^\\[LensViewer\\] (add_image: )?", "", conditionMessage(r)), call. = FALSE)
+                }
+                json <- .encode_ws_message("add_image", list(entry = entry))
+                for (ws in as.list(private$conns)[-1L]) try(ws$send(json), silent = TRUE)
+            }
+            private$image_names <- c(private$image_names, entry$name)
+            private$image_files[[entry$name]] <- imgs$sources[[entry$name]]
+            private$added_images <- c(private$added_images, list(entry))
+            private$write_added_images()
+            private$add_log("add_image", paste0(entry$name, " (", type, ") = ", imgs$sources[[entry$name]]))
             invisible(self)
         },
 
@@ -1094,6 +1259,156 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self$set_view(bounds = c(x[1L] - px, x[2L] + px, y[1L] - py, y[2L] + py)))
         },
 
+        #' @description Save cells as a named region, for `compare_regions()`
+        #'   and the viewer's Regions panel, whose "save selection" button
+        #'   does the same. Regions belong to the object shown and count as
+        #'   Lens work for `set_object()`.
+        #' @param name Region name; a region of that name is replaced
+        #' @param ids Cell IDs (default: the selection)
+        #' @returns The region's cell IDs, invisibly
+        save_region = function(name, ids = self$selection) {
+            site <- "LensViewer$save_region"
+            private$need_object(site)
+            name <- .check_region_name(name, site)
+            ids <- unique(as.character(ids))
+            known <- ids %in% private$cell_ids
+            if (!all(known))
+                warning("[", site, "] ", sum(!known), " ID(s) are not cells in the viewer ",
+                    "and were left out", call. = FALSE)
+            ids <- ids[known]
+            if (!length(ids))
+                stop("[", site, "] no cells to save; select cells first", call. = FALSE)
+            private$region_sets[[name]] <- ids
+            private$add_log("region", list(name = name, cells = length(ids)))
+            private$send_regions(open = TRUE)
+            invisible(ids)
+        },
+
+        #' @description The saved regions
+        #' @param name A region name: return its cell IDs instead
+        #' @returns A data.frame of region names and cell counts, or the cell
+        #'   IDs of region `name`
+        regions = function(name = NULL) {
+            if (!is.null(name)) return(private$region_ids(name, "LensViewer$regions"))
+            r <- private$region_sets
+            data.frame(name = names(r) %||% character(), cells = vapply(r, length, 1L),
+                row.names = NULL)
+        },
+
+        #' @description Remove a saved region
+        #' @param name Region name
+        remove_region = function(name) {
+            private$region_ids(name, "LensViewer$remove_region")
+            private$region_sets[[name]] <- NULL
+            private$send_regions()
+            invisible(self)
+        },
+
+        #' @description Select the cells of a saved region (selection source
+        #'   `"r"`)
+        #' @param name Region name
+        select_region = function(name) {
+            self$select(lens_cells(private$region_ids(name, "LensViewer$select_region")))
+        },
+
+        #' @description Differential expression between two saved regions, or
+        #'   a region and every other cell, with [Giotto::findScranMarkers()].
+        #'   Cells in both regions are left out. Runs as a job (see `jobs()`)
+        #'   over the object the jobs' process holds. The result is docked as
+        #'   a volcano plot (`DE: a vs b`); a click on a gene colours the cells
+        #'   by it. The viewer's Regions panel runs the same comparison.
+        #' @param a Region name
+        #' @param b Region name; `NULL` for every cell not in `a`
+        #' @param values Expression values (a name of the object's
+        #'   expression); default `"normalized"`
+        #' @param wait Whether to wait for the result. `FALSE` returns the
+        #'   job's id at once; the table is then read with `de_results()`.
+        #' @returns A data.frame, one row per gene in order of FDR: `gene`,
+        #'   `logFC` (`a` vs `b`), `p_value`, `FDR`; with `wait = FALSE`, the
+        #'   job's id, invisibly
+        compare_regions = function(a, b = NULL, values = NULL, wait = TRUE) {
+            site <- "LensViewer$compare_regions"
+            out <- NULL
+            id <- private$compare(a, b, values, site, function(r) out <<- r)
+            if (!isTRUE(wait)) return(invisible(id))
+            while (is.null(out)) later::run_now(0.05)
+            if (out$state != "done") stop("[", site, "] ", out$message, call. = FALSE)
+            private$de[[out$result]]$table
+        },
+
+        #' @description Results of `compare_regions()`
+        #' @param id A result id (`"de-1"`, ...): return its table instead
+        #' @returns A data.frame with one row per comparison: `id`, `a`, `b`,
+        #'   cell counts, `values` and the number of genes at FDR < 0.05; or
+        #'   the table of comparison `id`
+        de_results = function(id = NULL) {
+            if (!is.null(id)) {
+                r <- private$de[[id]]
+                if (is.null(r))
+                    stop("[LensViewer$de_results] no result '", id, "'; results: ",
+                        paste(names(private$de), collapse = ", "), call. = FALSE)
+                return(r$table)
+            }
+            d <- private$de
+            data.frame(id = names(d) %||% character(),
+                a = vapply(d, `[[`, "", "a"), b = vapply(d, `[[`, "", "b"),
+                cells_a = vapply(d, function(r) as.integer(r$cells_a), 1L),
+                cells_b = vapply(d, function(r) as.integer(r$cells_b), 1L),
+                values = vapply(d, `[[`, "", "values"),
+                significant = vapply(d, function(r) sum(r$table$FDR < 0.05, na.rm = TRUE), 1L),
+                row.names = NULL)
+        },
+
+        #' @description The analysis of the object shown (adr/0021): a
+        #'   [LensAnalysis], made by the first call and kept until another
+        #'   object is shown. The viewer's Analysis panel shows it, and opens
+        #'   when it is made here; opening the panel from the viewer's "+" menu
+        #'   makes it too. Nothing runs until a step is run or a parameter set.
+        #'   Arguments given to a later call apply to the analysis there is.
+        #' @param params Parameter values: a list by step of lists by
+        #'   parameter, e.g. `list(filter = list(min_det_feats_per_cell = 20))`.
+        #'   Menu parameters take one of their choices; number parameters
+        #'   (thresholds, PCs, resolution, ...) any number in their range, typed
+        #'   in the viewer the same way. Parameters left out take Giotto's
+        #'   defaults; on GiottoDisk expression, z-score scaling and the
+        #'   normalization methods other than `"standard"` are not offered.
+        #' @param cell_markers Marker genes for the Automatic types step: a
+        #'   named list (cell type -> genes), a data.frame with the cell type in
+        #'   its first column and a gene in its second, or the path of such a
+        #'   CSV file. Left out, the step is blocked until one is given.
+        #' @param analyses Ids of the analyses to include besides
+        #'   Preprocessing; see [LensAnalysis] `$catalog()`.
+        #' @param settings A JSON file written by [LensAnalysis]
+        #'   `$write_settings()`; its saved settings are listed in the viewer,
+        #'   ready to restore.
+        #' @param threads Threads for UMAP and data.table in the jobs' process,
+        #'   for a new analysis. Default: preference `threads` (see
+        #'   [lens_preferences()]), else 4.
+        #' @param network_dir Folder where spatial networks are saved, for a
+        #'   new analysis. A network is read from it when an analysis asks for
+        #'   one with the same cells, cell coordinates and network settings, in
+        #'   this or a later session. `NULL` keeps networks for the session
+        #'   only. Default: option `GiottoLens.network_dir`, else preference
+        #'   `network_dir` (see [lens_preferences()]), else `networks` in
+        #'   [tools::R_user_dir()]'s cache folder for GiottoLens.
+        #' @returns The [LensAnalysis]
+        analysis = function(params = NULL, cell_markers = NULL, analyses = NULL, settings = NULL,
+                            threads = .lens_pref("threads"), network_dir = .default_network_dir()) {
+            a <- private$lens_analysis
+            if (is.null(a)) {
+                a <- private$start_analysis("LensViewer$analysis", params = params,
+                    cell_markers = cell_markers, analyses = analyses %||% character(),
+                    threads = threads, network_dir = network_dir)
+                a$announce(open = TRUE)
+            } else {
+                for (s in names(params)) do.call(a$set, c(list(s), params[[s]]))
+                if (!is.null(cell_markers)) a$cell_markers(cell_markers)
+                for (id in setdiff(analyses, names(a$analyses()))) a$add(id)
+            }
+            if (!is.null(settings)) a$read_settings(settings)
+            a
+        },
+
         #' @description Show a Vega-Lite chart as a docked panel, for example
         #'   from `GiottoVisuals::renderSpec(..., engine = "vegalite")`. Rows
         #'   with a `cell_ID` are linked to the viewer: they dim when not
@@ -1229,10 +1544,34 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Jobs running in the viewer's background R process
+        #'   (adr/0025), one row each. The process starts with the first job,
+        #'   which waits while it loads its packages and the object shown, and
+        #'   stops with the viewer; later jobs on the same object start at once.
+        #' @returns A data.frame with columns `id`, `label`, `started`, and
+        #'   `done` and `total` (progress; `NA` for a job that reports none)
+        jobs = function() {
+            js <- unname(as.list(private$running_jobs))
+            num <- function(f) vapply(js, function(j) as.numeric(j$progress[[f]] %||% NA), 0)
+            data.frame(id = vapply(js, function(j) j$id, 0L),
+                label = vapply(js, function(j) j$label, ""),
+                started = .POSIXct(vapply(js, function(j) as.numeric(j$started), 0)),
+                done = num("done"), total = num("total"), row.names = NULL)
+        },
+
+        #' @description Cancel a job. One not started yet is dropped; one
+        #'   running is interrupted (compiled code may finish its current call
+        #'   first). Its result is never applied.
+        #' @param id Job id, as `jobs()` lists it
+        #' @returns Whether the job was cancelled, invisibly
+        cancel_job = function(id) invisible(private$cancel(id)),
+
         #' @description Stop the server and remove this viewer's temp files.
         #'   The power button next to R's connection in the viewer does the
         #'   same; open tabs say the viewer is stopped.
         close = function() {
+            private$stop_jobs()
+            private$close_analysis()
             if (!is.null(private$server)) {
                 # Tabs stop trying to reconnect and say the viewer is stopped
                 if (self$connected()) {
@@ -1285,6 +1624,7 @@ LensViewer <- R6::R6Class("LensViewer",
         conn_load   = NULL,     # env: connection id -> the load its page came from
         image_names = character(),
         image_files = character(),  # image name -> the image's own file
+        added_images = list(),      # manifest entries of add_image(), in order
         cell_ids    = NULL,
         cells       = NULL,     # source, launch mark and whether it is drawn
         spat_unit   = NULL,
@@ -1295,6 +1635,142 @@ LensViewer <- R6::R6Class("LensViewer",
         cached_meta = NULL,     # the load_metadata payload: columns, types, levels, files
         meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
+        catalog_data = NULL,    # what the object shown can pull (.lens_catalog())
+        # ── Its analysis (R/analysis.R) ──
+        lens_analysis = NULL,
+        owned = list(),         # metadata columns by owner (the analysis), own_columns()
+
+        start_analysis = function(site, ...) {
+            cat <- private$need_catalog(site)
+            if (!requireNamespace("Giotto", quietly = TRUE))
+                stop("[", site, "] an analysis needs the Giotto package", call. = FALSE)
+            expr <- Filter(function(s) s$slot == "expression", cat$sources)
+            ft <- private$feat_type %||% if (length(expr)) expr[[1L]]$feat_type else "rna"
+            private$lens_analysis <- LensAnalysis$new(self, self$gobject(),
+                host = private$analysis_host(), spat_unit = cat$spat_unit, feat_type = ft, ...)
+            private$lens_analysis
+        },
+        # What the analysis is given of the viewer
+        analysis_host = function() list(
+            root = paste0("snapshot:", private$snapshot),
+            start_job = function(label, fun, args, progress = FALSE, on_end = NULL)
+                private$start_job(label, fun, args, progress = progress, on_end = on_end),
+            cancel = function(id, why) private$cancel(id, why),
+            progress_file = function(id) private$running_jobs[[as.character(id)]]$file %||% NA_character_,
+            columns = function(df) private$own_columns("analysis", df),
+            color_item = function(key, done) private$color_item(key, done)),
+        close_analysis = function() {
+            a <- private$lens_analysis
+            private$lens_analysis <- NULL
+            if (!is.null(a)) a$close()
+        },
+        # A message for the analysis from a tab: `analysis_open` makes one
+        analysis_message = function(ws, type, dat) tryCatch({
+            if (identical(type, "analysis_open")) {
+                if (is.null(private$lens_analysis)) private$start_analysis("LensViewer")
+                private$lens_analysis$announce()
+            } else if (!is.null(private$lens_analysis)) private$lens_analysis$handle(type, dat)
+        }, error = function(e) {
+            private$add_log("error", list(where = type, message = conditionMessage(e)))
+            warning("[LensViewer] ", .console_text(conditionMessage(e)), call. = FALSE)
+        }),
+        # The metadata columns `owner` keeps in the metadata shown, beside
+        # those pushed and pulled: `df` (cell_ID and its columns now) replaces
+        # its previous set, and rules on columns it no longer has are dropped
+        own_columns = function(owner, df) {
+            cols <- setdiff(names(df), "cell_ID")
+            gone <- setdiff(private$owned[[owner]] %||% character(), cols)
+            msg <- private$cached_meta %||% list(n = length(private$cell_ids), columns = list())
+            if (length(gone)) msg$columns <- Filter(function(cl) !cl$name %in% gone, msg$columns)
+            if (length(cols)) {
+                out <- .write_metadata(df, private$meta_dir(), private$cell_ids,
+                    types = unlist(private$col_types), site = "LensViewer")
+                private$col_types[out$dropped] <- NULL
+                for (cn in names(out$values)) private$meta_values[cn] <- list(out$values[[cn]])
+                msg <- .merge_meta(msg, out$msg)
+            }
+            private$meta_values[gone] <- NULL
+            private$owned[[owner]] <- cols
+            private$publish_meta(list(msg = msg), drop_rules_on = gone)
+            invisible(cols)
+        },
+        # Colour every tab's cells by item `key` once it is read; `done(r)`
+        # gets the read's answer
+        color_item = function(key, done = NULL) {
+            private$need_item(key, "LensViewer", function(r) {
+                if (is.null(r$error) && self$connected())
+                    private$broadcast(.encode_ws_message("set_color_by",
+                        list(column = key, item = r$data)))
+                if (!is.null(done)) done(r)
+            })
+        },
+        # ── Regions and their comparisons (R/regions.R) ──
+        region_sets = list(),   # region name -> cell IDs
+        de          = list(),   # compare_regions() results by id
+        de_seq      = 0L,
+
+        region_ids = function(name, site) {
+            if (!is.character(name) || length(name) != 1L || is.null(private$region_sets[[name]]))
+                stop("[", site, "] no region '", paste(name, collapse = ", "), "'; regions: ",
+                    if (length(private$region_sets)) paste(names(private$region_sets),
+                        collapse = ", ") else "none (save one with save_region())",
+                    call. = FALSE)
+            private$region_sets[[name]]
+        },
+        regions_msg = function(open = FALSE) {
+            list(regions = unname(lapply(names(private$region_sets), function(n)
+                list(name = n, n = length(private$region_sets[[n]])))), open = open)
+        },
+        send_regions = function(open = FALSE) {
+            if (self$connected())
+                private$broadcast(.encode_ws_message("regions", private$regions_msg(open)))
+        },
+        # Start a comparison job; `done` gets its end, with the result's id.
+        # Returns the job's id.
+        compare = function(a, b, values, site, done, ref = NULL) {
+            if (!requireNamespace("Giotto", quietly = TRUE))
+                stop("[", site, "] comparing regions needs the Giotto package", call. = FALSE)
+            ids_a <- private$region_ids(a, site)
+            ids_b <- if (!is.null(b)) private$region_ids(b, site)
+            if (identical(a, b)) stop("[", site, "] `a` and `b` are the same region", call. = FALSE)
+            src <- .de_source(private$need_catalog(site), values, private$feat_type, site)
+            b_label <- b %||% "rest"
+            what <- sprintf("%s vs %s", a, b_label)
+            private$start_job(paste("DE", what), .region_de, list(a = ids_a, b = ids_b,
+                values = src$name, spat_unit = private$catalog_data$spat_unit,
+                feat_type = src$feat_type), ref = ref, on_end = done,
+                apply = function(r) {
+                    tab <- r$table[order(r$table$FDR, -abs(r$table$logFC)), , drop = FALSE]
+                    rownames(tab) <- NULL
+                    private$de_seq <- private$de_seq + 1L
+                    id <- paste0("de-", private$de_seq)
+                    private$de[[id]] <- list(a = a, b = b_label, cells_a = r$n_a,
+                        cells_b = r$n_b, cells_both = r$n_both, values = src$name,
+                        feat_type = src$feat_type, table = tab)
+                    v <- .de_volcano(tab, a, b_label)
+                    suppressMessages(self$push_panel(v$spec, data = v$data, id = id,
+                        title = paste0("DE: ", what,
+                            if (!identical(src$name, "normalized")) paste0(" (", src$name, ")"))))
+                    message(sprintf("[LensViewer] %s: %s and %s cells, %d gene(s) at FDR < 0.05%s",
+                        what, format(r$n_a, big.mark = ","), format(r$n_b, big.mark = ","),
+                        sum(tab$FDR < 0.05, na.rm = TRUE),
+                        if (r$n_both) sprintf(" (%d cell(s) in both left out)", r$n_both) else ""))
+                    id
+                })
+        },
+        # A click on a gene in a volcano plot (`panel_pick`): colour that
+        # page's cells by it, once its item is read
+        pick_gene = function(ws, id, gene) {
+            de <- private$de[[id]]
+            if (is.null(de) || !is.character(gene) || length(gene) != 1L || !nzchar(gene)) return()
+            key <- .item_key("expression", de$feat_type, gene, name = de$values)
+            private$need_item(key, "LensViewer", function(r) {
+                if (!is.null(r$error)) return(private$add_log("error",
+                    list(where = "panel_pick", message = r$error)))
+                try(ws$send(.encode_ws_message("set_color_by", list(column = key, item = r$data))),
+                    silent = TRUE)
+            })
+        },
 
         meta_entry = function(name) {
             for (cl in private$cached_meta$columns) if (identical(cl$name, name)) return(cl)
@@ -1307,17 +1783,123 @@ LensViewer <- R6::R6Class("LensViewer",
             if (is.null(entry)) return(NULL)
             .read_meta_column(private$meta_dir(), entry)
         },
+        need_catalog = function(site) {
+            private$need_object(site)
+            if (is.null(private$catalog_data))
+                stop("[", site, "] the viewer shows layers, not a giotto object: ",
+                    "there is nothing to pull from", call. = FALSE)
+            private$catalog_data
+        },
+        # Pull `items` (from .pull_items()) with one spatValues() call, in a
+        # job, and add them to the metadata shown. `done` gets the job's end
+        # (R/jobs.R), its result the columns added. Returns the job's id.
+        pull_items = function(items, done, ref = NULL) {
+            plan <- .pull_plan(private$catalog_data, items)
+            n <- nrow(plan$cols)
+            private$start_job(paste("pull", n, if (n == 1L) "item" else "items"), .plan_values,
+                list(keys = plan$keys), apply = function(vals) private$add_pulled(vals, plan),
+                ref = ref, on_end = done)
+        },
+        add_pulled = function(vals, plan) {
+            site <- "LensViewer$pull"
+            got <- plan$cols$result %in% names(vals)
+            if (!all(got))
+                warning("[", site, "] not found in the object: ",
+                    paste(plan$cols$result[!got], collapse = ", "), call. = FALSE)
+            cols <- plan$cols[got, , drop = FALSE]
+            if (!nrow(cols)) stop("[", site, "] nothing was pulled", call. = FALSE)
+            vals <- vals[c("cell_ID", cols$result)]
+            names(vals) <- c("cell_ID", cols$column)
+            # A type given here applies over one kept from set_column_type()
+            given <- stats::setNames(cols$type, cols$column)
+            types <- c(unlist(private$col_types), given[!is.na(given)])
+            types <- types[!duplicated(names(types), fromLast = TRUE)]
+            out <- .write_metadata(vals, private$meta_dir(), private$cell_ids,
+                types = types, site = site)
+            rm(vals)
+            added <- vapply(out$msg$columns, `[[`, "", "name")
+            replaced <- intersect(added, private$meta_names())
+            private$col_types[out$dropped] <- NULL
+            for (cn in added) private$meta_values[cn] <- list(out$values[[cn]])
+            private$publish_meta(list(msg = .merge_meta(private$cached_meta, out$msg)),
+                drop_rules_on = replaced)
+            private$add_log("pull", paste(added, collapse = ", "))
+            message("[LensViewer] pulled ", length(added), " column(s): ",
+                paste(added, collapse = ", "))
+            added
+        },
 
         # The column files (one per column: the only copy of the metadata)
         meta_dir = function() file.path(private$session, "metadata"),
+        # Items read on their own (color_by() an item, the `item` ask): one
+        # file each, kept for the object shown; their entries by item key
+        items_dir = function() file.path(private$session, "items"),
+        item_files = list(),
+        item_reads = list(),    # by key: the job reading it and who waits for it
+        # An item's file entry for `done()` as list(data =) or list(error =):
+        # at once if it was read, else once a job has read it. A second ask
+        # for an item being read waits for the same job.
+        need_item = function(key, site, done) {
+            hit <- private$item_files[[key]]
+            if (!is.null(hit)) return(done(list(data = hit)))
+            if (!is.null(private$item_reads[[key]])) {
+                private$item_reads[[key]]$waits <- c(private$item_reads[[key]]$waits, done)
+                return(invisible())
+            }
+            cat <- private$need_catalog(site)
+            ref <- .parse_item_key(key, site)
+            # An analysis's item names the step result it is read from
+            # (adr/0021); others, a catalog source of the snapshot shown
+            if (startsWith(ref$method %||% "", "analysis:")) {
+                job <- if (!is.null(private$lens_analysis)) private$lens_analysis$item_job(key)
+                if (is.null(job))
+                    stop("[", site, "] '", key, "' is not an item of the analysis", call. = FALSE)
+                res <- "item"
+            } else {
+                src <- .catalog_source_for(cat, ref, site)
+                plan <- .pull_plan(cat, data.frame(source = src$id, item = ref$item,
+                    type = NA_character_))
+                res <- plan$cols$result
+                job <- list(label = paste("read", ref$item), fun = .plan_values,
+                    args = list(keys = plan$keys))
+            }
+            id <- private$start_job(job$label, job$fun, job$args,
+                apply = function(vals) {
+                    if (!res %in% names(vals))
+                        stop("'", ref$item, "' was not found in the object", call. = FALSE)
+                    out <- .write_metadata(data.frame(cell_ID = vals$cell_ID, item = vals[[res]]),
+                        private$items_dir(), private$cell_ids, site = site, served = "items")
+                    entry <- out$msg$columns[[1L]]
+                    entry$name <- key
+                    private$item_files[[key]] <- entry
+                    entry
+                },
+                on_end = function(r) {
+                    read <- private$item_reads[[key]]
+                    if (!identical(read$job, id)) return()
+                    private$item_reads[[key]] <- NULL
+                    ans <- .job_answer(r)
+                    for (w in read$waits) w(ans)
+                })
+            private$item_reads[[key]] <- list(job = id, waits = list(done))
+            invisible()
+        },
+        # need_item() for R, waiting
+        read_item = function(key, site) {
+            out <- NULL
+            private$need_item(key, site, function(r) out <<- r)
+            while (is.null(out)) later::run_now(0.05)
+            if (!is.null(out$error)) stop("[", site, "] ", out$error, call. = FALSE)
+            out$data
+        },
         # Adopt a payload (from .write_metadata(), or with a column rewritten
         # by .retype_meta()) and send it to every tab; `drop_rules_on` drops
-        # rules on that column first. Files neither it nor the previous
+        # rules on those columns first. Files neither it nor the previous
         # payload points to are deleted.
         publish_meta = function(out, drop_rules_on = NULL) {
             if (!is.null(drop_rules_on) && length(private$rule_set)) {
                 on_col <- vapply(private$rule_set, function(r)
-                    identical(r$space, drop_rules_on), logical(1L))
+                    isTRUE(r$space %in% drop_rules_on), logical(1L))
                 if (any(on_col)) {
                     for (src in names(private$rule_set)[on_col])
                         private$broadcast(private$rule_message(
@@ -1378,6 +1960,33 @@ LensViewer <- R6::R6Class("LensViewer",
             r$data
         },
 
+        # session/images_added.json: the images added after launch, opened
+        # by the viewer after the manifest's
+        write_added_images = function() {
+            jsonlite::write_json(private$added_images,
+                file.path(private$session, "images_added.json"),
+                auto_unbox = TRUE, digits = NA, null = "null")
+        },
+
+        # The "add image" button: a file dialog, then add_image(). Errors go
+        # to the tab that asked.
+        choose_image = function(ws, type = "if") {
+            r <- tryCatch({
+                type <- match.arg(type, c("if", "he", "xenium"))
+                file <- .choose_image_file()
+                if (is.null(file)) list(cancelled = TRUE)
+                else {
+                    self$add_image(file, type = type)
+                    list(added = utils::tail(private$image_names, 1L))
+                }
+            }, error = function(e) {
+                private$add_log("error", list(where = "add_image", message = conditionMessage(e)))
+                warning(.console_text(conditionMessage(e)), call. = FALSE)
+                list(error = sub("^\\[LensViewer\\] ", "", conditionMessage(e)))
+            })
+            try(ws$send(.encode_ws_message("add_image_result", r)), silent = TRUE)
+        },
+
         drop_panel_file = function(id) {
             url <- private$pushed[[id]]$data_url
             if (!is.null(url)) unlink(file.path(private$session, sub("^session/", "", url)))
@@ -1405,13 +2014,18 @@ LensViewer <- R6::R6Class("LensViewer",
         # it has (adr/0017).
         load = function(object) {
             if (!is.null(object$x)) object <- private$handover(object)
+            # Their results would land on the next object; the daemon keeps
+            # the old object until a job asks for another
+            for (id in names(private$running_jobs)) private$cancel(id, "the object shown changed")
+            catalog <- if (!is.null(object$x)) .lens_catalog(object$x, object$spat_unit)
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
             cl <- .export_session(object$layers$gpoints, object$layers$gpolygons,
                 output = file.path(private$session, "manifest.json"),
                 transfer = private$transfer, images = imgs$entries,
                 locations = object$layers$locations, mark = object$mark,
-                load = private$load_seq + 1L, cells_file = cells_file)
+                load = private$load_seq + 1L, cells_file = cells_file,
+                catalog = !is.null(catalog))
             old <- setdiff(list.files(private$session, "^cells-[0-9]+\\.parquet$"), cells_file)
             unlink(file.path(private$session, old))
             private$clear_object()
@@ -1424,6 +2038,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cells       <- if (!is.null(cl$source)) cl[c("source", "mark", "marks")]
             private$spat_unit   <- object$spat_unit
             private$feat_type   <- object$feat_type
+            private$catalog_data <- catalog
             private$loaded      <- TRUE
             if (!is.null(private$project)) .add_recent(private$project@path)
             private$reload_tabs()
@@ -1521,14 +2136,25 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # A request from the page (`ask`), answered to that page only with
         # `answer` {id, data, error, code}. The start page lists projects and
-        # their snapshots and opens one (adr/0019).
+        # their snapshots and opens one (adr/0019); the Data panel lists
+        # what can be pulled and pulls it, which only a page showing the
+        # current object may do (adr/0017). An op that runs a job (an item,
+        # a pull) returns NULL and answers through `reply` when it ends.
         answer = function(ws, id, dat) {
-            res <- tryCatch(private$ask(dat), error = function(e)
-                list(error = .console_text(conditionMessage(e))))
-            try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
+            reply <- function(res) {
+                if (!is.null(res$error)) res$error <- .console_text(res$error)
+                try(ws$send(.encode_ws_message("answer", c(list(id = id), res))), silent = TRUE)
+            }
+            res <- if (isTRUE(dat$op %in% .lens_object_ops) && !private$conn_current(ws)) {
+                list(error = "the page shows an earlier object; reload it", code = "stale")
+            } else {
+                tryCatch(private$ask(dat, reply), error = function(e)
+                    list(error = conditionMessage(e)))
+            }
+            if (!is.null(res)) reply(res)
         },
 
-        ask = function(dat) {
+        ask = function(dat, reply) {
             str1 <- function(v) if (is.character(v) && length(v) == 1L && !is.na(v)) v
             switch(str1(dat$op) %||% "",
                 projects = {
@@ -1562,14 +2188,186 @@ LensViewer <- R6::R6Class("LensViewer",
                     message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
                     list(data = list(snapshot = private$snapshot))
                 },
+                catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
+                # One item's file, for a field that shows it (data/items.ts)
+                item = {
+                    private$need_item(str1(dat$key) %||% "", "LensViewer", reply)
+                    NULL
+                },
+                # keys: [{source, items: [...], types: [...]}], a type per item
+                # ("auto" for as the values are)
+                pull = {
+                    cat <- private$need_catalog("LensViewer")
+                    keys <- dat$keys
+                    if (!is.list(keys) || !length(keys))
+                        return(list(error = "nothing to pull"))
+                    rows <- do.call(rbind, lapply(keys, function(k) {
+                        items <- as.character(unlist(k$items))
+                        types <- as.character(unlist(k$types) %||% rep("auto", length(items)))
+                        if (length(types) != length(items))
+                            stop("[LensViewer] a type per item", call. = FALSE)
+                        data.frame(source = rep(as.integer(k$source %||% NA), length(items)),
+                            item = items, type = types)
+                    }))
+                    # `ref` names the job in its `job` messages, for the page to cancel it
+                    private$pull_items(.pull_items(cat, rows, site = "LensViewer"), function(r)
+                        reply(.job_answer(r, function(added) list(columns = as.list(added)))),
+                        ref = str1(dat$ref))
+                    NULL
+                },
+                # The Regions panel: save, remove, select, compare. A compare
+                # is answered when its job ends, with the result's id.
+                region = {
+                    name <- str1(dat$name) %||% ""
+                    switch(str1(dat$action) %||% "",
+                        save   = list(data = list(cells = length(self$save_region(name)))),
+                        remove = { self$remove_region(name); list(data = list()) },
+                        select = { self$select_region(name); list(data = list()) },
+                        compare = {
+                            b <- str1(dat$b)
+                            private$compare(str1(dat$a) %||% "", if (nzchar(b %||% "")) b,
+                                str1(dat$values), "LensViewer", ref = str1(dat$ref),
+                                function(r) reply(.job_answer(r, function(id) list(id = id))))
+                            NULL
+                        },
+                        list(error = "unknown region action"))
+                },
+                # A job the page started (its `job` messages carry the id)
+                cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
+                    private$cancel(dat$id))),
+                # The cell table's rows in view: IDs of cell indices (0-based).
+                # The page keys nothing by ID (adr/0002).
+                cell_ids = {
+                    i <- unlist(dat$cells)
+                    n <- length(private$cell_ids)
+                    if (!is.numeric(i) || !length(i) || length(i) > 5000L || anyNA(i) ||
+                            any(i != round(i) | i < 0 | i >= n))
+                        return(list(error = "`cells` must be up to 5000 cell indices"))
+                    list(data = list(ids = as.list(private$cell_ids[i + 1L])))
+                },
                 list(error = "unknown request")
             )
         },
 
         save_snapshot = function(src, x, keep) {
+            # qs2 when installed: on the Atera section it writes in 0.4 to 1 s
+            # where gzip RDS takes 5.4 s, and reads faster
             suppressMessages(GiottoDisk::snapshotSave(src, x, name = .lens_snapshot_name(src),
                 keep = keep, creator = "GiottoLens", session = private$session_id,
+                method = if (requireNamespace("qs2", quietly = TRUE)) "qs2" else "rds",
                 verbose = FALSE))
+        },
+
+        # Jobs (R/jobs.R, adr/0025)
+        job_profile  = NULL,     # the jobs' mirai compute profile, from the first job
+        running_jobs = list(),   # by id: an environment per job
+        job_seq      = 0L,
+
+        # Run `fun(g, ...)` (`args`) over the object shown in the jobs'
+        # daemon. On the main thread when it ends: `apply(value)` if it
+        # succeeded and the object shown is still the one it started from,
+        # then `on_end(list(state, result, message))` whatever happened
+        # (`state`: done, error or cancelled). Every tab hears of it as a
+        # `job` message carrying `ref`, the page's name for it, and with
+        # `progress = TRUE` how far it is (.lens_progress()). Returns its id.
+        start_job = function(label, fun, args = list(), apply = identity, ref = NULL,
+                             on_end = NULL, progress = FALSE) {
+            private$need_object("LensViewer")
+            if (is.null(private$project))
+                stop("[LensViewer] jobs need an object shown from a snapshot", call. = FALSE)
+            if (is.null(private$job_profile))
+                private$job_profile <- .job_daemon(paste0("giottolens-", self$port, "-", .rand_id(6L)))
+            id <- private$job_seq <- private$job_seq + 1L
+            job <- new.env(parent = emptyenv())
+            job$id <- id
+            job$label <- label
+            job$ref <- ref
+            job$load <- private$load_seq
+            job$started <- Sys.time()
+            job$cancelled <- FALSE
+            job$file <- if (isTRUE(progress)) {
+                dir.create(file.path(private$session, "jobs"), showWarnings = FALSE)
+                file.path(private$session, "jobs", paste0(id, ".progress"))
+            }
+            # .args, not `...`: kept out of the daemon's global environment,
+            # which keeps the object between jobs
+            job$m <- mirai::mirai(.jw_run(fun, args, path, name, progress), .args = list(
+                fun = .job_fun(fun), args = args, path = private$project@path,
+                name = private$snapshot_name(), progress = job$file), .compute = private$job_profile)
+            private$running_jobs[[as.character(id)]] <- job
+            private$job_message(job, "running")
+            if (!is.null(job$file)) private$poll_progress(job)
+            end <- function(state, result = NULL, msg = NULL) {
+                private$running_jobs[[as.character(id)]] <- NULL
+                if (!is.null(job$file)) unlink(paste0(job$file, c("", ".tmp")))
+                private$job_message(job, state, msg)
+                if (!is.null(on_end)) on_end(list(state = state, result = result, message = msg))
+            }
+            promises::then(job$m,
+                onFulfilled = function(value) {
+                    if (!identical(private$load_seq, job$load))
+                        return(end("cancelled", msg = "the object shown changed"))
+                    res <- tryCatch(list(ok = apply(value)), error = function(e) e)
+                    if (inherits(res, "error")) end("error", msg = conditionMessage(res))
+                    else end("done", result = res$ok)
+                },
+                # A cancel rejects too ("Operation canceled"): told apart by
+                # the job's own flag
+                onRejected = function(e) {
+                    if (job$cancelled) end("cancelled", msg = job$why)
+                    else end("error", msg = .job_error_text(e))
+                })
+            id
+        },
+        # start_job() and wait for it, pumping the event loop: its result, or
+        # an error naming `site`. Cancelled after `timeout` seconds.
+        run_job = function(site, label, fun, args = list(), apply = identity, timeout = Inf) {
+            out <- NULL
+            id <- private$start_job(label, fun, args, apply, on_end = function(r) out <<- r)
+            t0 <- Sys.time()
+            while (is.null(out)) {
+                if (as.numeric(Sys.time() - t0, units = "secs") > timeout)
+                    private$cancel(id, paste("timed out after", timeout, "s"))
+                later::run_now(0.05)
+            }
+            if (out$state != "done")
+                stop("[", site, "] ", label, " ", out$state, ": ", out$message, call. = FALSE)
+            out$result
+        },
+        # The job's progress file, while it runs
+        poll_progress = function(job) {
+            later::later(function() {
+                if (is.null(private$running_jobs[[as.character(job$id)]])) return()
+                p <- .read_progress(job$file)
+                if (!is.null(p) && !identical(p, job$progress)) {
+                    job$progress <- p
+                    private$job_message(job, "running")
+                }
+                private$poll_progress(job)
+            }, 0.25)
+        },
+        cancel = function(id, why = "cancelled") {
+            job <- private$running_jobs[[as.character(id)]]
+            if (is.null(job) || job$cancelled) return(FALSE)
+            job$cancelled <- TRUE
+            job$why <- why
+            isTRUE(mirai::stop_mirai(job$m))
+        },
+        job_message = function(job, state, msg = NULL) {
+            if (self$connected()) private$broadcast(private$job_json(job, state, msg))
+        },
+        # `started` in seconds since the epoch, so a page that connects later
+        # shows how long a job has run
+        job_json = function(job, state, msg = NULL) {
+            .encode_ws_message("job", Filter(Negate(is.null), list(id = job$id, label = job$label,
+                ref = job$ref, state = state, message = msg, progress = job$progress,
+                started = as.numeric(job$started))))
+        },
+        stop_jobs = function() {
+            for (id in names(private$running_jobs)) private$cancel(id, "the viewer was closed")
+            .job_stop_daemon(private$job_profile)
+            private$job_profile <- NULL
+            private$running_jobs <- list()
         },
 
         snapshot_name = function() {
@@ -1585,8 +2383,21 @@ LensViewer <- R6::R6Class("LensViewer",
         # is shown again (adr/0017). Keeping Lens work is a save's job;
         # set_object() refuses to drop work unless told to.
         clear_object = function() {
+            private$close_analysis()
+            private$added_images <- list()
+            unlink(file.path(private$session, "images_added.json"))
             for (id in names(private$pushed)) private$drop_panel_file(id)
             .prune_meta_files(private$meta_dir(), character())
+            .prune_meta_files(private$items_dir(), character())
+            private$item_files   <- list()
+            # Their jobs were cancelled by load(); answered here, as the
+            # cancels end after the next object's reads may have started
+            for (read in private$item_reads)
+                for (w in read$waits) w(list(error = "the object shown changed"))
+            private$item_reads   <- list()
+            private$region_sets  <- list()
+            private$de           <- list()
+            private$owned        <- list()
             private$config_json  <- NULL
             private$rule_set     <- list()
             private$combine      <- "and"
@@ -1594,6 +2405,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$cached_meta  <- NULL
             private$meta_values  <- list()
             private$col_types    <- list()
+            private$catalog_data <- NULL
             private$cells_xy     <- NULL
             self$annotations     <- list()
             self$registration    <- NULL
@@ -1606,9 +2418,12 @@ LensViewer <- R6::R6Class("LensViewer",
         # without `discard = TRUE`. Settings are not counted.
         lens_work = function() {
             n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
-                `pushed panel` = length(private$pushed))
+                region = length(private$region_sets), `pushed panel` = length(private$pushed),
+                `added image` = length(private$added_images))
             parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
             if (!is.null(self$registration)) parts <- c(parts, "image registration")
+            if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
+                parts <- c(parts, "an analysis")
             if (length(parts)) paste(parts, collapse = ", ")
         },
 
@@ -1691,6 +2506,7 @@ LensViewer <- R6::R6Class("LensViewer",
                             if (!is.null(id)) assign(id, priv$load_seq, envir = priv$conn_load)
                             # The saved config first, so a reload comes back as
                             # it was; then the data and panels it refers to
+                            ws$send(.encode_ws_message("preferences", .lens_pref_msg()))
                             ws$send(.encode_ws_message("restore", list(
                                 config = priv$config_json, panels = as.list(names(priv$pushed)))))
                             if (!is.null(priv$cached_meta))
@@ -1706,8 +2522,39 @@ LensViewer <- R6::R6Class("LensViewer",
                             else ws$send(.encode_ws_message("rule_seq", list(seq = priv$rule_seq)))
                             for (p in priv$pushed)
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
+                            # Jobs already running: a reload or a new tab lists them too
+                            for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
+                            ws$send(.encode_ws_message("regions", priv$regions_msg()))
+                            if (!is.null(priv$lens_analysis)) priv$lens_analysis$on_ready(ws)
                         },
+                        # A click on a point of a pushed chart's `pick` param:
+                        # on a volcano plot, colour the cells by that gene; on
+                        # an analysis panel, the analysis acts on it
+                        panel_pick = if (is.character(dat$id) && length(dat$id) == 1L) {
+                            if (!is.null(priv$de[[dat$id]]))
+                                priv$pick_gene(ws, dat$id, unlist(dat$value$gene)[1L])
+                            else if (!is.null(priv$lens_analysis))
+                                priv$analysis_message(ws, "panel_pick", dat)
+                        },
+                        analysis_param = , analysis_labels = , analysis_cancel = , analysis_settings = ,
+                        analysis_region = , analysis_run = , analysis_add = , analysis_remove = ,
+                        analysis_history = , analysis_feature = , analysis_open =
+                            priv$analysis_message(ws, parsed$type, dat),
                         ask = priv$answer(ws, parsed$id, dat),
+                        # The Preferences panel
+                        preferences_set = tryCatch(.lens_pref_from_viewer(dat),
+                            error = function(e) {
+                                priv$add_log("error", list(where = "preferences",
+                                    message = conditionMessage(e)))
+                                warning("[LensViewer] ", .console_text(conditionMessage(e)),
+                                    call. = FALSE)
+                                .lens_pref_broadcast()
+                            }),
+                        # The images panel's "add image" button
+                        choose_image = {
+                            type <- if (is.character(dat$type) && length(dat$type) == 1L) dat$type else "if"
+                            later::later(function() priv$choose_image(ws, type))
+                        },
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
                         panel_closed = if (is.character(dat$id) && length(dat$id) == 1L) {
@@ -1830,8 +2677,9 @@ print.lens_description <- function(x, ...) {
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
-.lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "cells",
-    "transcripts", "images", "register", "annotations", "layers")
+.lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
+    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers",
+    "preferences")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))

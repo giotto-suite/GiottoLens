@@ -18,3 +18,10 @@ export const PALETTE_VIVID = [
 ];
 
 export const PALETTES = [PALETTE, PALETTE_VIVID];
+// Okabe & Ito's colors, distinct for most color vision deficiencies
+export const PALETTE_OKABE_ITO = [
+  [230,159,0],[86,180,233],[0,158,115],[240,228,66],[0,114,178],
+  [213,94,0],[204,121,167],[153,153,153],[0,0,0],[136,204,238],
+];
+// Category palettes by preference name (core/prefs.ts `cat_palette`)
+export const CATEGORY_PALETTES = { default: PALETTE, vivid: PALETTE_VIVID, okabe_ito: PALETTE_OKABE_ITO };

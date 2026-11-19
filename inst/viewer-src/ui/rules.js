@@ -22,7 +22,8 @@ export function ruleLabel(rule) {
     case 'categories': s = `${rule.space}: ${p.values.slice(0, 3).join(', ')}${p.values.length > 3 ? ` +${p.values.length - 3}` : ''}`; break;
     case 'compare':    s = `${rule.space} ${p.op} ${p.value}`; break;
     // Parts of a union or intersection sent from R have no source
-    case 'ids':        s = rule.source === 'r' ? 'from R' : rule.source?.startsWith('panel') ? 'panel brush' : 'cell list'; break;
+    case 'ids':        s = rule.source === 'r' ? 'from R' : rule.source?.startsWith('panel') ? 'panel brush'
+      : rule.source?.startsWith('table') ? 'table rows' : 'cell list'; break;
     case 'union': {
       const kinds = [...new Set(p.parts.map(r => ruleLabel(r)))];
       s = kinds.length === 1 && p.parts.length > 1 ? `${kinds[0]} ×${p.parts.length}` : kinds.join(' + ');

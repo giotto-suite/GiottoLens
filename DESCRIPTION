@@ -19,6 +19,8 @@ Imports:
     jsonlite,
     later,
     methods,
+    mirai (>= 2.0.0),
+    promises,
     R6,
     stats,
     tools,
@@ -26,14 +28,17 @@ Imports:
 Suggests:
     chromote,
     curl,
+    Giotto,
     GiottoClass (>= 0.7.28),
     GiottoDisk (>= 0.0.0.8),
     png,
+    qs2,
     rstudioapi,
     sf,
     terra,
     testthat (>= 3.0.0),
-    websocket
+    websocket,
+    withr
 Encoding: UTF-8
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)

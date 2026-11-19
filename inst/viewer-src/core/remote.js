@@ -9,12 +9,17 @@ import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
 import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
+import { isItemKey, parseItemKey, needItems, primeItem, scaleKey, itemColumn } from '../data/items.ts';
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
 import { THEMES } from '../ui/theme.ts';
 import { spatialView, needView } from '../spatial/current.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
+
+// A field's kind and levels: a metadata column's from the payload, an item's
+// once it is loaded (one that is not yet has none)
+const fieldInfo = name => isItemKey(name) ? itemColumn(name) : state.metaInfo?.get(name);
 
 // Camera plus the data-space box on screen (xmin, xmax, ymin, ymax)
 function viewInfo(vs) {
@@ -60,8 +65,12 @@ export function initRemote() {
     return viewInfo(vs);
   });
 
-  onMessage('set_color_by', ({ column }) => {
-    if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
+  // A metadata column or an item key; R sends an item's file with it
+  onMessage('set_color_by', async ({ column, item }) => {
+    if (column != null && isItemKey(column)) {
+      if (!parseItemKey(column)) throw new Error(`'${column}' is not an item key`);
+      await (item ? primeItem(column, item) : needItems([column]));
+    } else if (column != null && !state.metaInfo?.has(column)) throw new Error(`no metadata column '${column}'`);
     actions.setColorBy(column ?? null);
   });
 
@@ -73,7 +82,7 @@ export function initRemote() {
   onMessage('set_category_style', ({ column, all, styles, reset }) => {
     const name = column ?? store.getState().colorBy;
     if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.metaInfo?.get(name);   // kind and levels: no need to load it
+    const col = fieldInfo(name);   // kind and levels: no need to load it
     if (!col) throw new Error(`no metadata column '${name}'`);
     if (col.kind !== 'categorical') throw new Error(`'${name}' is not categorical`);
     const levels = col.levels ?? [];
@@ -101,20 +110,32 @@ export function initRemote() {
     return { column: name };
   });
 
-  onMessage('set_color_scale', ({ column, preset, colors, reverse, reset }) => {
-    const name = column ?? store.getState().colorBy;
-    if (name == null) throw new Error('no column given and cells are not colored by one');
-    const col = state.metaInfo?.get(name);
-    if (!col) throw new Error(`no metadata column '${name}'`);
-    if (col.kind !== 'continuous') throw new Error(`'${name}' is not continuous`);
+  onMessage('set_color_scale', ({ column, style, preset, colors, reverse, midpoint, limits, reset }) => {
+    const field = column ?? store.getState().colorBy;
+    if (field == null) throw new Error('no column given and cells are not colored by one');
+    const col = fieldInfo(field);
+    if (!col) throw new Error(`no metadata column '${field}'`);
+    if (col.kind !== 'continuous') throw new Error(`'${field}' is not continuous`);
+    // Expression items share one scale
+    const name = scaleKey(field);
     if (preset != null && preset !== 'custom' && !(preset in SCALE_PRESETS))
       throw new Error(`preset must be one of ${Object.keys(SCALE_PRESETS).join(', ')}`);
     if (colors != null && !(Array.isArray(colors) && colors.length >= 2 && colors.length <= MAX_SCALE_COLORS &&
         colors.every(c => Array.isArray(c) && c.length === 3 && c.every(v => Number.isInteger(v) && v >= 0 && v <= 255))))
       throw new Error(`colors must be 2 to ${MAX_SCALE_COLORS} colors`);
     if (reverse != null && typeof reverse !== 'boolean') throw new Error('reverse must be TRUE or FALSE');
+    if (style != null && style !== 'divergent' && style !== 'sequential')
+      throw new Error("style must be 'divergent' or 'sequential'");
+    if (midpoint != null && midpoint !== 'auto' && !(typeof midpoint === 'number' && Number.isFinite(midpoint)))
+      throw new Error('midpoint must be a number');
+    if (limits != null && limits !== 'auto' && !(Array.isArray(limits) && limits.length === 2 &&
+        limits.every(v => typeof v === 'number' && Number.isFinite(v)) && limits[0] < limits[1]))
+      throw new Error('limits must be c(low, high) with low < high');
     if (reset) actions.resetColorScale(name);
     const patch = {};
+    if (style != null) patch.style = style;
+    if (midpoint != null) patch.midpoint = midpoint === 'auto' ? null : midpoint;
+    if (limits != null) patch.limits = limits === 'auto' ? null : limits;
     if (colors != null) { patch.preset = 'custom'; patch.colors = colors; }
     else if (preset != null) patch.preset = preset;
     if (reverse != null) patch.reverse = reverse;
@@ -134,6 +155,13 @@ export function initRemote() {
       throw new Error('alpha must be a number in [0, 1]');
     actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
       ...(alpha != null && { alpha }) });
+  });
+
+  onMessage('set_selection_color', ({ color, reset }) => {
+    if (!reset && !(Array.isArray(color) && color.length === 3 &&
+        color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
+      throw new Error('color must be three integers 0-255');
+    actions.setSelectionColor(reset ? null : color);
   });
 
   onMessage('set_theme', ({ theme }) => {

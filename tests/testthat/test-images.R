@@ -88,3 +88,90 @@ test_that("image files are added by name and placed inside the data", {
     expect_identical(e$extent$ymax, 0)
     expect_identical(out$sources[["he2"]], normalizePath(fx$image_file))
 })
+
+test_that("add_image() serves a file and lists it for tabs that open later", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    added <- function() {
+        r <- http_get(paste0(v$url, "session/images_added.json"))
+        if (r$status_code == 404L) return(list())
+        jsonlite::fromJSON(rawToChar(r$content), simplifyVector = FALSE)
+    }
+    expect_length(added(), 0L)
+
+    v$add_image(fx$image_file, name = "post")
+    e <- added()
+    expect_length(e, 1L)
+    expect_identical(e[[1L]]$name, "post")
+    expect_identical(e[[1L]]$url, "image/0")
+    expect_identical(e[[1L]]$place, "fit")
+    img <- http_get(paste0(v$url, "image/0"), list(Range = "bytes=0-3"))
+    expect_identical(img$status_code, 206L)
+    expect_identical(http_get(paste0(v$url, "image/1"))$status_code, 404L)
+
+    v$add_image(fx$rgb_file)
+    e <- added()
+    expect_identical(vapply(e, `[[`, "", "name"), c("post", sub("\\.tif$", "", basename(fx$rgb_file))))
+    expect_identical(e[[2L]]$url, "image/1")
+
+    expect_error(v$add_image(fx$image_file, name = "post"), "\\[LensViewer\\] image names must be unique: post")
+    expect_error(v$add_image("nope.tif"), "\\[LensViewer\\] image file\\(s\\) not found: nope.tif")
+    vrt <- tempfile(fileext = ".vrt")
+    writeLines("<VRTDataset/>", vrt)
+    expect_error(v$add_image(vrt), "is not a TIFF file")
+    expect_error(v$add_image(c(fx$image_file, fx$rgb_file)), "must be one file path")
+    expect_length(added(), 2L)
+})
+
+test_that(".choose_image_file() uses the GiottoLens.choose_file option", {
+    withr::local_options(GiottoLens.choose_file = function() "/a/b.tif")
+    expect_identical(.choose_image_file(), "/a/b.tif")
+    withr::local_options(GiottoLens.choose_file = function() character())
+    expect_null(.choose_image_file())
+    withr::local_options(GiottoLens.choose_file = function() NULL)
+    expect_null(.choose_image_file())
+})
+
+test_that("image keys continue after the served files", {
+    fx <- lens_image_fixture()
+    out <- .image_entries(list(), c(a = fx$image_file), first = 2L)
+    expect_identical(out$entries[[1L]]$url, "image/2")
+    expect_identical(names(out$files), "2")
+    get <- function(k) .data_response(list(PATH_INFO = paste0("/lens/t/image/", k)),
+        list(), "/lens/t", out$files)$status
+    expect_identical(get("2"), 200L)
+    expect_identical(get("0"), 404L)
+})
+
+test_that("a 10x Xenium image is read with Giotto's Xenium reader, in microns", {
+    xen <- lens_xenium_fixture()
+    img <- .xenium_image_file(xen$file, "dapi")
+    expect_s4_class(img, "giottoLargeImage")
+    expect_equal(unname(as.vector(terra::ext(img@raster_object))), c(0, 40, -50, 0))
+    out <- .image_entries(list(dapi = img), first = 1L)
+    e <- out$entries[[1L]]
+    expect_identical(e$url, "image/1")
+    expect_null(e$place)
+    expect_equal(unlist(e$extent), c(xmin = 0, xmax = 40, ymin = -50, ymax = 0))
+    expect_identical(out$sources[["dapi"]], normalizePath(xen$file))
+
+    loose <- tempfile(fileext = ".tif")
+    file.copy(xen$file, loose)
+    expect_error(.xenium_image_file(loose, "dapi"), "no experiment.xenium in the folder of")
+})
+
+test_that("added images belong to the object shown", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- v$.__enclos_env__$private
+    v$add_image(fx$image_file, name = "post")
+    expect_error(v$set_object(fx$gpoints, fx$gpolygons), "1 added image")
+    v$set_object(fx$gpoints, fx$gpolygons, discard = TRUE)
+    expect_length(priv$added_images, 0L)
+    expect_false(file.exists(file.path(priv$session, "images_added.json")))
+    expect_length(priv$routes$images, 0L)
+    v$add_image(fx$image_file, name = "post")
+    expect_identical(names(priv$routes$images), "0")
+})

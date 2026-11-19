@@ -12,6 +12,7 @@ import { onMessage, sendToR } from './comms.js';
 const SAVE_DELAY = 300;
 
 let restored = false;
+let hadConfig = false;
 let held: Set<string> | null = null;
 let resolve: (v: StorageValue<unknown> | null) => void = () => {};
 const saved = new Promise<StorageValue<unknown> | null>(r => { resolve = r; });
@@ -43,6 +44,9 @@ export const rStorage: PersistStorage<unknown> = {
   removeItem: () => {},
 };
 
+// Whether R held a saved config when the page connected
+export const restoredConfig = (): boolean => hadConfig;
+
 // Ids of the pushed panels R holds, as of the restore (null before it)
 export const heldPanels = (): Set<string> | null => held;
 
@@ -56,6 +60,7 @@ export function initPersist(): void {
     held = new Set(panels ?? []);
     let value: StorageValue<unknown> | null = null;
     try { value = config ? JSON.parse(config) : null; } catch (_) { /* start from defaults */ }
+    hadConfig = value != null;
     resolve(value);
   });
 }

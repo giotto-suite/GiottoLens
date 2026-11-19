@@ -163,7 +163,8 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "transcripts", "annotations", "layers"))
+    expect_identical(v$panels()$id, c("tools", "spatial", "scatter", "histogram", "table", "transcripts", "images", "annotations", "layers",
+        "preferences"))
     expect_identical(br$errors(), character())
 })
 
@@ -214,6 +215,139 @@ test_that("bins without polygons draw as dots, then squares, and select like cel
     expected <- intersect(expected, fx$meta$cell_ID[fx$meta$half == "left"])
     expect_true(pump_until(function() setequal(v$selection, expected)))
     expect_gt(length(expected), 0L)
+    expect_identical(br$errors(), character())
+})
+
+test_that("the Data panel lists the object and pulls the items queued", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    dock_tab(br, "data")
+    q <- function(sel) sprintf("document.querySelector('[data-panel=data] %s')", sel)
+    items <- sprintf("[...document.querySelectorAll('[data-panel=data] .data-item')].map(e => e.dataset.item)")
+    expect_true(browser_wait(br, sprintf("%s.join() === 'array_row,array_col,half'", items)))
+
+    # Queue from two sources, one with a type, and pull them together
+    br$js(sprintf("%s.click()", q(".data-item[data-item=half]")))
+    br$js(sprintf("%s.click()", q(".data-item[data-item=array_row]")))
+    br$js(sprintf("(() => { const t = [...document.querySelectorAll('[data-panel=data] .data-type')][1]; t.value = 'categorical'; t.dispatchEvent(new Event('change')); })()"))
+    br$js(sprintf("(() => { const s = %s; s.value = [...s.options].find(o => o.textContent.startsWith('expression')).value; s.dispatchEvent(new Event('change')); })()",
+        q(".data-source")))
+    expect_true(browser_wait(br, sprintf("%s.join() === 'g1,g2'", items)))
+    br$js(sprintf("%s.click()", q(".data-item[data-item=g1]")))
+    expect_identical(br$js(sprintf("%s.textContent", q(".data-pull"))), "pull 3")
+    suppressMessages({
+        br$js(sprintf("%s.click()", q(".data-pull")))
+        expect_true(browser_wait(br, "['half', 'array_row', 'g1'].every(c => window.__giottolens.state.metaInfo?.has(c))"))
+    })
+    expect_identical(br$js("window.__giottolens.state.metaInfo.get('array_row').kind"), "categorical")
+    expect_true(browser_wait(br, sprintf("%s.textContent.startsWith('pulled 3')", q(".data-status"))))
+    expect_identical(br$js(sprintf("%s.textContent", q(".data-pull"))), "pull")
+    # Pulled items are marked
+    expect_true(browser_wait(br, sprintf("!!%s", q(".data-item.loaded[data-item=g1]"))))
+    priv <- get("private", v$.__enclos_env__)
+    expect_setequal(priv$meta_names(), c("half", "array_row", "g1"))
+
+    # A pull is a job: cancelled from the panel while a slow job holds the daemon
+    priv$start_job("slow", function(g) { Sys.sleep(3); 1 })
+    br$js(sprintf("%s.click()", q(".data-item[data-item=g2]")))
+    br$js(sprintf("%s.click()", q(".data-pull")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancel' && !%s.disabled",
+        q(".data-clear"), q(".data-clear"))))
+    br$js(sprintf("%s.click()", q(".data-clear")))
+    expect_true(browser_wait(br, sprintf("%s.textContent === 'cancelled'", q(".data-status"))))
+    expect_false("g2" %in% priv$meta_names())
+    expect_identical(br$errors(), character())
+})
+
+test_that("the picker colors cells by an item without adding it to the metadata", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    dock_tab(br, "cells")
+    br$js("document.querySelector('[data-panel=cells] .color-by-browse').click()")
+    expect_true(browser_wait(br, "[...document.querySelectorAll('.picker .picker-source option')].some(o => o.textContent.startsWith('expression'))"))
+    br$js("(() => { const s = document.querySelector('.picker .picker-source'); s.value = [...s.options].find(o => o.textContent.startsWith('expression')).value; s.dispatchEvent(new Event('change')); })()")
+    expect_true(browser_wait(br, "!!document.querySelector('.picker .picker-item[data-item=g1]')"))
+    key <- .item_key("expression", "rna", "g1", name = "raw")
+    br$js("document.querySelector('.picker .picker-item[data-item=g1]').click()")
+    expect_true(browser_wait(br, sprintf("window.__giottolens.store.getState().colorBy === '%s'", key)))
+    expect_false(br$js("!!document.querySelector('.picker')"))
+    expect_true(browser_wait(br, "window.__giottolens.state.colorLegend?.type === 'continuous'"))
+    # Expression items share one scale, which the legend edits
+    expect_identical(br$js("window.__giottolens.state.colorLegend.column"), "@expression")
+    # It is in the menu's recent group, and not in the metadata
+    expect_true(browser_wait(br, sprintf("[...document.querySelectorAll('[data-panel=cells] .color-by optgroup option')].some(o => o.value === '%s')", key)))
+    priv <- get("private", v$.__enclos_env__)
+    expect_false("g1" %in% priv$meta_names())
+    expect_false(br$js("window.__giottolens.state.metaInfo?.has('g1') ?? false"))
+
+    # From R, by a row of catalog(); an item the object lacks is refused
+    tbl <- v$catalog()
+    v$color_by(tbl[tbl$item == "g2", ])
+    expect_identical(br$js("window.__giottolens.store.getState().colorBy"), tbl$key[tbl$item == "g2"])
+    expect_error(v$color_by(.item_key("expression", "rna", "nope", name = "raw")), "has no 'nope'")
+    v$color_by(NULL)
+    expect_null(br$js("window.__giottolens.store.getState().colorBy"))
+    expect_identical(br$errors(), character())
+})
+
+test_that("the cell table shows the other sources' cells, and picks rows into the selection", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    suppressMessages(v$push_metadata(fx$meta[, c("cell_ID", "half", "array_row")]))
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    priv <- get("private", v$.__enclos_env__)
+    dock_tab(br, "table")
+    q <- function(sel) sprintf("document.querySelector('[data-panel=table] %s')", sel)
+    count <- function(text) browser_wait(br, sprintf("%s.textContent === '%s'", q(".table-count"), text))
+    row_ids <- sprintf("[...document.querySelectorAll('[data-panel=table] .table-rows .table-row')].map(r => r.firstChild.textContent)")
+    click <- function(k, mods = "") br$js(sprintf(
+        "%s.dispatchEvent(new MouseEvent('click', {bubbles: true%s}))", q(sprintf('.table-rows .table-row[data-row="%d"]', k)), mods))
+
+    # All cells, IDs from R for the rows in view
+    expect_true(count("900 cells"))
+    expect_true(browser_wait(br, sprintf("%s[0] === '%s'", row_ids, priv$cell_ids[1])))
+
+    # Another source's selection sets the rows
+    v$select(lens_categories("half", "left"))
+    expect_true(count("450 cells"))
+    left <- priv$cell_ids[priv$cell_ids %in% fx$meta$cell_ID[fx$meta$half == "left"]]
+    expect_true(browser_wait(br, sprintf("%s[0] === '%s'", row_ids, left[1])))
+
+    # Picks are the table's rule: in "or" mode added to the selection, the rows unchanged
+    br$js("window.__giottolens.actions.setCombine('or')")
+    click(0)
+    click(2, ", shiftKey: true")
+    expect_true(count("450 cells \u00b7 3 picked"))
+    expect_true(pump_until(function() "table" %in% vapply(v$selection_rules, `[[`, "", "source")))
+    expect_identical(length(v$selection), 450L)
+    # Cross-filter: the selection narrows to the picks, the rows still the other sources'
+    br$js("window.__giottolens.actions.setCombine('and')")
+    expect_true(pump_until(function() setequal(v$selection, left[1:3])))
+    expect_true(count("450 cells \u00b7 3 picked"))
+    click(1, ", metaKey: true")
+    expect_true(pump_until(function() setequal(v$selection, left[c(1, 3)])))
+
+    # Scrolled to the end, the last row is the last cell
+    br$js(sprintf("(() => { const s = %s; s.scrollTop = s.scrollHeight; s.dispatchEvent(new Event('scroll')); })()",
+        q(".table-scroll")))
+    expect_true(browser_wait(br, sprintf("%s.at(-1) === '%s'", row_ids, left[450])))
+
+    br$js(sprintf("%s.click()", q(".table-clear")))
+    expect_true(pump_until(function() !"table" %in% vapply(v$selection_rules, `[[`, "", "source")))
     expect_identical(br$errors(), character())
 })
 
@@ -396,6 +530,19 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     expect_error(v$set_color_scale("score", preset = "nope"), "preset must be one of")
     v$set_color_scale("score", reset = TRUE)
     expect_null(v$state()$config$colorScales$score)
+    v$set_color_scale("score", style = "sequential", midpoint = 2, limits = c(1, 5))
+    sc <- v$state()$config$colorScales$score
+    expect_identical(sc$style, "sequential")
+    expect_equal(sc$midpoint, 2)
+    expect_equal(unlist(sc$limits), c(1, 5))
+    v$color_by("score")
+    expect_true(browser_wait(br, "window.__giottolens.state.colorLegend?.lo === 1", 10))
+    v$set_color_scale("score", midpoint = NA, limits = NA)
+    sc <- v$state()$config$colorScales$score
+    expect_null(sc$midpoint)
+    expect_null(sc$limits)
+    v$set_color_scale("score", reset = TRUE)
+    v$color_by("leiden_clus")
     v$set_layer("tx", show = TRUE)
     v$show_genes(c("Actb", "Cd3e"))
     expect_identical(unlist(v$state()$config$outline$color), c(0L, 0L, 0L))
@@ -410,6 +557,11 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     br$js("document.querySelector('[data-panel=cells] .outline-reset').click()")
     expect_true(browser_wait(br,
         "window.__giottolens.store.getState().outline.alpha === 0.8"))
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
+    v$set_selection_color("#00e5ff")
+    expect_identical(unlist(v$state()$config$selectionColor), c(0L, 229L, 255L))
+    v$set_selection_color()
+    expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
     # Light panels, the spatial view still dark
     expect_identical(v$state()$config$theme, "dark")
     v$set_theme("light")
@@ -452,7 +604,8 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))
+    expect_setequal(p$id, c("tools", "spatial", "scatter", "histogram", "table", "panel-1", "cells", "transcripts", "images", "annotations", "layers",
+        "preferences"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; the charts in view
@@ -498,7 +651,8 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "panel-1", "cells", "transcripts", "annotations", "layers"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("tools", "spatial", "histogram", "table", "panel-1", "cells", "transcripts", "images", "annotations", "layers",
+        "preferences"))))
     expect_identical(br$errors(), character())
 })
 
@@ -512,17 +666,21 @@ test_that("the controls dock in their own column; a closed one stays closed afte
     expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
     expect_true(pump_until(function() v$connected()))
 
-    # The tools bar at the left edge, the spatial view, the charts, then the
-    # controls in a column of their own on the right: cells and transcripts
-    # as tabs, then annotations, then layers (images and register come
-    # between them when there are images)
+    # The tools bar at the left edge, the spatial view, the charts with the
+    # table a tab behind the histogram, then the controls in a column of their
+    # own on the right: cells and transcripts as tabs, then images,
+    # annotations, then layers with preferences as a tab (register is a tab
+    # beside images when there are images)
     p <- v$panels()
-    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "cells", "transcripts", "annotations", "layers"))
+    expect_identical(p$id, c("tools", "spatial", "scatter", "histogram", "table", "cells", "transcripts",
+        "images", "annotations", "layers", "preferences"))
     expect_identical(p$kind, p$id)
     expect_identical(length(unique(p$group[1:3])), 3L)
-    expect_false(any(p$group[5:8] %in% p$group[3:4]))
-    expect_identical(p$group[5], p$group[6])
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, TRUE))
+    expect_identical(p$group[4], p$group[5])
+    expect_false(any(p$group[6:11] %in% p$group[3:5]))
+    expect_identical(p$group[6], p$group[7])
+    expect_identical(p$group[10], p$group[11])
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE, FALSE))
     width <- br$js("document.querySelector('[data-panel=cells]').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
 
@@ -1446,6 +1604,122 @@ test_that("an object in memory is written into a project and drawn from untiled 
     v$set_view(x = 50, y = -50, zoom = 3)
     expect_true(browser_wait(br, "window.__giottolens.state.cache.has('polygons:1') && window.__giottolens.state.cache.has('transcripts:1')"))
     expect_identical(br$errors(), character())
+})
+
+test_that("the jobs button lists running jobs, cancels one, and keeps the finished", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+    priv <- get("private", v$.__enclos_env__)
+    btn <- "document.querySelector('[data-panel=tools] [data-act=jobs]')"
+    badge <- sprintf("%s.querySelector('.jobs-badge').textContent", btn)
+    expect_identical(br$js(badge), "")
+
+    end <- NULL
+    id <- priv$start_job("long wait", function(g) { Sys.sleep(60); 1 }, on_end = function(r) end <<- r)
+    expect_true(browser_wait(br, sprintf("%s === '1'", badge)))
+    expect_true(br$js(sprintf("%s.classList.contains('busy')", btn)))
+    br$js(sprintf("%s.click()", btn))
+    expect_true(browser_wait(br, "!!document.querySelector('.jobs-popover .job-row.state-running')"))
+    expect_identical(br$js("document.querySelector('.jobs-popover .job-label').textContent"), "long wait")
+
+    later::run_now(0.5)
+    br$js("document.querySelector('.jobs-popover .job-cancel').click()")
+    expect_true(pump_until(function() identical(end$state, "cancelled"), timeout = 15))
+    expect_true(browser_wait(br, "!!document.querySelector('.jobs-popover .job-row.state-cancelled')"))
+    expect_identical(br$js(badge), "")
+    expect_false(br$js(sprintf("%s.classList.contains('busy')", btn)))
+    expect_length(v$jobs()$id, 0L)
+    expect_identical(br$errors(), character())
+})
+
+test_that("the add image button adds a file R picks, ready to register", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    expect_true(pump_until(function() v$connected()))
+    expect_false("register" %in% v$panels()$id)
+    dock_tab(br, "images")
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=images] .img-add-status')?.textContent === 'no images'"))
+    pick_type <- function(br, type) {
+        br$js("document.querySelector('[data-panel=images] .img-add').click()")
+        expect_identical(br$js("[...document.querySelectorAll('.lens-modal .img-type-tile .img-type-title')].map(e => e.textContent)"),
+            list("10x Xenium image", "IF", "H&E"))
+        br$js(sprintf("document.querySelector('.lens-modal .img-type-tile[data-type=%s]').click()", type))
+        expect_false(br$js("!!document.querySelector('.lens-modal')"))
+    }
+
+    # Escape closes the type picker without asking R
+    br$js("document.querySelector('[data-panel=images] .img-add').click()")
+    expect_true(br$js("!!document.querySelector('.lens-modal')"))
+    br$js("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+    expect_false(br$js("!!document.querySelector('.lens-modal')"))
+    expect_false(br$js("document.querySelector('[data-panel=images] .img-add').disabled"))
+
+    # Cancelled: nothing added
+    withr::local_options(GiottoLens.choose_file = function() NULL)
+    pick_type(br, "if")
+    expect_true(browser_wait(br, "!document.querySelector('[data-panel=images] .img-add').disabled"))
+    expect_length(v$describe()$images, 0L)
+
+    withr::local_options(GiottoLens.choose_file = function() fx$rgb_file)
+    pick_type(br, "if")
+    nm <- sub("\\.tif$", "", basename(fx$rgb_file))
+    expect_true(browser_wait(br, sprintf("window.__giottolens.state.images?.has('%s')", nm)))
+    expect_true(browser_wait(br, sprintf("document.querySelector('[data-panel=images] .img-add-status')?.textContent === 'added %s'", nm)))
+    expect_true(pump_until(function() "register" %in% v$panels()$id))
+    expect_true(isTRUE(v$state()$config$images[[nm]]$show))
+
+    # A name already taken is reported in the panel
+    withr::local_options(GiottoLens.choose_file = function() fx$rgb_file)
+    pick_type(br, "if")
+    expect_warning(expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=images] .img-add-status.img-add-error') !== null")),
+        "image names must be unique")
+
+    # From R, then the first registered against it
+    v$add_image(fx$image_file, name = "stain")
+    expect_true(browser_wait(br, "window.__giottolens.state.images?.has('stain')"))
+    kp <- data.frame(alignmentX = c(0, 600, 0, 300), alignmentY = c(0, 0, 600, 300))
+    kp$fixedX <- 2 * kp$alignmentX
+    kp$fixedY <- 2 * kp$alignmentY
+    v$register_image(nm, reference = "stain", keypoints = kp)
+    reg <- v$registration
+    expect_true(reg$fitted)
+    expect_equal(registration_matrix(reg, "reference"), diag(c(2, 2, 1)), tolerance = 1e-9)
+    expect_s4_class(v$registered_image(), "giottoAffineImage")
+
+    # A 10x Xenium image is placed in microns by its experiment.xenium
+    xen <- lens_xenium_fixture()
+    withr::local_options(GiottoLens.choose_file = function() xen$file)
+    pick_type(br, "xenium")
+    expect_true(browser_wait(br, "window.__giottolens.state.images?.has('ch0000_dapi')"))
+    ext <- br$js("window.__giottolens.state.images.get('ch0000_dapi').entry.extent")
+    expect_equal(unlist(ext), c(xmin = 0, xmax = 40, ymin = -50, ymax = 0))
+
+    # A reload opens the added images again
+    added <- jsonlite::fromJSON(rawToChar(
+        http_get(paste0(v$url, "session/images_added.json"))$content), simplifyVector = FALSE)
+    expect_identical(vapply(added, `[[`, "", "name"), c(nm, "stain", "ch0000_dapi"))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    ok <- browser_wait(br, "window.__giottolens?.state.images?.size === 3")
+    if (!ok) message("images after reload: ",
+        paste(unlist(tryCatch(br$js("[...(window.__giottolens?.state.images?.keys() ?? [])]"),
+            error = function(e) conditionMessage(e))), collapse = ", "),
+        "\nimages_added.json in the page: ", tryCatch(br$js(
+            "fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.status + ' ' + r.statusText).catch(e => String(e))"),
+            error = function(e) conditionMessage(e)),
+        "\nbrowser errors: ", paste(br$errors(), collapse = " | "),
+        "\nlog: ", paste(utils::capture.output(print(v$log(10))), collapse = "\n"))
+    expect_true(ok)
 })
 
 test_that("the power button stops the viewer, and a stopped viewer's page stops reconnecting", {

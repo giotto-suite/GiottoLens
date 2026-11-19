@@ -46,6 +46,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
     \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
+    \item \href{#method-LensViewer-catalog}{\code{LensViewer$catalog()}}
+    \item \href{#method-LensViewer-pull}{\code{LensViewer$pull()}}
     \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
     \item \href{#method-LensViewer-select}{\code{LensViewer$select()}}
     \item \href{#method-LensViewer-state}{\code{LensViewer$state()}}
@@ -56,7 +58,9 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
+    \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
+    \item \href{#method-LensViewer-add_image}{\code{LensViewer$add_image()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
     \item \href{#method-LensViewer-register_image}{\code{LensViewer$register_image()}}
     \item \href{#method-LensViewer-clear_registration}{\code{LensViewer$clear_registration()}}
@@ -71,11 +75,20 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-subset}{\code{LensViewer$subset()}}
     \item \href{#method-LensViewer-view_bounds}{\code{LensViewer$view_bounds()}}
     \item \href{#method-LensViewer-zoom_to}{\code{LensViewer$zoom_to()}}
+    \item \href{#method-LensViewer-save_region}{\code{LensViewer$save_region()}}
+    \item \href{#method-LensViewer-regions}{\code{LensViewer$regions()}}
+    \item \href{#method-LensViewer-remove_region}{\code{LensViewer$remove_region()}}
+    \item \href{#method-LensViewer-select_region}{\code{LensViewer$select_region()}}
+    \item \href{#method-LensViewer-compare_regions}{\code{LensViewer$compare_regions()}}
+    \item \href{#method-LensViewer-de_results}{\code{LensViewer$de_results()}}
+    \item \href{#method-LensViewer-analysis}{\code{LensViewer$analysis()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
     \item \href{#method-LensViewer-remove_panel}{\code{LensViewer$remove_panel()}}
     \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
     \item \href{#method-LensViewer-push_polygons}{\code{LensViewer$push_polygons()}}
     \item \href{#method-LensViewer-on}{\code{LensViewer$on()}}
+    \item \href{#method-LensViewer-jobs}{\code{LensViewer$jobs()}}
+    \item \href{#method-LensViewer-cancel_job}{\code{LensViewer$cancel_job()}}
     \item \href{#method-LensViewer-close}{\code{LensViewer$close()}}
     \item \href{#method-LensViewer-print}{\code{LensViewer$print()}}
     \item \href{#method-LensViewer-clone}{\code{LensViewer$clone()}}
@@ -303,7 +316,10 @@ also sets each column's type; see \code{\link[=prep_meta]{prep_meta()}}}
 \subsection{\code{LensViewer$set_column_type()}}{
   Show a numeric metadata column as categories (one
 per distinct value, at most 1000) or as a continuous scale.
-Integer and double columns are continuous by default. The
+Integer and double columns are continuous by default. A text
+column whose values are all numbers can be shown as continuous;
+it is numeric from then on, so shown as categories again its
+labels are the numbers. The
 viewer's "treat as" menu in the cells panel sets the same. Rules
 on the column are dropped, and the metadata is sent again.
 The setting is kept for later \code{push_metadata()} calls, unless
@@ -320,6 +336,66 @@ one sets the column's type through \code{cols}.
       \item{\code{type}}{\code{"categorical"} or \code{"continuous"}}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-catalog"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-catalog}{}}}
+\subsection{\code{LensViewer$catalog()}}{
+  What the object shown holds that \code{pull()} can add to
+the viewer's metadata: one row per source and item, from the
+cell metadata, expression matrices, spatial enrichments and dim
+reductions of the spatial unit shown. Listed when the object is
+loaded; the viewer's Data panel shows the same.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$catalog()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with columns \code{source} (an id), \code{slot},
+\code{feat_type}, \code{name} (the matrix, enrichment or reduction; \code{NA}
+for cell metadata), \code{item} and \code{key} (the item's key, which
+\code{color_by()} takes).
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-pull"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-pull}{}}}
+\subsection{\code{LensViewer$pull()}}{
+  Add values from the object shown to the viewer's
+metadata: one \code{\link[GiottoClass:spatValues]{GiottoClass::spatValues()}} call, run as a job (see
+\code{jobs()}) over the object the jobs' process holds. Pulled columns are
+added to the metadata already shown, replacing a column of the
+same name; they belong to the viewer, not to the object. The
+viewer's Data panel pulls the same way.
+
+An item pulled from two sources at once is named
+\verb{<source>_<item>}; dim reduction axes are named
+\verb{<reduction>_<axis>}, as \code{push_metadata()} names them.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$pull(x, types = NULL, wait = TRUE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{x}}{Item names, each in one source only, or rows of
+\code{catalog()}, with a \code{type} column if wanted}
+      \item{\code{types}}{How the viewer treats each item: a named list or
+vector, item -> \code{"categorical"} or \code{"continuous"} (see
+\code{set_column_type()}). Left out, as the values are.}
+      \item{\code{wait}}{Whether to wait for the pull to end. \code{FALSE} returns
+at once with the job's id (for \code{cancel_job()}); the columns are
+added when it ends.}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The viewer, invisibly; with \code{wait = FALSE}, the job's id
   }
 }
 
@@ -421,7 +497,10 @@ config (layers, colouring, rules, mode), view and counts.
 \if{html}{\out{<a id="method-LensViewer-color_by"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-color_by}{}}}
 \subsection{\code{LensViewer$color_by()}}{
-  Colour cells by a pushed metadata column (\code{NULL} for none)
+  Colour cells by a metadata column, or by one item of
+the object shown (a gene, an enrichment or dim reduction column,
+a cell metadata column of the object) without adding it to the
+metadata. \code{NULL} for none.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$color_by(column = NULL)}
@@ -430,7 +509,8 @@ config (layers, colouring, rules, mode), view and counts.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{column}}{Column name}
+      \item{\code{column}}{A metadata column name; an item key (the \code{key}
+column of \code{catalog()}); or one row of \code{catalog()}}
     }
     \if{html}{\out{</div>}}
   }
@@ -488,10 +568,17 @@ close.
 \if{html}{\out{<a id="method-LensViewer-set_color_scale"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_color_scale}{}}}
 \subsection{\code{LensViewer$set_color_scale()}}{
-  Set the color scale of a continuous metadata column:
-a preset, or custom colors spaced evenly from the column's
-minimum to its maximum. The viewer's legend sets the same values.
-\code{NULL} arguments leave a setting as is.
+  Set the color scale of a continuous metadata column
+or of the gene, with the options of Giotto's plots
+(\code{gradient_style}, \code{cell_color_gradient}, \code{gradient_midpoint},
+\code{gradient_limits}): a divergent scale centers its colors on a
+midpoint (default the median), a sequential one runs them from the
+low limit to the high one. Colors are a preset or custom ones,
+spaced evenly; values beyond the limits take the end colors. The
+default is Giotto's: divergent, \code{"blue-white-red"}; a sequential
+scale without a preset is \code{"viridis"}. Every gene shares one scale.
+The viewer's legend sets the same values. \code{NULL} arguments leave a
+setting as is.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$set_color_scale(
@@ -499,6 +586,9 @@ minimum to its maximum. The viewer's legend sets the same values.
   preset = NULL,
   colors = NULL,
   reverse = NULL,
+  style = NULL,
+  midpoint = NULL,
+  limits = NULL,
   reset = FALSE
 )}
     \if{html}{\out{</div>}}
@@ -506,15 +596,20 @@ minimum to its maximum. The viewer's legend sets the same values.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{column}}{Continuous column; \code{NULL} for the column cells are
-colored by}
-      \item{\code{preset}}{One of \code{"blue-red"} (the default), \code{"viridis"},
-\code{"magma"}, \code{"inferno"}, \code{"plasma"}, \code{"cividis"}, \code{"turbo"},
-\code{"gray"}, \code{"blue-white-red"}}
+      \item{\code{column}}{Continuous column, or \code{"@gene"} for the scale of the
+gene of \code{color_by_gene()}; \code{NULL} for what cells are colored by}
+      \item{\code{preset}}{Divergent: \code{"blue-white-red"}, \code{"RdBu"}, \code{"PuOr"},
+\code{"PRGn"}; sequential: \code{"viridis"}, \code{"magma"}, \code{"inferno"},
+\code{"plasma"}, \code{"cividis"}, \code{"turbo"}, \code{"gray"}, \code{"blue-red"}. Either
+kind works with either style}
       \item{\code{colors}}{2 to 9 colors (names or hex strings), low to high;
 sets a custom scale}
       \item{\code{reverse}}{\code{TRUE} to run the scale high to low}
-      \item{\code{reset}}{\code{TRUE} to return the column to the default scale first}
+      \item{\code{style}}{\code{"divergent"} or \code{"sequential"}}
+      \item{\code{midpoint}}{Value at the middle color of a divergent scale;
+\code{NA} for the median}
+      \item{\code{limits}}{\code{c(low, high)}; \code{NA} for the data range}
+      \item{\code{reset}}{\code{TRUE} to return to the default scale first}
     }
     \if{html}{\out{</div>}}
   }
@@ -592,6 +687,29 @@ sets the same values.
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_selection_color"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_selection_color}{}}}
+\subsection{\code{LensViewer$set_selection_color()}}{
+  Set the color selected cells draw in, in the spatial
+view (dots, and outlines once zoomed in) and in scatter panels.
+Part of the saved config (\code{state()$config$selectionColor}).
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_selection_color(color = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#00e5ff"});
+\code{NULL} goes back to the \code{selection_color} preference (see
+\code{\link[=lens_preferences]{lens_preferences()}}), yellow unless set}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_theme"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_theme}{}}}
 \subsection{\code{LensViewer$set_theme()}}{
@@ -611,6 +729,51 @@ chosen for a dark background. Part of the saved config
       \item{\code{theme}}{\code{"dark"} (the default) or \code{"light"}}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-add_image"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-add_image}{}}}
+\subsection{\code{LensViewer$add_image()}}{
+  Add an image file to the viewer. It is shown and
+listed in the images and register panels, where it can be
+registered by landmarks
+(\code{register_image()}). Every connected tab opens it; tabs that
+connect later, and reloads, open it too. It belongs to the
+object shown and counts as Lens work for \code{set_object()}. The
+"add image" button of the images panel opens a file dialog on
+the machine R runs on and calls this with the chosen
+file, after a choice of image type; option
+\code{GiottoLens.choose_file} (a function returning a path) replaces
+the dialog.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$add_image(
+  file,
+  name = NULL,
+  type = c("if", "he", "xenium"),
+  timeout = 60
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{file}}{Path to a TIFF file the viewer can read by tile (see
+\code{\link[=launch_lens]{launch_lens()}} \code{image_files})}
+      \item{\code{name}}{Image name; default the file name without its extension}
+      \item{\code{type}}{\code{"if"} (immunofluorescence) or \code{"he"} (H&E): drawn
+inside the data's extent. \code{"xenium"}: a 10x Xenium morphology
+image, read with Giotto's Xenium reader
+(\code{Giotto::importXenium()$load_image()}) and drawn in microns by
+the pixel size in the Xenium output folder's \code{experiment.xenium}.}
+      \item{\code{timeout}}{Seconds to wait for the viewer to open the image}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The viewer, invisibly.
   }
 }
 
@@ -934,6 +1097,211 @@ viewer shows)}
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-save_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-save_region}{}}}
+\subsection{\code{LensViewer$save_region()}}{
+  Save cells as a named region, for \code{compare_regions()}
+and the viewer's Regions panel, whose "save selection" button
+does the same. Regions belong to the object shown and count as
+Lens work for \code{set_object()}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$save_region(name, ids = self$selection)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name; a region of that name is replaced}
+      \item{\code{ids}}{Cell IDs (default: the selection)}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The region's cell IDs, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-regions"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-regions}{}}}
+\subsection{\code{LensViewer$regions()}}{
+  The saved regions
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$regions(name = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{A region name: return its cell IDs instead}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame of region names and cell counts, or the cell
+IDs of region \code{name}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-remove_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-remove_region}{}}}
+\subsection{\code{LensViewer$remove_region()}}{
+  Remove a saved region
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$remove_region(name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-select_region"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-select_region}{}}}
+\subsection{\code{LensViewer$select_region()}}{
+  Select the cells of a saved region (selection source
+\code{"r"})
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$select_region(name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Region name}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-compare_regions"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-compare_regions}{}}}
+\subsection{\code{LensViewer$compare_regions()}}{
+  Differential expression between two saved regions, or
+a region and every other cell, with \code{\link[Giotto:findScranMarkers]{Giotto::findScranMarkers()}}.
+Cells in both regions are left out. Runs as a job (see \code{jobs()})
+over the object the jobs' process holds. The result is docked as
+a volcano plot (\verb{DE: a vs b}); a click on a gene colours the cells
+by it. The viewer's Regions panel runs the same comparison.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$compare_regions(a, b = NULL, values = NULL, wait = TRUE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{a}}{Region name}
+      \item{\code{b}}{Region name; \code{NULL} for every cell not in \code{a}}
+      \item{\code{values}}{Expression values (a name of the object's
+expression); default \code{"normalized"}}
+      \item{\code{wait}}{Whether to wait for the result. \code{FALSE} returns the
+job's id at once; the table is then read with \code{de_results()}.}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame, one row per gene in order of FDR: \code{gene},
+\code{logFC} (\code{a} vs \code{b}), \code{p_value}, \code{FDR}; with \code{wait = FALSE}, the
+job's id, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-de_results"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-de_results}{}}}
+\subsection{\code{LensViewer$de_results()}}{
+  Results of \code{compare_regions()}
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$de_results(id = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{A result id (\code{"de-1"}, ...): return its table instead}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with one row per comparison: \code{id}, \code{a}, \code{b},
+cell counts, \code{values} and the number of genes at FDR < 0.05; or
+the table of comparison \code{id}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-analysis"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-analysis}{}}}
+\subsection{\code{LensViewer$analysis()}}{
+  The analysis of the object shown (adr/0021): a
+\link{LensAnalysis}, made by the first call and kept until another
+object is shown. The viewer's Analysis panel shows it, and opens
+when it is made here; opening the panel from the viewer's "+" menu
+makes it too. Nothing runs until a step is run or a parameter set.
+Arguments given to a later call apply to the analysis there is.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$analysis(
+  params = NULL,
+  cell_markers = NULL,
+  analyses = NULL,
+  settings = NULL,
+  threads = .lens_pref("threads"),
+  network_dir = .default_network_dir()
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{params}}{Parameter values: a list by step of lists by
+parameter, e.g. \code{list(filter = list(min_det_feats_per_cell = 20))}.
+Menu parameters take one of their choices; number parameters
+(thresholds, PCs, resolution, ...) any number in their range, typed
+in the viewer the same way. Parameters left out take Giotto's
+defaults; on GiottoDisk expression, z-score scaling and the
+normalization methods other than \code{"standard"} are not offered.}
+      \item{\code{cell_markers}}{Marker genes for the Automatic types step: a
+named list (cell type -> genes), a data.frame with the cell type in
+its first column and a gene in its second, or the path of such a
+CSV file. Left out, the step is blocked until one is given.}
+      \item{\code{analyses}}{Ids of the analyses to include besides
+Preprocessing; see \link{LensAnalysis} \verb{$catalog()}.}
+      \item{\code{settings}}{A JSON file written by \link{LensAnalysis}
+\verb{$write_settings()}; its saved settings are listed in the viewer,
+ready to restore.}
+      \item{\code{threads}}{Threads for UMAP and data.table in the jobs' process,
+for a new analysis. Default: preference \code{threads} (see
+\code{\link[=lens_preferences]{lens_preferences()}}), else 4.}
+      \item{\code{network_dir}}{Folder where spatial networks are saved, for a
+new analysis. A network is read from it when an analysis asks for
+one with the same cells, cell coordinates and network settings, in
+this or a later session. \code{NULL} keeps networks for the session
+only. Default: option \code{GiottoLens.network_dir}, else preference
+\code{network_dir} (see \code{\link[=lens_preferences]{lens_preferences()}}), else \code{networks} in
+\code{\link[tools:R_user_dir]{tools::R_user_dir()}}'s cache folder for GiottoLens.}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The \link{LensAnalysis}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-push_panel"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-push_panel}{}}}
 \subsection{\code{LensViewer$push_panel()}}{
@@ -1063,6 +1431,49 @@ Falls back to an \code{x$name} column if present, else blank.}
       \item{\code{callback}}{Function of one argument, the message data}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-jobs"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-jobs}{}}}
+\subsection{\code{LensViewer$jobs()}}{
+  Jobs running in the viewer's background R process
+(adr/0025), one row each. The process starts with the first job,
+which waits while it loads its packages and the object shown, and
+stops with the viewer; later jobs on the same object start at once.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$jobs()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame with columns \code{id}, \code{label}, \code{started}, and
+\code{done} and \code{total} (progress; \code{NA} for a job that reports none)
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-cancel_job"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-cancel_job}{}}}
+\subsection{\code{LensViewer$cancel_job()}}{
+  Cancel a job. One not started yet is dropped; one
+running is interrupted (compiled code may finish its current call
+first). Its result is never applied.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$cancel_job(id)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{id}}{Job id, as \code{jobs()} lists it}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    Whether the job was cancelled, invisibly
   }
 }
 

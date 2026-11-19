@@ -5,25 +5,32 @@ import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
-import { setMetaInfo, needColumns, prefetchColumns } from './data/meta.ts';
+import { setMetaInfo, prefetchColumns } from './data/meta.ts';
+import { fieldColumn, fieldExists, needFields, isItemKey, scaleKey, setItemPins } from './data/items.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
 import { updateTiles, setViewState, onSetView } from './data/schedule.js';
 import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
-import { cellColorBuffer } from './render/colors.ts';
+import { cellColorBuffer, columnScale } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initSelectionBar, initRStatus } from './ui/selbar.js';
+import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
-import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
+import { initDock, placeControls, refreshBuiltins, refreshCharts, refreshControls, pushPanel, removePanel, panelHandle,
+  showBuiltin } from './panels/dock.ts';
+import { initRegions, regionList } from './panels/regions.ts';
+import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { spatialView } from './spatial/current.ts';
 import { saveView } from './spatial/view.ts';
 import { applyTheme } from './ui/theme.ts';
-import { initPersist } from './core/persist.ts';
+import { initPersist, restoredConfig } from './core/persist.ts';
+import { prefs, prefIsSet, applyPrefs, onPrefs } from './core/prefs.ts';
+import { prefOutline, prefTxPalette, prefSelection } from './core/store.ts';
 import { createIcons, icons } from 'lucide';
 
 // Initialise lucide icons for the selection bar's buttons in the HTML.
@@ -33,17 +40,26 @@ createIcons({ icons });
 const $status = msg => { document.getElementById('status').textContent = msg; };
 
 // ── Cell colours ──────────────────────────────────────────────────────────────
+// The colour-by field is a metadata column or an item (data/items.ts);
+// expression items share one scale (scaleKey()), which their legend edits
 function recolorCells() {
   if (!state.cells) return;
   const s = store.getState();
   const col = s.colorBy;
-  // Keep the current colours while the column loads
-  if (col && !state.meta?.has(col) && state.metaInfo?.has(col)) {
-    needColumns([col]).then(() => { if (store.getState().colorBy === col && state.meta?.has(col)) recolorCells(); });
+  const data = col ? fieldColumn(col) : undefined;
+  // Keep the current colours while the field loads
+  if (col && !data && fieldExists(col)) {
+    needFields([col]).then(() => { if (store.getState().colorBy === col) recolorCells(); }, err => {
+      if (store.getState().colorBy !== col) return;
+      reportError(err, `cannot color by ${col}`);
+      actions.setColorBy(null);
+    });
     return;
   }
-  const { colors, fill, legend } = cellColorBuffer(state.cells.n, col ? state.meta?.get(col) ?? null : null,
-    col ? s.categoryStyles[col] : undefined, col ? s.colorScales[col] : undefined);
+  const scale = col ? scaleKey(col) : null;
+  const { colors, fill, legend } = cellColorBuffer(state.cells.n, data ?? null,
+    col ? s.categoryStyles[col] : undefined, columnScale(scale, s.colorScales));
+  if (legend?.type === 'continuous') legend.column = scale;
   state.cellColors  = colors;
   state.cellFill    = fill;
   state.colorLegend = legend;
@@ -51,23 +67,45 @@ function recolorCells() {
 }
 
 // ── Images ────────────────────────────────────────────────────────────────────
-// Opened in manifest order; the first is shown. One that fails to open is
+// Opened in manifest order, then the ones R added after launch
+// (session/images_added.json); the first is shown. One that fails to open is
 // reported to R and left out.
 const IMAGE_COLORS = [[64, 128, 255], [0, 255, 128], [255, 64, 64], [255, 200, 0], [255, 0, 255], [0, 255, 255]];
+let imagePool = null;
+const pool = () => (imagePool ??= new ImagePool());
+
+function setImageDefaults(img, show) {
+  const channels = [...state.images.values()].filter(i => !i.rgb).length;
+  actions.setImage(img.entry.name, img.rgb ? { show, rgb: true } : {
+    show, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
+  });
+}
+
 async function loadImages(entries) {
-  if (!entries.length) return;
-  const pool = new ImagePool();
-  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool, state.manifest.extent)));
   state.images = new Map();
+  const added = await fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : [], () => []);
+  entries = [...entries, ...(Array.isArray(added) ? added : [])];
+  if (!entries.length) return;
+  const opened = await Promise.allSettled(entries.map(e => openImage(e, pool(), state.manifest.extent)));
   opened.forEach((r, i) => {
     if (r.status === 'rejected') { reportError(r.reason, `image '${entries[i].name}' is not shown`); return; }
     const img = r.value, k = state.images.size;
     state.images.set(img.entry.name, img);
-    const channels = [...state.images.values()].filter(i => !i.rgb).length;
-    actions.setImage(img.entry.name, img.rgb ? { show: k === 0, rgb: true } : {
-      show: k === 0, color: IMAGE_COLORS[(channels - 1) % IMAGE_COLORS.length], contrast: img.contrast,
-    });
+    setImageDefaults(img, k === 0);
   });
+}
+
+// An image R adds after launch (LensViewer$add_image()): opened, shown, and
+// listed in the images and register panels
+async function addImage(entry) {
+  if (state.images.has(entry.name)) throw new Error(`there is already an image '${entry.name}'`);
+  const img = await openImage(entry, pool(), state.manifest.extent);
+  state.images.set(img.entry.name, img);
+  setImageDefaults(img, true);
+  initRegistration();
+  placeControls();
+  refreshControls(['images', 'register']);
+  return { name: img.entry.name, rgb: img.rgb };
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -116,6 +154,10 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
+  // The item colouring the cells stays loaded, and goes to the front of the
+  // colour-by menu's recent group
+  setItemPins(() => [store.getState().colorBy].filter(isItemKey));
+  store.subscribe(s => s.colorBy, c => { if (isItemKey(c)) actions.noteItem(c); });
   store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(spatialView()?.viewState); });
@@ -128,16 +170,24 @@ async function main() {
   initReleaseGuard();
   initRuleStrip();
   initSelectionBar();
+  initJobs();
+  initRegions(() => showBuiltin('regions'));
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
 
   // ── R → viewer messages ───────────────────────────────────────────────────
+  let metaCount = 0;
   onMessage('load_metadata', ({ columns }) => {
     // A reconnect re-sends the current metadata; keep the panels as they are
     if (!state.cells || !setMetaInfo(columns ?? [])) return;
+    metaCount++;
     const colorBy = store.getState().colorBy;
-    if (colorBy && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
+    // A first launch colors by the first column of the color_by preference
+    const first = !colorBy && !restoredConfig() && metaCount === 1
+      ? prefs().color_by.split(',').map(c => c.trim()).find(c => c && state.metaInfo.has(c)) : null;
+    if (first) actions.setColorBy(first);
+    else if (colorBy && !isItemKey(colorBy) && !state.metaInfo.has(colorBy)) actions.setColorBy(null);
     else recolorCells();
     // Rules on metadata columns re-evaluate against the new columns
     recompute({ reset: true });
@@ -145,6 +195,10 @@ async function main() {
     // Whatever the view and panels asked for loads first
     prefetchColumns();
   });
+
+  // Analysis: the panel opens when R starts one (viewer$analysis())
+  initAnalysis({ place: () => showBuiltin('analysis') });
+  onMessage('add_image', ({ entry }) => addImage(entry));
 
   onMessage('push_panel', pushPanel);
   onMessage('remove_panel', ({ id }) => { removePanel(id); });
@@ -157,9 +211,23 @@ async function main() {
   // Before R can ask about images
   await imagesLoaded;
   placeControls();   // the images and register panels, now that images are open
+  refreshControls(['images']);
   initRegistration();
 
   initRemote();
+  // Preferences come before the saved config. A config field still holding
+  // the old preference takes the new one.
+  onMessage('preferences', applyPrefs);
+  onPrefs((next, prev) => {
+    const s = store.getState();
+    if (JSON.stringify(s.outline) === JSON.stringify(prefOutline(prev))) actions.setOutline(prefOutline(next));
+    if (s.txPalette === prefTxPalette(prev)) actions.setTxPalette(prefTxPalette(next));
+    if (JSON.stringify(s.selectionColor) === JSON.stringify(prefSelection(prev)))
+      actions.setSelectionColor(prefSelection(next));
+    // Every spatial view's background (index.html .spatial-pane)
+    document.documentElement.style.setProperty('--view-bg', prefIsSet('background') ? next.background : '');
+    recolorCells();
+  });
   // The saved config comes from R on connect ('restore'), over the defaults
   // set above, images included
   initPersist();
@@ -191,7 +259,8 @@ function showEmpty(project) {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panel: panelHandle, get spatial() { return spatialView(); } };
+window.__giottolens = { state, store, actions, panel: panelHandle, regions: regionList,
+  analysis: analysisModel, get spatial() { return spatialView(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);

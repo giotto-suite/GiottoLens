@@ -7,6 +7,7 @@ import { createStore } from 'zustand/vanilla';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import type { Rule } from '../selection/rules.ts';
 import { rStorage } from './persist.ts';
+import { prefs, hexRgb, type Prefs } from './prefs.ts';
 import { state } from './state.js';
 import type { Registration, Landmark, Affine } from '../data/registration.ts';
 import type { CategoryStyle, ColorScale } from '../render/colors.ts';
@@ -49,11 +50,13 @@ export interface SavedView { target: [number, number]; zoom: number }
 export interface Config {
   layers: Record<LayerName, LayerVis>;
   outline: OutlineStyle;
+  selectionColor: [number, number, number];   // selected cells, in the spatial view and scatters
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
   colorAll: boolean;
   genes: string[];              // selected genes, by name
-  colorBy: string | null;       // metadata column colouring the cells
+  colorBy: string | null;       // field colouring the cells: a metadata column or an item key (data/items.ts)
+  recentItems: string[];        // item keys picked, newest first (RECENT_ITEMS at most): the color-by menu's recent group
   // per categorical column, per category: color, visibility, fill opacity
   categoryStyles: Record<string, Record<string, CategoryStyle>>;
   colorScales: Record<string, ColorScale>;   // per continuous column
@@ -80,6 +83,14 @@ export interface Runtime {
 
 export type LensState = Config & Runtime;
 
+export const RECENT_ITEMS = 8;
+
+// Config fields that start from a preference
+export const prefOutline = (p: Prefs): OutlineStyle =>
+  ({ color: hexRgb(p.outline_color), width: p.outline_width, alpha: p.outline_opacity });
+export const prefTxPalette = (p: Prefs): number => p.tx_palette === 'vivid' ? 1 : 0;
+export const prefSelection = (p: Prefs): [number, number, number] => hexRgb(p.selection_color);
+
 export const initialConfig = (): Config => ({
   layers: {
     poly:        { show: true,  alpha: 0.6 },
@@ -87,12 +98,14 @@ export const initialConfig = (): Config => ({
     annotations: { show: true,  alpha: 0.6 },
     img:         { show: true,  alpha: 1 },
   },
-  outline: { color: [0, 0, 0], width: 1, alpha: 0.8 },
+  outline: prefOutline(prefs()),
+  selectionColor: prefSelection(prefs()),
   images: {},
-  txPalette: 0,
+  txPalette: prefTxPalette(prefs()),
   colorAll: false,
   genes: [],
   colorBy: null,
+  recentItems: [],
   categoryStyles: {},
   colorScales: {},
   cellMark: {},
@@ -113,7 +126,7 @@ export const initialConfig = (): Config => ({
 // the combine mode are left out: R restores those itself, since it evaluates
 // them. Bump CONFIG_VERSION and add a step to `migrate` when a saved field
 // changes meaning.
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 const UNSAVED: (keyof Config)[] = ['rules', 'combine'];
 type Saved = Partial<Config>;
 
@@ -148,9 +161,21 @@ export function mergeConfig(saved: unknown, current: LensState): LensState {
 }
 
 // A config saved by an older bundle. 2: genes by name (were indices into the
-// manifest's gene list, which differ between objects)
+// manifest's gene list, which differ between objects). 3: scales have a
+// style; one saved before keeps its look: sequential, blue-red when it named
+// no preset, and the 7-color blue-white-red as RdBu.
 export function migrateConfig(saved: unknown, version: number): Saved {
-  return (version < 2 ? { ...(saved as Saved), genes: [] } : saved) as Saved;
+  const s = { ...((saved ?? {}) as Saved) };
+  if (version < 2) s.genes = [];
+  if (version < 3 && s.colorScales) {
+    const out: Record<string, ColorScale> = {};
+    for (const [k, v] of Object.entries(s.colorScales)) {
+      const preset = v.preset == null ? 'blue-red' : v.preset === 'blue-white-red' ? 'RdBu' : v.preset;
+      out[k] = { ...v, style: v.style ?? 'sequential', preset };
+    }
+    s.colorScales = out;
+  }
+  return s;
 }
 
 export const store = createStore<LensState>()(subscribeWithSelector(persist((): LensState => ({
@@ -179,6 +204,10 @@ export const actions = {
     set(s => ({ outline: { ...s.outline, ...patch } }));
   },
   resetOutline() { set({ outline: initialConfig().outline }); },
+  // null: back to the preference
+  setSelectionColor(color: [number, number, number] | null) {
+    set({ selectionColor: color ?? prefSelection(prefs()) });
+  },
   setTheme(theme: Theme) { set({ theme }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
@@ -193,6 +222,10 @@ export const actions = {
   clearGenes() { set({ genes: [] }); },
   setView(view: SavedView | null) { set({ view }); },
   setColorBy(col: string | null) { set({ colorBy: col }); },
+  // An item to the front of the recent list
+  noteItem(key: string) {
+    set(s => ({ recentItems: [key, ...s.recentItems.filter(k => k !== key)].slice(0, RECENT_ITEMS) }));
+  },
   // patch the styles of some categories of `column`
   setCategoryStyles(column: string, patch: Record<string, Partial<CategoryStyle>>) {
     set(s => {

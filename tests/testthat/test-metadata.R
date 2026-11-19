@@ -97,6 +97,47 @@ test_that(".retype_meta rewrites one column's file and back exactly", {
     expect_error(.retype_meta(dir, out$msg$columns[[1]], "categorical"), "1001 distinct values")
 })
 
+test_that("text whose values are numbers can be continuous", {
+    dir <- tempfile("meta"); dir.create(dir)
+    on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+    ids <- c("c1", "c2", "c3", "c4")
+    meta <- data.frame(cell_ID = ids, num = c("1", "2.5", NA, "10"),
+        lab = c("a", "1", "b", "2"), flag = c(TRUE, FALSE, TRUE, NA))
+    out <- .write_metadata(meta, dir, ids)
+    cols <- out$msg$columns
+    expect_true(cols[[1]]$number_text)
+    expect_null(cols[[2]]$number_text)
+    expect_null(cols[[3]]$number_text)
+
+    expect_warning(out <- .write_metadata(meta, dir, ids,
+        types = c(num = "continuous", lab = "continuous", flag = "continuous")),
+        "`lab` has values that are not numbers")
+    cols <- out$msg$columns
+    expect_identical(vapply(cols, `[[`, "", "kind"), c("continuous", "categorical", "continuous"))
+    expect_true(cols[[1]]$numeric)
+    expect_identical(.read_meta_column(dir, cols[[1]]), c(1, 2.5, NA, 10))
+    expect_identical(.read_meta_column(dir, cols[[3]]), c(1, 0, 1, NA))
+    expect_identical(out$dropped, "lab")
+
+    # Retyped from its file, it is numeric from then on
+    txt <- .write_metadata(meta, dir, ids)$msg$columns
+    re <- .retype_meta(dir, txt[[1]], "continuous")
+    expect_identical(re$entry$kind, "continuous")
+    expect_true(re$entry$numeric)
+    expect_identical(.read_meta_column(dir, re$entry), c(1, 2.5, NA, 10))
+    expect_null(re$values)
+    expect_error(.retype_meta(dir, txt[[2]], "continuous"), "values that are not numbers")
+})
+
+test_that(".merge_meta adds columns and replaces one of the same name in place", {
+    old <- list(n = 3L, columns = list(list(name = "a", url = "1"), list(name = "b", url = "2")))
+    new <- list(n = 3L, columns = list(list(name = "c", url = "3"), list(name = "a", url = "4")))
+    m <- .merge_meta(old, new)
+    expect_identical(vapply(m$columns, `[[`, "", "name"), c("a", "b", "c"))
+    expect_identical(m$columns[[1]]$url, "4")
+    expect_identical(.merge_meta(NULL, new)$columns, new$columns)
+})
+
 test_that(".parse_col_types maps aliases and rejects unknown types", {
     expect_null(.parse_col_types(NULL))
     expect_identical(.parse_col_types(c("a", "b")), c(a = NA_character_, b = NA_character_))

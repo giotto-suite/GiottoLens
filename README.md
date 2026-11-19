@@ -57,16 +57,30 @@ viewer$select(lens_range("nr_feats", 50, 200), source = "hist", replace = FALSE,
 viewer$set_selection(ids)
 viewer$set_view(x = 500, y = -800, zoom = 2)      # or bounds = c(xmin, xmax, ymin, ymax)
 viewer$color_by("leiden_clus")
+cat <- viewer$catalog()
+viewer$color_by(cat[cat$item == "CD3E" & cat$name %in% "normalized", ])
+                                                  # one gene, not added to the metadata
 viewer$set_outline(color = "black", width = 2, alpha = 1)  # cell outline color, width (px), opacity
+viewer$set_selection_color("#00e5ff")             # selected cells' color; NULL: the preference
 viewer$set_theme("light")                         # light panels; the spatial view stays dark
 viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
                         alpha = c(0.2, Myeloid = 1))
 viewer$set_column_type("leiden_clus", "categorical")       # numeric column shown as categories
-viewer$set_color_scale("nr_feats", preset = "magma")        # continuous scale: preset, or
+viewer$catalog()                                  # what the object holds that can be pulled
+viewer$pull(c("CD3E", "leiden_clus"), types = list(leiden_clus = "categorical"))
+                                                  # adds them to the metadata; or rows of catalog()
+viewer$select(lens_cells(ids), source = "table")  # pick rows in the cell table
+viewer$save_region("tumor")                       # the selection, saved under a name; regions() lists them
+de <- viewer$compare_regions("tumor", "stroma")   # scran t-test as a job, docked as a volcano plot;
+                                                  # b = NULL: every other cell
+viewer$set_color_scale("nr_feats", style = "sequential", preset = "viridis")  # Giotto's styles:
+viewer$set_color_scale("nr_feats", style = "divergent", midpoint = 100,      # divergent (default)
+                       limits = c(0, 500))                                   # or sequential
 viewer$set_color_scale("nr_feats", colors = c("black", "red", "yellow"))  # custom colors
 viewer$set_layer("tx", show = TRUE)
 viewer$set_mark(shape = "circle", size = 55)      # how cells are drawn zoomed in; set_mark() resets
 viewer$set_image("18s", show = TRUE, color = "red", contrast = c(0, 3000))
+viewer$add_image("he.ome.tif", type = "he")       # a TIFF added after launch, to register
 viewer$register_image("he", reference = "dapi")   # landmark tool; result in viewer$registration
 write_registration(viewer$registration, "align")  # Xenium Explorer imagealignment.csv, keypoints.csv
 g <- viewer$add_registered_image(g)                # the registered image as a giottoAffineImage
@@ -77,6 +91,18 @@ viewer$panels()                                   # what is docked, and where
 viewer$remove_panel("panel-1")
 viewer$push_polygons(regions)                     # SpatVector, sf or WKT
 viewer$screenshot("view.png")
+
+# An analysis of the object shown: Giotto's first steps with a panel per parameter, and more
+a <- viewer$analysis(analyses = c("interactions", "niches"))   # opens the Analysis panel
+a$set("leiden", resolution = 0.5)                 # reruns Leiden and the steps below it
+a$run("niches")                                   # runs an added analysis
+a$code()                                          # the Giotto calls, as R code
+
+# Preferences: defaults for every viewer (also the Preferences panel)
+lens_preferences()                                # every preference; attr "set": those set
+lens_preferences(seq_palette = "magma", cat_palette = "okabe_ito")
+lens_preferences(seq_palette = NULL)              # back to the built-in default
+lens_preferences(reset = TRUE)
 ```
 
 Selection rules are evaluated in R as well as in the browser, so `viewer$select()` resolves
@@ -92,6 +118,7 @@ viewer without seeing the screen.
 ```r
 viewer$describe(by = "leiden_clus")   # what is on screen and what is selected, as text
 viewer$log()                          # what the user did, and any browser errors
+viewer$jobs()                         # work running in the background; cancel_job(id) stops one
 
 # Ask the user to draw, then work with what they chose
 sel <- viewer$wait_for_selection()    # returns once the user lassos or brushes
@@ -132,7 +159,9 @@ counts; × drops one, and the bar's rules button hides them.
 - **Images:** the object's images under the cells, each from its own TIFF file by tile
   (pyramidal OME-TIFF, including Xenium's JPEG-2000, and COG). Single-channel images have a
   colour and contrast each and add up like the channels of one image; RGB images (H&E) are
-  recognised from the file and drawn in their own colours beneath them.
+  recognised from the file and drawn in their own colours beneath them. "add image" in the
+  images panel picks a TIFF in a file dialog R opens (IF, H&E, or a 10x Xenium image placed
+  in microns).
 - **Registration:** landmark pairs between an image (such as an H&E from
   `launch_lens(image_files =)`) and a reference image (DAPI), with flips and quarter turns, a
   live least-squares affine fit and per-pair residuals; saved as Xenium Explorer CSVs or added
@@ -140,6 +169,9 @@ counts; × drops one, and the bar's rules button hides them.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
+- **Regions:** the Regions panel saves the selection under a name and compares two regions,
+  or one and every other cell, by differential expression; clicking a gene in the volcano
+  plot colors the cells by it.
 - **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
   ruler, and a transcript lasso that counts genes in a region.
 - **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move

@@ -337,8 +337,10 @@ export function attachRegistration(view: SpatialView): () => void {
 
 // The registration sent to R; the Register panel (panels/register.ts) is the
 // UI, and R's register_image() works without it
+let registrationReady = false;
 export function initRegistration() {
-  if (!state.images?.size) return;
+  if (registrationReady || !state.images?.size) return;
+  registrationReady = true;
   store.subscribe(s => [s.registration, s.mode], syncPane,
     { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] });
   syncPane();

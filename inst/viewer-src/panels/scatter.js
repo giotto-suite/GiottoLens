@@ -4,7 +4,7 @@
 import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
-import { cellColorBuffer } from '../render/colors.ts';
+import { cellColorBuffer, columnScale } from '../render/colors.ts';
 import { needColumns } from '../data/meta.ts';
 import { clientToWorld, worldToClient, fitZoom, dragPan, spaceHeld } from '../ui/dom.js';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
@@ -52,7 +52,7 @@ export function createScatterPanel(body, ctx) {
       return;
     }
     colors = name ? cellColorBuffer(state.cells.n, state.meta.get(name) ?? null,
-      store.getState().categoryStyles[name], store.getState().colorScales[name]).colors : state.cellColors;
+      store.getState().categoryStyles[name], columnScale(name, store.getState().colorScales)).colors : state.cellColors;
     pointData = null;
     render();
   }
@@ -81,7 +81,7 @@ export function createScatterPanel(body, ctx) {
     })];
     if (selPos?.length) layers.push(new ScatterplotLayer({
       id: 'scatter-sel', data: selData,
-      getFillColor: [255, 220, 50, 220], getRadius: 2, radiusUnits: 'pixels',
+      getFillColor: [...store.getState().selectionColor, 220], getRadius: 2, radiusUnits: 'pixels',
     }));
     deck.setProps({ layers });
   }
@@ -176,15 +176,16 @@ export function createScatterPanel(body, ctx) {
   ['x', 'y'].forEach(k => ctrls[k].addEventListener('change', load, { signal: listeners.signal }));
   ctrls.color.addEventListener('change', recolor, { signal: listeners.signal });
   // Hidden behind another tab, it catches up when shown
-  const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor);
+  const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor), hue = whenVisible(ctx, render);
   unsub.push(store.subscribe(s => s.selection.version, sel.update));
+  unsub.push(store.subscribe(s => s.selectionColor, hue.update));
   unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));
   unsub.push(store.subscribe(s => [s.categoryStyles, s.colorScales], () => { if (ctrls.color.value) col.update(); },
     { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] }));
   load();
 
   return {
-    show() { col.show(); sel.show(); },
+    show() { col.show(); sel.show(); hue.show(); },
     destroy() {
       destroyed = true;
       unsub.forEach(u => u());

@@ -1,5 +1,12 @@
 # GiottoLens (development version)
 
+* Work the viewer does for the page can run as jobs in a background R process that keeps the
+  object shown loaded, so R and the page stay free. The jobs button in the tools bar shows how
+  many are running; its popover lists them with their progress, cancels one, and keeps the
+  last few finished. `viewer$jobs()` and `viewer$cancel_job()` do the same from R. The
+  protocol is 7. See adr/0025.
+* Hand-over snapshots are written with qs2 when it is installed, which saves several seconds
+  on large objects.
 * A power button next to R's connection stops the viewer, as `viewer$close()` does (click it
   twice). A page whose viewer was stopped says so and no longer tries to reconnect.
 * Cross-filter mode is on by default: the selection is the cells every source selects.
@@ -10,6 +17,59 @@
   rules are in a bar along the bottom. The view no longer shows a "GiottoLens" label. With
   no spatial view open, `set_view()`, `zoom_to()`, `screenshot()` and `view_bounds()` stop
   with an error. `panels()` lists `tools` and `spatial`. See adr/0023.
+* A Data panel lists what the object shown holds beyond the metadata already pushed
+  (cell metadata, expression, spatial enrichments, dim reductions) and pulls the items
+  queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
+  do the same from R. Pulls run as jobs, which the panel can cancel, and add columns to the
+  viewer, not the object; `pull(wait = FALSE)` returns at once with the job's id.
+* Regions: `viewer$save_region()`, `regions()`, `select_region()` and `remove_region()` keep
+  named sets of cells for the object shown. `viewer$compare_regions(a, b)` tests two regions,
+  or one and every other cell, with `Giotto::findScranMarkers()` as a job, and docks the
+  result as a volcano plot (`de_results()` returns the tables). Clicking a gene in it colors
+  the cells by that gene. The Regions panel, a tab next to the Data panel, does the same.
+  Saved regions count as Lens work for `set_object()`. See adr/0020.
+* Color cells by one gene, enrichment or dim reduction axis without adding it to the
+  metadata: the button next to "color by" opens a searchable picker, and picked items stay
+  in the menu's "recent" group. `viewer$color_by()` takes a row of `catalog()` or its `key`.
+  Genes share one color scale. See adr/0024.
+* A cell table panel, a tab behind the histogram: one row per cell in the other sources'
+  selection (all cells when there is none), one column per metadata column, with the cell
+  IDs from R. Only the rows in view are drawn, so large tables scroll smoothly. Rows picked
+  in it (click, ⌘/Ctrl-click to toggle, Shift-click for a range) are the `table` source's
+  rule: they add to the selection, or narrow it in cross-filter mode.
+  `viewer$select(lens_cells(ids), source = "table")` picks rows from R.
+* A text column whose values are all numbers can be shown as a continuous scale
+  (`set_column_type()` and the "treat as" menu).
+* `viewer$analysis()` opens an Analysis panel for the object shown, also offered in the "+"
+  menu. Its Preprocessing tab runs Giotto's first steps (QC filter to cell-type labels) and
+  reruns only the steps a change affects; further analyses (spatial interactions, spatial
+  genes, co-expression modules, niches, interaction-changed genes, markers between groups)
+  are added from a dialog. Steps run as jobs and nothing runs until asked. Results come back
+  as metadata columns beside pulled ones, docked charts and tables; a gene clicked in a table
+  colors the cells. Finished runs are kept under History. See adr/0021 and adr/0022.
+* Pushed charts: an interval param named `range` sends its extent to R (`panel_pick`).
+* Preferences: `lens_preferences()` and the viewer's Preferences panel (a tab beside Layers)
+  set defaults for every viewer: sequential and divergent palettes, the scale style and the
+  expression scale's style, category and transcript palettes, the background, cell outlines and fill, the
+  expression values the picker opens on and region comparisons read, the column cells are
+  colored by at launch, and an analysis's threads, history length and network folder. Only
+  preferences that are set are saved, so the others follow the installed defaults; launch
+  arguments, R options and changes made in a viewer take precedence.
+* Continuous color scales take Giotto's options: `viewer$set_color_scale(style =)`
+  `"divergent"` (the default, as in Giotto's plots: centered on `midpoint`, default the
+  median) or `"sequential"`, `midpoint =` and `limits =` (values beyond take the end colors;
+  `NA` for automatic). The default colors are Giotto's: divergent blue, white, red;
+  sequential viridis. Divergent presets `RdBu`, `PuOr` and `PRGn` are added; the 7-color
+  scale that was `blue-white-red` is `RdBu`, and `blue-white-red` is Giotto's three colors.
+  The legend has a style menu and low, mid and high handles on the bar (double-click: back
+  to automatic). Scales saved before keep their look.
+* `viewer$add_image(file, type = )` adds a TIFF after launch: shown, listed in the images and
+  register panels, and opened again by reloads and new tabs. `type = "if"` or `"he"` places
+  it inside the data's extent, to register by landmarks; `"xenium"` reads a 10x Xenium
+  morphology image with Giotto's Xenium reader and places it in microns. The images panel
+  has an "add image" button: a choice of type, then a file dialog R opens (option
+  `GiottoLens.choose_file` replaces it). Added images belong to the object shown and count
+  as Lens work for `set_object()`.
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See
@@ -34,6 +94,9 @@
 * Protocol 6: `ready` carries the page's load, R sends `reload`, and the page asks R with
   `ask`, answered with `answer`.
 
+* The selection color can be set: `viewer$set_selection_color("#00e5ff")`, or the
+  `selection_color` preference for every viewer; `NULL` goes back to the preference (yellow
+  unless set). It is part of the saved config (`state()$config$selectionColor`).
 * A light theme for the panels and controls: `viewer$set_theme("light")`. The spatial view
   and scatter plots stay dark. The theme is part of the saved config (`state()$config$theme`).
 * Opening a panel group's "+" menu closes any other one that is open.

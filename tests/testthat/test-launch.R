@@ -69,6 +69,17 @@ test_that("set_outline checks its arguments before sending", {
     expect_error(v$set_outline(width = 0.01), "no viewer connected")
 })
 
+test_that("set_selection_color checks its argument before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_selection_color(c("red", "blue")), "one color name or hex string")
+    expect_error(v$set_selection_color(1), "one color name or hex string")
+    expect_error(v$set_selection_color("notacolour"), "invalid color name")
+    expect_error(v$set_selection_color("red"), "no viewer connected")
+    expect_error(v$set_selection_color(), "no viewer connected")
+})
+
 test_that("set_theme checks its argument before sending", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
@@ -98,6 +109,14 @@ test_that("set_column_type switches numeric columns and keeps the setting", {
     v$set_column_type("score", "continuous")
     expect_identical(kind("score"), "continuous")
     expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
+    # Text whose values are numbers goes to continuous, not the other way
+    suppressMessages(v$push_metadata(data.frame(cell_ID = fx$meta$cell_ID,
+        txt = as.character(seq_along(fx$meta$cell_ID)))))
+    expect_true(priv$meta_entry("txt")$number_text)
+    expect_error(v$set_column_type("txt", "categorical"), "is not numeric")
+    v$set_column_type("txt", "continuous")
+    expect_identical(kind("txt"), "continuous")
+    expect_identical(priv$meta_column("txt"), as.double(match(priv$cell_ids, fx$meta$cell_ID)))
     expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
     expect_error(v$set_column_type("score", "other"), "should be one of")
 })
@@ -129,6 +148,10 @@ test_that("set_color_scale checks its arguments before sending", {
     expect_error(v$set_color_scale(colors = rep("red", 10)), "2 to 9 colors")
     expect_error(v$set_color_scale(colors = c("red", "notacolour")), "invalid color name")
     expect_error(v$set_color_scale(reverse = NA), "TRUE or FALSE")
+    expect_error(v$set_color_scale(style = "rainbow"), "should be one of")
+    expect_error(v$set_color_scale(midpoint = c(1, 2)), "`midpoint` must be one number")
+    expect_error(v$set_color_scale(limits = c(2, 1)), "low < high")
+    expect_error(v$set_color_scale(limits = 1), "low < high")
     expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
 })
 
@@ -158,17 +181,18 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_false(v$connected())
 
     # Metadata pushed before any tab connects is written and sent on connect,
-    # after the (empty) saved config
+    # after the preferences and the (empty) saved config
     v$push_metadata(fx$meta)
     a <- ws_client(ws_url(v), origin = sub("/lens/.*$", "", v$url))
-    expect_true(pump_until(function() length(a$state$msgs) > 1))
-    expect_identical(a$state$msgs[[1]]$type, "restore")
-    expect_null(a$state$msgs[[1]]$data$config)
-    expect_identical(a$state$msgs[[2]]$type, "load_metadata")
     expect_true(pump_until(function() length(a$state$msgs) > 2))
+    expect_identical(a$state$msgs[[1]]$type, "preferences")
+    expect_identical(a$state$msgs[[2]]$type, "restore")
+    expect_null(a$state$msgs[[2]]$data$config)
+    expect_identical(a$state$msgs[[3]]$type, "load_metadata")
+    expect_true(pump_until(function() length(a$state$msgs) > 3))
     # No rules to re-send: R's rule count alone, so the tab can report it
-    expect_identical(a$state$msgs[[3]]$type, "rule_seq")
-    expect_identical(a$state$msgs[[3]]$data$seq, 0L)
+    expect_identical(a$state$msgs[[4]]$type, "rule_seq")
+    expect_identical(a$state$msgs[[4]]$data$seq, 0L)
     expect_true(v$connected())
 
     ids <- get("private", v$.__enclos_env__)$cell_ids
@@ -242,7 +266,7 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
     expect_identical(pushed[[2]]$data$where, "below")
     expect_match(pushed[[2]]$data$data_url, "^session/panels/big_")
-    expect_identical(a$state$msgs[[1]]$data$panels, list("panel-1", "big"))
+    expect_identical(a$state$msgs[[2]]$data$panels, list("panel-1", "big"))
 
     # The page's config comes back verbatim to the next page
     cfg <- '{"state":{"layers":{"poly":{"show":false,"alpha":0.3}},"images":{},"genes":[]},"version":1}'
@@ -255,9 +279,9 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_true(pump_until(function() !v$connected()))
 
     b <- ws_client(ws_url(v))
-    expect_true(pump_until(function() length(b$state$msgs) > 0))
-    expect_identical(b$state$msgs[[1]]$data$config, cfg)
-    expect_identical(b$state$msgs[[1]]$data$panels, list("panel-1"))
+    expect_true(pump_until(function() length(b$state$msgs) > 1))
+    expect_identical(b$state$msgs[[2]]$data$config, cfg)
+    expect_identical(b$state$msgs[[2]]$data$panels, list("panel-1"))
     v$remove_panel("panel-1")
     expect_true(pump_until(function() any(vapply(b$state$msgs, function(m) m$type == "remove_panel", NA))))
     b$ws$close()
@@ -478,4 +502,20 @@ test_that("R evaluates rules on the cells of the object shown", {
         bx$xy$sdimy >= -100 & bx$xy$sdimy <= 0))
     expect_true(all(startsWith(v$selection, "bin_")))
     expect_length(list.files(get("private", v$.__enclos_env__)$session, "^cells-"), 1L)
+})
+
+test_that("the cell table asks for the IDs of cell indices, and nothing else", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- v$.__enclos_env__$private
+    ask <- function(cells) priv$ask(list(op = "cell_ids", cells = cells), NULL)
+    expect_identical(unlist(ask(list(0, 899, 5))$data$ids), priv$cell_ids[c(1, 900, 6)])
+    expect_match(ask(list(900))$error, "cell indices")
+    expect_match(ask(list(-1))$error, "cell indices")
+    expect_match(ask(list(1.5))$error, "cell indices")
+    expect_match(ask(list("a"))$error, "cell indices")
+    expect_match(ask(NULL)$error, "cell indices")
+    expect_match(ask(as.list(seq_len(5001)))$error, "cell indices")
+    expect_true("cell_ids" %in% .lens_object_ops)
 })

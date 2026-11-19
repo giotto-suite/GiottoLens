@@ -2,6 +2,7 @@ import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { cellId } from '../data/cells.ts';
 import { metaValue, onColumnsLoaded, prefetchState } from '../data/meta.ts';
+import { isItemKey, itemColumn, fieldLabel, onItemsLoaded } from '../data/items.ts';
 import { escapeHtml } from './dom.js';
 import { spatialView } from '../spatial/current.ts';
 
@@ -23,19 +24,21 @@ let _shown = null;   // { idx, x, y } of the visible tooltip
 function buildHTML(idx) {
   const id = cellId(state.cells, idx, () => { if (_shown?.idx === idx) showCellTooltip(idx, _shown.x, _shown.y); });
   let html = `<div class="ctt-id">${escapeHtml(id ?? `cell ${idx}`)}</div>`;
+  const row = (k, v) => `<div class="ctt-row"><span class="ctt-key">${escapeHtml(k)}</span>` +
+    `<span class="ctt-val">${escapeHtml(fmtVal(v))}</span></div>`;
+  // An item colouring the cells first: it is not a metadata column
+  const colorBy = store.getState().colorBy;
+  const item = isItemKey(colorBy) ? itemColumn(colorBy) : null;
+  if (item) html += `<div class="ctt-sep"></div>` + row(fieldLabel(colorBy), metaValue(item, idx));
   if (!state.metaInfo?.size) return html;
 
   // Loaded columns, in payload order with the colour-by column first; the
   // others are on their way (the background load) or not loaded (over budget)
-  const colorBy = store.getState().colorBy;
   const names = [...state.metaInfo.keys()].filter(k => state.meta?.has(k));
   const ordered = colorBy && names.includes(colorBy) ? [colorBy, ...names.filter(k => k !== colorBy)] : names;
   const unloaded = state.metaInfo.size - names.length;
   html += `<div class="ctt-sep"></div>`;
-  html += ordered.slice(0, MAX_ROWS).map(k =>
-    `<div class="ctt-row"><span class="ctt-key">${escapeHtml(k)}</span>` +
-    `<span class="ctt-val">${escapeHtml(fmtVal(metaValue(state.meta.get(k), idx)))}</span></div>`
-  ).join('');
+  html += ordered.slice(0, MAX_ROWS).map(k => row(k, metaValue(state.meta.get(k), idx))).join('');
   if (ordered.length > MAX_ROWS)
     html += `<div class="ctt-overflow">+${ordered.length - MAX_ROWS} more</div>`;
   if (unloaded)
@@ -45,6 +48,7 @@ function buildHTML(idx) {
 
 // Columns that arrive while the tooltip is up show at once
 onColumnsLoaded(() => { if (_shown) showCellTooltip(_shown.idx, _shown.x, _shown.y); });
+onItemsLoaded(() => { if (_shown) showCellTooltip(_shown.idx, _shown.x, _shown.y); });
 
 function isSuppressed() {
   return state.lassoActive || state.brushDown

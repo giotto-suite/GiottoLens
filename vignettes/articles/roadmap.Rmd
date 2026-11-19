@@ -57,6 +57,30 @@ fastplotR and GiottoLens and a brush on it crossfilters the other views.
 The viewer's state (layout, panels, settings, rules) is kept by R while it runs; saving it to
 a file and restoring it in a later session is issue #21.
 
+## Data panel
+
+A dock panel for what the object shown holds beyond the metadata already pushed, and for the
+cells themselves as rows.
+
+The catalog and pull are in place (design.Rmd "Cells"): the Data panel lists what
+`spatValues()` can return for the spatial unit shown, from the object R loads anyway, and
+pulls the items queued in one `spatValues()` call, run as a job over the object the jobs'
+daemon holds (adr/0025), adding columns to the viewer's metadata, not the object.
+`viewer$catalog()` and `viewer$pull()` are the same from R. This is the first form of the
+per-cell store in "Panels from GiottoVisuals specs", item 4. The cell table is in place too:
+rows are the other sources' selection, drawn from the page's typed arrays a screen at a time,
+with cell IDs asked of R for the rows in view, and picked rows are the `table` source's rule.
+Next:
+
+1. **Change history.** The last 20 view changes (rules, colour-by, column types, pulls) with
+   undo, kept with the config R holds (adr/0009). This is the list of changes the editing
+   core's undo builds on ("Plugins", item 1). It records the view, not the data: snapshots
+   do that.
+2. **Fields everywhere.** Colour-by holds an item key and takes items from the picker
+   without adding columns (adr/0024). The histogram and scatter axes, rules and the cell
+   table take metadata columns only; they move to fields next, with a rule on an item
+   pinning it in the page's item cache.
+
 ## The large-data path
 
 Selections over cells stay in the browser up to about 10–20M cells; beyond that, and for
@@ -68,7 +92,8 @@ queries over transcripts, the work runs in R next to the files.
   statement per interaction returning integer cell indices) closes that gap. It lives in
   GiottoDisk so a lasso in the viewer and the same polygon in a script stay identical.
 - **A warm background worker** (mirai) holding that handle, so queries and tile serving do not
-  wait on, or block, the R console.
+  wait on, or block, the R console. The jobs' daemon (adr/0025) already holds the object
+  shown; the handle can live there.
 - **Aggregates, not IDs, at transcript scale.** Counts per gene and densities inside a region;
   selections stay rules that R resolves lazily.
 - **Rule evaluation in R for the viewer** as a second implementation of the browser's, with
