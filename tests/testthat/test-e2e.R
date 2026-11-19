@@ -1573,6 +1573,51 @@ test_that("the start page opens a project's snapshot, and asks before dropping w
     expect_identical(br$errors(), character())
 })
 
+test_that("the page saves the work and opens the save from the start page", {
+    bx <- lens_bins_fixture()
+    td <- tempfile("lensproj_")
+    on.exit(unlink(td, recursive = TRUE), add = TRUE)
+    v <- suppressMessages(launch_lens(bx$mem, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        project = td))
+    on.exit(v$close(discard = TRUE), add = TRUE)
+    ids <- get("private", v$.__enclos_env__)$cell_ids
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 900"))
+    expect_true(pump_until(function() v$connected()))
+
+    # Metadata is read by the page from the working bundle (work/)
+    suppressMessages(v$push_metadata(data.frame(cell_ID = ids,
+        half = ifelse(seq_along(ids) <= 450L, "left", "right"))))
+    v$color_by("half")
+    expect_true(browser_wait(br, "window.__giottolens.state.meta?.has?.('half')"))
+    v$save_region("top", ids[1:20])
+
+    # The tools bar's save button
+    br$js("document.querySelector('[data-panel=tools] [data-act=save]').click()")
+    br$js("(() => { const f = document.querySelector('.save-panel');
+        f.querySelector('.save-name').value = 'first';
+        f.querySelector('.save-desc').value = 'from the page';
+        f.requestSubmit(); return true; })()")
+    expect_true(pump_until(function() nrow(v$saves()) == 1L))
+    expect_identical(v$saves()$description, "from the page")
+    expect_true(browser_wait(br, "document.querySelector('.save-status').textContent.startsWith('saved first.')"))
+
+    # More work, then the save opened from the project dialog, after asking
+    v$save_region("bottom", ids[880:900])
+    br$js("document.querySelector('[data-panel=tools] [data-act=project]').click()")
+    open_save <- paste0("(() => { const r = [...document.querySelectorAll('.start-row')]",
+        ".find(r => r.querySelector('.start-name')?.firstChild?.textContent === 'first');",
+        " r?.querySelector('.start-actions .start-btn')?.click(); return !!r; })()")
+    expect_true(browser_wait(br, open_save))
+    expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
+    br$js("document.querySelector('.start-confirm .danger').click()")
+    expect_true(pump_until(function() identical(v$regions()$name, "top")))
+    expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",
+        "!document.querySelector('.start-overlay') && window.__giottolens.state.metaInfo?.has?.('half')")))
+    expect_identical(br$errors(), character())
+})
+
 test_that("an object in memory is written into a project and drawn from untiled stores", {
     fx <- lens_fixture()
     sw <- function(...) suppressMessages(suppressWarnings(...))

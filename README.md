@@ -25,12 +25,12 @@ viewer <- launch_lens(g, spat_unit = "bin008", feat_type = NULL)
 
 viewer$push_metadata(g, dimreds = "umap")   # colour-by, tooltip, scatter and histogram
 viewer$selection                            # cells selected in the browser
-viewer$close()
+viewer$close()                              # work not saved stays in the project
 ```
 
 `launch_lens()` serves the viewer on `127.0.0.1` and a free port, under a random path that
 changes every launch, and opens it in the browser or viewer pane. Treat `viewer$url` like a
-password while the viewer runs (see [SECURITY.md](SECURITY.md)). Nothing is copied or written next to your data. Use `host = "0.0.0.0"` to
+password while the viewer runs (see [SECURITY.md](SECURITY.md)). The project folder is never served, only the stores the viewer mounts. Use `host = "0.0.0.0"` to
 expose it to the network, and `url_prefix` when the browser reaches R through a proxy or port
 forward (for example R on an HPC node).
 
@@ -38,7 +38,9 @@ forward (for example R on an HPC node).
 
 ```r
 # What the viewer shows: a snapshot of a GiottoDisk project
-viewer$set_object(g)                # another object; refuses to drop Lens work without discard = TRUE
+viewer$save("tumor_regions")        # the work in the viewer, with the snapshot shown
+viewer$saves(); viewer$open_save("tumor_regions")
+viewer$set_object(g)                # another object; refuses to drop work not saved without discard = TRUE
 g <- viewer$gobject()               # the object shown, loaded from its snapshot
 viewer$checkout("clustered")        # another snapshot of the project
 viewer$open_project("~/proj")       # the project's start page; name = "clustered" opens one

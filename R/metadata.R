@@ -133,7 +133,7 @@ prep_meta <- function(
 # shown as categories, so it can go back to continuous exactly. A `types`
 # entry over the level limit is not applied; its column is in `dropped`.
 .write_metadata <- function(meta, dir, cell_ids, types = NULL, site = "push_metadata",
-                            served = "metadata") {
+                            served = "work/metadata") {
     if (!"cell_ID" %in% names(meta))
         stop("[", site, "] metadata needs a `cell_ID` column matching the ",
             "cell IDs", call. = FALSE)
@@ -248,14 +248,14 @@ prep_meta <- function(
 # A column's file is named by its content, so the same values keep the same
 # URL across pushes (the browser keeps a column it has) and changed values
 # never reuse a cached one. Returns the URL, relative to the page.
-# `served`: the session folder the file is served from (metadata/, or items/
-# for items read on their own)
-.write_meta_column <- function(dir, name, x, served = "metadata") {
+# `served`: the URL folder the file is served from (the working bundle's
+# metadata/, or session/items/ for items read on their own)
+.write_meta_column <- function(dir, name, x, served = "work/metadata") {
     tmp <- tempfile("col", tmpdir = dir, fileext = ".tmp")
     arrow::write_parquet(data.frame(value = x), tmp)
     path <- file.path(dir, sprintf("%s-%s.parquet", name, unname(tools::md5sum(tmp))))
     if (file.exists(path)) unlink(tmp) else file.rename(tmp, path)
-    paste0("session/", served, "/", basename(path))
+    paste0(served, "/", basename(path))
 }
 
 # Files no payload in `keep` points to. The viewer keeps the previous

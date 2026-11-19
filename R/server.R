@@ -7,7 +7,11 @@
 # unit. Anything else is a 404.
 #
 #   /lens/<token>/            viewer bundle, served from the package in place
-#   /lens/<token>/session/    manifest.json, cells.parquet, metadata/ (temp dir)
+#   /lens/<token>/session/    manifest.json, the cell table, items/ (temp dir)
+#   /lens/<token>/work/       the viewer's working bundle (adr/0026): metadata/,
+#                             panels/. In the project, where others may write,
+#                             so it goes through the handler below, which
+#                             checks real paths on every request.
 #   /lens/<token>/data/<m>/   data store <m>, through the Range handler below.
 #                             The stores and images change when another
 #                             object is loaded (`routes`); the token does not.
@@ -21,7 +25,8 @@
 #                             Range). Only the listed files are served.
 #   /lens/<token>/ws          the WebSocket
 #
-# The viewer bundle and the data stores are never written to.
+# The viewer bundle and the data stores are never written to; the project
+# folder itself is never served.
 
 .static_headers <- list(
     "Cache-Control"                = "no-cache",
@@ -32,8 +37,8 @@
 )
 
 # `routes`: environment holding `mounts`, the data directories (name → path),
-# and `images`, the image files (k → path, see .image_entries()), both
-# normalized; read on each request, so a load can change them. The files/
+# `images`, the image files (k → path, see .image_entries()), and `work`, the
+# working bundle's directory, all normalized; read on each request, so a load can change them. The files/
 # paths of a new object's stores are added with .files_paths().
 # `session_dir`: directory with manifest.json and metadata/.
 # `ws_handlers`: list(open = function(ws), message = function(ws, msg),
@@ -46,12 +51,13 @@
     paths <- c(
         stats::setNames(list(.static_path(viewer_dir, index = TRUE),
             .static_path(session_dir), httpuv::excludeStaticPath(),
-            httpuv::excludeStaticPath()),
-            paste0(root, c("", "/session", "/data", "/image"))),
+            httpuv::excludeStaticPath(), httpuv::excludeStaticPath()),
+            paste0(root, c("", "/session", "/data", "/image", "/work"))),
         .files_paths(root, routes$mounts)
     )
     list(
-        call = function(req) .data_response(req, routes$mounts, root, routes$images),
+        call = function(req) .data_response(req, routes$mounts, root, routes$images,
+            routes$work),
         staticPaths = paths,
         onWSOpen = function(ws) {
             if (!.ws_allowed(ws$request, token, check_origin)) {
@@ -115,10 +121,10 @@
 # viewer download every column of every tile. This handler answers single
 # byte ranges with 206. It runs on R's main thread, so requests wait while R
 # is busy (adr/0004). `root`: the /lens/<token> prefix. It also answers
-# files/<m>/ for stores not mounted statically (.links_outside()), and
-# image/<k> for the files in `images`.
+# files/<m>/ for stores not mounted statically (.links_outside()), image/<k>
+# for the files in `images`, and work/ for the files under `work`.
 
-.data_response <- function(req, mounts, root, images = list()) {
+.data_response <- function(req, mounts, root, images = list(), work = NULL) {
     # A %00 cannot be decoded into an R string
     path <- tryCatch(utils::URLdecode(req$PATH_INFO %||% ""), error = function(e) "")
     image_prefix <- paste0(root, "/image/")
@@ -126,6 +132,11 @@
         file <- images[[substring(path, nchar(image_prefix) + 1L)]]
         if (is.null(file) || !file.exists(file)) return(.http_status(404L))
         return(.file_response(req, file))
+    }
+    work_prefix <- paste0(root, "/work/")
+    if (startsWith(path, work_prefix)) {
+        if (is.null(work)) return(.http_status(404L))
+        return(.served_file(req, work, substring(path, nchar(work_prefix) + 1L)))
     }
     m <- NULL
     for (prefix in paste0(root, c("/data/", "/files/"))) {
@@ -135,9 +146,13 @@
     }
     if (!length(m)) return(.http_status(404L))
     root <- mounts[[m[[2L]]]]
-    rel  <- m[[3L]]
-    if (is.null(root) || grepl("(^|/)\\.\\.?(/|$)", rel) || grepl("\\\\", rel))
-        return(.http_status(404L))
+    if (is.null(root)) return(.http_status(404L))
+    .served_file(req, root, m[[3L]])
+}
+
+# File `rel` under directory `root` (normalized), if its real path is inside it
+.served_file <- function(req, root, rel) {
+    if (grepl("(^|/)\\.\\.?(/|$)", rel) || grepl("\\\\", rel)) return(.http_status(404L))
     file <- file.path(root, rel)
     if (!file.exists(file) || dir.exists(file)) return(.http_status(404L))
     if (!startsWith(normalizePath(file), paste0(root, "/")))

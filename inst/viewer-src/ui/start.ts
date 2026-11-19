@@ -1,5 +1,6 @@
 // The start page (adr/0019): open a GiottoDisk project, from the recent ones,
-// a path or the IDE's folder dialog, and open one of its snapshots. R does
+// a path or the IDE's folder dialog, and open one of its saves (adr/0026) or
+// snapshots. R does
 // all of it (askR()); the page only lists and asks. Shown in place of the
 // view when no object is loaded, and as a dialog from the toolbar's project
 // button when one is.
@@ -16,9 +17,21 @@ export interface Snapshot {
   feat_types: string[];
 }
 
+// A save of the viewer's work, or the work a viewer that ended left in the
+// project (`kind` session). `snapshot`: null when it was deleted.
+export interface Save {
+  name: string;
+  kind: 'save' | 'session';
+  updated: string | null;
+  description: string | null;
+  labels: string[];
+  snapshot: string | null;
+  current: boolean;
+}
+
 interface Recent { path: string; opened: string; exists: boolean }
 interface Projects { current: string | null; recent: Recent[]; browse: boolean }
-interface ProjectSnapshots { path: string; current: string | null; snapshots: Snapshot[] }
+interface ProjectSnapshots { path: string; current: string | null; snapshots: Snapshot[]; saves?: Save[] }
 
 // A save the viewer made on its own (a hand-over, adr/0018) and nobody kept
 export const isAuto = (s: Snapshot) => s.creator === 'GiottoLens' && s.keep === false;
@@ -50,22 +63,22 @@ function button(text: string, onClick: () => void, cls = 'start-btn'): HTMLButto
   return b;
 }
 
-// Asks R to open snapshot `s` of `path`. R refuses to drop Lens work on the
-// object shown without `discard`: the page asks first, then sends it. On
-// success R reloads the page.
-async function open(root: HTMLElement, path: string, s: Snapshot, keys: { spat_unit?: string; feat_type?: string }) {
+// Asks R to open (`op`, with `args`) `name` of `path`. R refuses to drop Lens
+// work not saved on the object shown without `discard`: the page asks first,
+// then sends it. On success R reloads the page.
+async function open(root: HTMLElement, op: 'open' | 'open_save', name: string, args: Record<string, unknown>) {
   const status = root.querySelector('.start-status') as HTMLElement;
   const send = async (discard: boolean) => {
-    status.textContent = `opening ${s.name}…`;
+    status.textContent = `opening ${name}…`;
     status.classList.remove('error');
     root.classList.add('busy');
     try {
-      await askR('open', { path, name: s.name, ...keys, discard });
+      await askR(op, { ...args, name, discard });
     } catch (e: any) {
       root.classList.remove('busy');
       if (e.code === 'work' && !discard) {
         status.textContent = '';
-        confirmDiscard(root, `Opening ${s.name} drops Lens work: ${e.message}.`, () => send(true));
+        confirmDiscard(root, `Opening ${name} drops Lens work: ${e.message}.`, () => send(true));
         return;
       }
       status.textContent = e.message;
@@ -114,9 +127,28 @@ function snapshotRow(root: HTMLElement, path: string, s: Snapshot, current: stri
   const act = el('div', 'start-actions');
   if (unit) act.append(unit);
   if (feat) act.append(feat);
-  act.append(button('Open', () => open(root, path, s, {
-    ...(unit ? { spat_unit: unit.value } : {}), ...(feat ? { feat_type: feat.value } : {}),
+  act.append(button('Open', () => open(root, 'open', s.name, {
+    path, ...(unit ? { spat_unit: unit.value } : {}), ...(feat ? { feat_type: feat.value } : {}),
   })));
+  row.append(act);
+  return row;
+}
+
+function saveRow(root: HTMLElement, path: string, s: Save): HTMLElement {
+  const row = el('div', 'start-row' + (s.current ? ' current' : ''));
+  const main = el('div', 'start-main');
+  const left = s.kind === 'session';
+  const title = el('div', 'start-name', left ? 'Work not saved' : s.name);
+  if (s.current) title.append(el('span', 'start-badge', 'shown'));
+  if (left) title.append(el('span', 'start-badge auto', 'left by a viewer that ended'));
+  for (const l of s.labels) title.append(el('span', 'start-badge auto', l));
+  main.append(title);
+  const on = s.snapshot ? `on ${s.snapshot}` : 'its snapshot was deleted';
+  main.append(el('div', 'start-sub', [when(s.updated), on].filter(Boolean).join(' · ')));
+  if (s.description) main.append(el('div', 'start-desc', s.description));
+  row.append(main);
+  const act = el('div', 'start-actions');
+  if (s.snapshot) act.append(button('Open', () => open(root, 'open_save', s.name, { path })));
   row.append(act);
   return row;
 }
@@ -149,7 +181,13 @@ async function showProject(root: HTMLElement, body: HTMLElement, path: string, b
   };
   draw();
 
-  body.replaceChildren(head, list);
+  body.replaceChildren(head);
+  if (res.saves?.length) {
+    const saves = el('div', 'start-list');
+    saves.append(...res.saves.map(s => saveRow(root, res.path, s)));
+    body.append(el('div', 'start-label', 'Saves'), saves, el('div', 'start-label', 'Snapshots'));
+  }
+  body.append(list);
   if (nAuto) {
     const lab = el('label', 'start-toggle');
     const cb = el('input');

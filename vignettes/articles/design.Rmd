@@ -50,10 +50,11 @@ launch_lens()                               deck.gl (OrthographicView, Y up)
 ## Serving
 
 `launch_lens()` serves everything from one httpuv server so the IDE viewer panes (Positron,
-RStudio) can reach the WebSocket on the same origin. Nothing is copied or written next to
-the data: the viewer bundle is served from the installed package, each GiottoDisk tile store
-is mounted in place, and per-viewer files (manifest, `cells.parquet`, pushed metadata and panel
-data) go to a temp directory removed by `close()`.
+RStudio) can reach the WebSocket on the same origin. The project folder is never served:
+the viewer bundle is served from the installed package, each GiottoDisk tile store
+is mounted in place, the manifest and `cells.parquet` go to a temp directory removed by
+`close()`, and the viewer's work (pushed and pulled metadata, panel data) to its working
+bundle in the project, which a save copies (adr/0026).
 
 Every URL sits under `/lens/<token>/`, with a random token per launch, and the viewer resolves
 them against the page, so a proxy that adds a path prefix (RStudio Server, Workbench, a port

@@ -256,8 +256,8 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_error(v$push_panel(list(mark = "bar"), id = "a b"), "letters")
     expect_error(v$push_panel(list(mark = "bar"), where = "left"), "should be one of")
     priv <- get("private", v$.__enclos_env__)
-    session <- priv$session
-    expect_length(list.files(file.path(session, "panels")), 1L)
+    work <- priv$work
+    expect_length(list.files(file.path(work, "panels")), 1L)
 
     a <- ws_client(ws_url(v))
     expect_true(pump_until(function() length(Filter(function(m) m$type == "push_panel", a$state$msgs)) == 2L))
@@ -265,7 +265,7 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_identical(vapply(pushed, function(m) m$data$id, ""), c("panel-1", "big"))
     expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
     expect_identical(pushed[[2]]$data$where, "below")
-    expect_match(pushed[[2]]$data$data_url, "^session/panels/big_")
+    expect_match(pushed[[2]]$data$data_url, "^work/panels/big_")
     expect_identical(a$state$msgs[[2]]$data$panels, list("panel-1", "big"))
 
     # The page's config comes back verbatim to the next page
@@ -274,7 +274,7 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     # Closed in the page: R drops it and its file
     a$ws$send('{"type":"panel_closed","data":{"id":"big"}}')
     expect_true(pump_until(function() identical(names(priv$pushed), "panel-1")))
-    expect_length(list.files(file.path(session, "panels")), 0L)
+    expect_length(list.files(file.path(work, "panels")), 0L)
     a$ws$close()
     expect_true(pump_until(function() !v$connected()))
 
@@ -446,7 +446,7 @@ test_that("set_object() serves another object from a clean slate", {
 
     # With work on the object, nothing changes unless it is discarded
     expect_error(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
-        "has 1 rule, 1 annotation, 1 pushed panel; pass `discard = TRUE`")
+        "work not saved: 1 rule, 1 annotation, 1 pushed panel; save it with save\\(name\\), or pass `discard = TRUE`")
     expect_identical(manifest()$load, 1L)
     expect_identical(v$rules()$source, "r")
     expect_identical(priv$config_json, cfg)
@@ -463,8 +463,8 @@ test_that("set_object() serves another object from a clean slate", {
     expect_length(priv$pushed, 0L)
     expect_null(priv$config_json)
     expect_length(v$annotations, 0L)
-    expect_length(list.files(file.path(priv$session, "metadata")), 0L)
-    expect_length(list.files(file.path(priv$session, "panels")), 0L)
+    expect_length(list.files(file.path(priv$work, "metadata")), 0L)
+    expect_length(list.files(file.path(priv$work, "panels")), 0L)
     expect_output(print(v), "900 cells")
 
     # Until it reloads, what the old tab says about its object is ignored
