@@ -59,14 +59,22 @@ cache, job progress, the access token and the URL. Rules that list cells by posi
 only when the fingerprint matches; other rules carry over.
 
 **The working bundle is the served session folder.** Each viewer keeps its work in
-`<project>/lens/session-<session id>/` and the server serves that folder to the page. When an
-object is shown, R writes its `bundle.json`; when state in memory changes, R rewrites the JSON;
-working metadata and panel data are written there once, as parquet, and read by the page from
-there. Each file is replaced atomically (temp file, then rename). A save copies the working
-bundle into `lens/<name>.<id>/` within the project; nothing is exported. Opening a saved
-bundle copies it into the viewer's working bundle, after R's checks, and serves that. The
-working bundle is what survives a crash, and the one left by a closed viewer is the project's
-"last session".
+`<project>/lens/session-<session id>/` and the server serves that folder to the page, as
+`work/`. When an object is shown, R writes its `bundle.json`; R rewrites `state.json` and
+`config.json` when they change, checking about once a second; working metadata and panel data
+are written there once, as parquet, and read by the page from there. Each file is replaced
+atomically (temp file, then rename). A save copies the working bundle, only the files its
+`state.json` points to, into `lens/<name>.<id>/` within the project; nothing is exported.
+Opening a save shows its snapshot, then copies its files into the viewer's working bundle and
+restores its work; parts in cell order (metadata, rules naming cells by position, panels
+linked to cells) only when the cell fingerprint matches.
+
+**Closing keeps work not saved.** `close()` leaves the working bundle in the project when it
+holds work changed since the last save or opening, and `open_save()` takes it over later (and
+then removes it); `close(discard = TRUE)` deletes it, as does `close()` with nothing unsaved.
+Since closing loses nothing, it does not refuse, nor does `launch_lens(port =)` over a running
+viewer, which closes it. `bundle.json` of a working bundle records the machine and process
+that write it, so one whose viewer still runs is neither opened nor deleted by another.
 
 Only disposable files stay in `tempdir()`, on a second served path: they are rewritten per
 load or are a cache, and on a project on a network file system the item cache would be slow.
@@ -97,9 +105,10 @@ GiottoLens guards is narrower: it must not give access beyond what the file syst
 
 - The token and the localhost bind keep anyone who cannot read the files from reading them
   through the viewer.
-- The server does not follow a symbolic link out of what it serves. Today stores are checked
-  once, when mounted (`.links_outside()`); a served folder inside the project, the working
-  bundle as well as stores, needs a check that holds while it is served.
+- The server does not follow a symbolic link out of what it serves. Stores are checked once,
+  when mounted (`.links_outside()`); the working bundle, written while it is served, goes
+  through R's file handler, which checks each file's real path on every request. Its files
+  are small, so reading them on R's thread costs little.
 - A bundle the page asks for is opened only if its name is one R listed for the open
   project; a name is never joined into a path unchecked.
 - Nothing secret goes in a bundle: not the token, not the URL.
@@ -113,17 +122,17 @@ never as HTML.
 
 - Lens writes into the project in three ways: hand-over snapshots (adr/0018), job outputs
   in the vault, and bundles in `lens/`. SECURITY.md says so.
-- While a viewer runs, part of what it serves is in the project. Lists hide working
-  bundles, as the start page hides automatic snapshots.
+- While a viewer runs, part of what it serves is in the project. The start page lists the
+  working bundles of viewers that ended, as work not saved, and never those still running.
 - Seeing which saves are yours needs an owner on saves and snapshots: a label for browsing,
   not access control (a preference, and a field in GiottoDisk's `snapshot.json`).
-- Once saves exist, only work changed since the last save counts as work: `set_object()`
-  without `discard`, `close(discard = FALSE)` and `launch_lens(port =)` over a running viewer
-  refuse only that (#21, adr/0017). Internal teardown never refuses.
-- Working bundles of viewers that ended (closed or crashed) accumulate; which to offer back
-  and which to delete is for the session cleanup.
-- `keep = TRUE` does not stop `snapshotDelete()`. A bundle whose snapshot was deleted opens
-  with its own state but no object; how to warn before that happens is open.
+- Only work changed since the last save or opening counts as work: `set_object()`,
+  `checkout()` and `open_project()` without `discard` refuse only that (adr/0017).
+- An analysis is not saved yet: it always counts as work not saved.
+- Working bundles of viewers that ended accumulate until opened or deleted
+  (`delete_save()`); cleaning them up on a schedule is for later.
+- `keep = TRUE` does not stop `snapshotDelete()`. A save whose snapshot was deleted does not
+  open; R names the snapshot. How to warn before that happens is open.
 - GiottoDisk should name `lens/` in its project layout, so nothing in it (pruning, migration)
   treats the folder as unknown.
 

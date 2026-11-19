@@ -10,7 +10,10 @@ While a viewer runs (`launch_lens()` until `viewer$close()`), its server serves:
 - the viewer itself;
 - the GiottoDisk tile stores you launched it on, read-only;
 - the files of the images it shows, read-only, each file on its own (not its folder);
-- a temporary folder with the cell table and any metadata or panel data you pushed;
+- a temporary folder with the cell table;
+- the viewer's working bundle in the project (`lens/session-<id>/`), with the metadata and
+  panel data the viewer shows; each request is checked so that a link placed in it cannot
+  lead outside it;
 - a WebSocket through which the page and R exchange selections and commands.
 
 The server cannot run R code sent from the browser: it only accepts a fixed set of message
@@ -24,11 +27,14 @@ Besides that temporary folder, GiottoLens writes:
 
 - **into the project of the object shown:** a snapshot of the object when the viewer shows
   an object with changes that no snapshot holds yet (`lens_<date>_<time>`), and, with
-  `launch_lens(project =)`, an object that was only in memory;
+  `launch_lens(project =)`, an object that was only in memory; the work done in the viewer,
+  as it happens, in `lens/session-<id>/`, which `close()` keeps if it holds work not saved;
+  and your saves (`viewer$save()`), in `lens/<name>.<id>/`;
 - **in your user data directory:** the list of recent projects.
 
-None of this is served. Of a project, the server serves only the stores and image files it
-mounted; the project folder itself is never served.
+Of a project, the server serves only the stores and image files it mounted and the viewer's
+own working bundle; the project folder itself is never served. Folder names never contain the
+token. Saves are opened only by a name GiottoLens lists, never by a path from the page.
 
 Who can read or change what GiottoLens writes into a project is decided by the project
 folder's permissions, as for your data: GiottoLens has no users and no per-user access

@@ -1,5 +1,14 @@
 # GiottoLens (development version)
 
+* Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, regions,
+  pushed panels and metadata, column types, added images, an image registration, comparisons
+  and the viewer's settings) with the snapshot shown, in the project's `lens/` folder.
+  `saves()` lists them, `open_save()` opens one, `delete_save()` deletes one. The tools bar's
+  save button and the start page do the same. An analysis is not saved yet. See adr/0026.
+* The viewer's work is written as it happens to a working bundle in the project, and
+  `close()` keeps work not saved there, to open again with `open_save()`;
+  `close(discard = TRUE)` deletes it. `set_object()`, `checkout()` and `open_project()`
+  refuse only work not saved.
 * Work the viewer does for the page can run as jobs in a background R process that keeps the
   object shown loaded, so R and the page stay free. The jobs button in the tools bar shows how
   many are running; its popover lists them with their progress, cancels one, and keeps the

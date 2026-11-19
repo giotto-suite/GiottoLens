@@ -160,3 +160,21 @@
         stop("[LensViewer] could not write the save ", to, call. = FALSE)
     invisible(to)
 }
+
+# The saves of `src` as the start page lists them, newest first, and the work
+# viewers that ended left there; `current`: the save shown, if any. A save
+# whose snapshot was deleted has `snapshot` null.
+.project_saves <- function(src, current = NULL) {
+    s <- .lens_saves(src, sessions = TRUE)
+    s <- s[s$kind == "save" | !(s$live %in% TRUE), , drop = FALSE]
+    snaps <- GiottoDisk::snapshotInfo(src)
+    iso <- function(t) if (!is.na(t)) format(t, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    lapply(seq_len(nrow(s)), function(i) {
+        snap <- snaps$name[snaps$tag == s$snapshot[[i]]]
+        list(name = s$name[[i]], kind = s$kind[[i]], updated = iso(s$updated[[i]]),
+            description = if (!is.na(s$description[[i]])) s$description[[i]],
+            labels = if (nzchar(s$labels[[i]])) as.list(strsplit(s$labels[[i]], ", ")[[1L]]) else list(),
+            snapshot = if (length(snap)) snap[[1L]],
+            current = identical(basename(s$dir[[i]]), current))
+    })
+}

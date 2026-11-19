@@ -45,7 +45,7 @@ launches without cells.}
 
 \item{port}{Port for the HTTP + WebSocket server. \code{NULL} (default)
 picks a free one. Launching on the port of a running viewer closes that
-viewer first.}
+viewer first, which keeps its unsaved work as for \code{viewer$close()}.}
 
 \item{host}{Interface to listen on. The default only accepts
 connections from this machine; use \code{"0.0.0.0"} to expose the viewer and
@@ -102,8 +102,10 @@ A \link{LensViewer}; call \verb{$close()} to stop the server.
 }
 \description{
 Starts a combined HTTP + WebSocket server via httpuv and opens the viewer.
-The viewer bundle and the GiottoDisk stores are served in place; only the
-manifest and pushed metadata are written, to a per-viewer temp directory.
+The viewer bundle and the GiottoDisk stores are served in place. The
+manifest and cell table go to a per-viewer temp directory; the work done in
+the viewer goes to its working bundle in the object's project, from which
+\code{viewer$save()} makes a save (adr/0026).
 Tile data goes through a Range-aware handler so the viewer reads only the
 columns it draws.
 

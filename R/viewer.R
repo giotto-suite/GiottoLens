@@ -576,16 +576,7 @@ LensViewer <- R6::R6Class("LensViewer",
             site <- "LensViewer$open_save"
             if (is.null(private$project))
                 stop("[", site, "] no project open; call open_project() first", call. = FALSE)
-            hit <- .find_save(private$project, name, site)
-            if (hit$kind == "session") {
-                if (identical(normalizePath(hit$dir), private$work))
-                    stop("[", site, "] '", name, "' is this viewer's own work", call. = FALSE)
-                if (isTRUE(hit$live))
-                    stop("[", site, "] '", name, "' is the work of a viewer still running",
-                        call. = FALSE)
-            }
-            private$check_work(site, discard)
-            private$open_bundle(private$project, hit, site)
+            private$open_save_in(private$project, name, discard, site)
             invisible(self)
         },
 
@@ -2307,7 +2298,31 @@ LensViewer <- R6::R6Class("LensViewer",
                         identical(normalizePath(private$project@path), src@path)
                     list(data = list(path = src@path,
                         current = if (current) private$snapshot,
-                        snapshots = .project_snapshots(src)))
+                        snapshots = .project_snapshots(src),
+                        saves = .project_saves(src, if (current) private$saved_tag)))
+                },
+                # A save of a project, or the work a viewer that ended left
+                # there (adr/0026); refused as `open` is
+                open_save = {
+                    work <- if (private$loaded && !isTRUE(dat$discard)) private$unsaved_work()
+                    if (!is.null(work))
+                        return(list(error = paste0("the current object has work not saved: ", work),
+                            code = "work"))
+                    src <- .project_source(str1(dat$path), "LensViewer")
+                    private$open_save_in(src, str1(dat$name), TRUE, "LensViewer")
+                    list(data = list(snapshot = private$snapshot, save = private$saved_tag))
+                },
+                # The tools bar's save button
+                save = {
+                    name <- str1(dat$name) %||% ""
+                    if (!isTRUE(dat$overwrite) && !is.null(private$project) &&
+                            name %in% .lens_saves(private$project)$name)
+                        return(list(error = paste0("a save named '", name, "' exists"),
+                            code = "exists"))
+                    desc <- str1(dat$description)
+                    tag <- self$save(name, description = if (nzchar(desc %||% "")) desc,
+                        overwrite = isTRUE(dat$overwrite))
+                    list(data = list(save = tag))
                 },
                 open = {
                     work <- if (private$loaded && !isTRUE(dat$discard)) private$unsaved_work()
@@ -2501,6 +2516,20 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!identical(private$work_sig(), private$saved_sig)) return(work)
             if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
                 "an analysis (analyses are not saved yet)"
+        },
+
+        # open_save() in project `src`, also from the start page
+        open_save_in = function(src, name, discard, site) {
+            hit <- .find_save(src, name, site)
+            if (hit$kind == "session") {
+                if (identical(normalizePath(hit$dir), private$work))
+                    stop("[", site, "] '", name, "' is this viewer's own work", call. = FALSE)
+                if (isTRUE(hit$live))
+                    stop("[", site, "] '", name, "' is the work of a viewer still running",
+                        call. = FALSE)
+            }
+            private$check_work(site, discard)
+            private$open_bundle(src, hit, site)
         },
 
         # Show bundle `hit` (a row of .lens_saves()) of project `src`: its

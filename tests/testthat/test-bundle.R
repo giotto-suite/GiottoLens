@@ -213,3 +213,33 @@ test_that("saving needs an object in a project", {
     expect_error(v$save("x"), "nowhere to save")
     expect_error(v$saves(), "no project open")
 })
+
+test_that("the page saves, lists saves and opens one", {
+    ask <- function(v, ...) get("private", v$.__enclos_env__)$ask(list(...))
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    res <- suppressMessages(ask(r$v, op = "save", name = "first", description = "d"))
+    expect_match(res$data$save, "^first\\.")
+    res <- ask(r$v, op = "save", name = "first")
+    expect_identical(res$code, "exists")
+    expect_match(suppressMessages(ask(r$v, op = "save", name = "first", description = "d",
+        overwrite = TRUE))$data$save,
+        "^first\\.")
+    expect_error(ask(r$v, op = "save", name = "../x"), "letters, digits")
+    r$v$save_region("bottom", r$priv$cell_ids[880:900])
+    snaps <- ask(r$v, op = "snapshots", path = r$td)$data
+    s <- snaps$saves[[1L]]
+    expect_identical(s[c("name", "kind", "description")], list(name = "first", kind = "save",
+        description = "d"))
+    expect_identical(s$snapshot, GiottoDisk::snapshotInfo(r$priv$project)$name[[1L]])
+    expect_true(s$current)
+    # This viewer's own work is not listed while it runs
+    expect_length(snaps$saves, 1L)
+    res <- ask(r$v, op = "open_save", path = r$td, name = "first")
+    expect_identical(res$code, "work")
+    expect_match(res$error, "2 regions")
+    res <- suppressMessages(ask(r$v, op = "open_save", path = r$td, name = "first", discard = TRUE))
+    expect_match(res$data$save, "^first\\.")
+    expect_identical(r$v$regions()$name, "top")
+})

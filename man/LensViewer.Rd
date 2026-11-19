@@ -42,6 +42,10 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-gobject}{\code{LensViewer$gobject()}}
     \item \href{#method-LensViewer-checkout}{\code{LensViewer$checkout()}}
     \item \href{#method-LensViewer-open_project}{\code{LensViewer$open_project()}}
+    \item \href{#method-LensViewer-save}{\code{LensViewer$save()}}
+    \item \href{#method-LensViewer-saves}{\code{LensViewer$saves()}}
+    \item \href{#method-LensViewer-open_save}{\code{LensViewer$open_save()}}
+    \item \href{#method-LensViewer-delete_save}{\code{LensViewer$delete_save()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
@@ -163,10 +167,11 @@ with \code{keep = TRUE}.
     \if{html}{\out{<div class="arguments">}}
     \describe{
       \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark, project}}{As in \code{\link[=launch_lens]{launch_lens()}}}
-      \item{\code{discard}}{Whether to drop the current object's rules,
-annotations, pushed panels and image registration. With any of
-them and \code{discard = FALSE} (default), nothing changes and an error
-names them.}
+      \item{\code{discard}}{Whether to drop the current object's work not saved
+(rules, annotations, regions, pushed panels, added images, an image
+registration, an analysis). With any and \code{discard = FALSE}
+(default), nothing changes and an error names them; save them
+first with \code{save()}.}
     }
     \if{html}{\out{</div>}}
   }
@@ -237,6 +242,107 @@ drops the object shown; with \code{name}, it shows that snapshot, as
       \item{\code{path}}{The project's directory}
       \item{\code{name}}{Snapshot to show, or \code{NULL} (default) for the start page}
       \item{\code{spat_unit, feat_type, discard}}{As in \code{checkout()}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-save"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-save}{}}}
+\subsection{\code{LensViewer$save()}}{
+  Save the work done in the viewer on the object shown:
+rules, annotations, regions, pushed panels and metadata, column
+types, added images, an image registration, comparisons and the
+viewer's settings, with the snapshot shown, which is kept
+(\code{keep = TRUE}). Written to \verb{lens/<name>.<id>/} in the project
+(adr/0026). An analysis is not saved yet. Open it again with
+\code{open_save()}.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$save(name, description = NULL, labels = NULL, overwrite = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Save name: letters, digits, \verb{_} and \code{-}}
+      \item{\code{description, labels}}{Optional text and labels to find it by}
+      \item{\code{overwrite}}{Whether to replace a save of the same name}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The save's folder name, \verb{<name>.<id>}, invisibly
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-saves"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-saves}{}}}
+\subsection{\code{LensViewer$saves()}}{
+  The saves of the project shown, newest first
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$saves(sessions = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{sessions}}{Whether to list the working bundles of viewers that
+ended with work not saved too (\code{kind = "session"}; \code{live} is
+\code{TRUE} for a viewer still running, \code{NA} for one on another
+machine)}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A data.frame: \code{name} (what \code{open_save()} takes), \code{kind},
+\code{created}, \code{updated}, \code{snapshot} (the tag of the snapshot it was
+made on), \code{description}, \code{labels}, \code{live}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-open_save"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-open_save}{}}}
+\subsection{\code{LensViewer$open_save()}}{
+  Show a save of the project shown: its snapshot, then
+its work. Rules that name cells by position are dropped if the
+cells differ from those it was saved with. A working bundle left
+by a viewer that ended (\code{saves(sessions = TRUE)}) is opened the
+same way, and removed once this viewer has taken it over.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$open_save(name, discard = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{A save's name, as \code{saves()} lists it}
+      \item{\code{discard}}{As in \code{set_object()}}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-delete_save"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-delete_save}{}}}
+\subsection{\code{LensViewer$delete_save()}}{
+  Delete a save of the project shown. Its snapshot stays
+kept.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$delete_save(name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{A save's name, as \code{saves()} lists it}
     }
     \if{html}{\out{</div>}}
   }
@@ -1483,10 +1589,19 @@ first). Its result is never applied.
 \subsection{\code{LensViewer$close()}}{
   Stop the server and remove this viewer's temp files.
 The power button next to R's connection in the viewer does the
-same; open tabs say the viewer is stopped.
+same; open tabs say the viewer is stopped. Work not saved stays in
+the project, as its working bundle, which \code{open_save()} opens
+again (\code{saves(sessions = TRUE)} lists it).
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$close()}
+    \preformatted{LensViewer$close(discard = FALSE)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{discard}}{Whether to delete work not saved instead}
+    }
     \if{html}{\out{</div>}}
   }
 }

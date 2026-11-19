@@ -39,6 +39,8 @@ R/
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
                the IDE folder dialog (adr/0019)
   metadata.R   prep_meta(), .write_metadata()
+  bundle.R     saves (adr/0026): the working bundle's layout, listing saves (.lens_saves()),
+               finding one by name (.find_save()), copying one (.copy_bundle())
   catalog.R    what the object shown can pull (.lens_catalog()) and the plan for one
                spatValues() call over it (.pull_items(), .pull_plan()); item keys
                (.item_key(), .parse_item_key(), adr/0024)
@@ -118,15 +120,17 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 ### Serving (`R/server.R`)
 
-- The project folder is never served: only mounted stores, image files and the temp dir (and,
-  to come, the viewer's own working bundle, adr/0026). A folder or file name never carries the
-  token. Everything is under `/lens/<token>/` (random
+- The project folder is never served: only mounted stores, image files, the temp dir and the
+  viewer's own working bundle (adr/0026). A folder or file name never carries the token.
+  Everything is under `/lens/<token>/` (random
   per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
   `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
   - `/lens/<token>/`: bundle, from the package;
-  - `.../session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, metadata, panel
-    data), removed by `close()`. A file whose name stays across loads (the manifest) is
+  - `.../session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, `items/`, job
+    progress), removed by `close()`. A file whose name stays across loads (the manifest) is
     fetched with `cache: 'no-store'`;
+  - `.../work/`: the working bundle (metadata, panel data), through `.data_response()`, which
+    checks real paths on every request: it is in the project, where others may write;
   - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
   - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
   - `.../image/<k>`: image file k only (never its folder), through `.data_response()`;
@@ -163,10 +167,30 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   images are worked out again from the object as saved.
 - Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
   (`.lens_untiled_max`, measured; update the comment when re-measuring).
-- `set_object()` refuses to drop work (`lens_work()`: rules, annotations, pushed panels,
-  added images, registration; settings alone are not counted) without `discard = TRUE`, and checks before
-  changing anything. A switch from the page will go through the same argument after the
-  page's own confirmation; never add a second rule there.
+- `set_object()` refuses to drop work not saved (`unsaved_work()`: `lens_work()` — rules,
+  annotations, regions, pushed panels, added images, registration, an analysis; settings alone
+  are not counted — when `work_sig()` differs from the last save or opening) without
+  `discard = TRUE`, and checks before changing anything. A switch from the page goes through
+  the same argument after the page's own confirmation (`open`, `open_save` asks, code
+  `work`); never add a second rule there.
+
+### Saves (adr/0026)
+
+- The viewer's work lives in its working bundle, `private$work`: `lens/session-<session
+  id>/` in the project of the object shown (`set_work()`, after each load), else
+  `session/work/` in the temp dir. Metadata (`meta_dir()`) and panel files go there and are
+  served as `work/...`; items stay in `session/items/`. `clear_object()` deletes it.
+- `write_state()` writes `state.json` (`state_list()`), `config.json` and `bundle.json` when
+  they changed; `autosave()` calls it every second (`GiottoLens.autosave_interval`). New work
+  that should survive a save goes into `state_list()` and back in `restore_state()`.
+- `save()` copies the working bundle (`.copy_bundle()`: only the files `state.json` points
+  to) to `lens/<name>.<id>/` and sets `keep = TRUE` on the snapshot. `open_save()` shows the
+  save's snapshot (`open_snapshot()`), then restores its work; cell-ordered parts (metadata,
+  `ids` rules, panels with `_idx`) only when the cell fingerprint matches.
+- `close()` keeps work not saved in the project (a working bundle of an ended viewer, listed
+  by `saves(sessions = TRUE)`, opened by `open_save()` and then removed); `close(discard =
+  TRUE)` deletes it. A bundle is opened only by a name `.lens_saves()` lists, never a path.
+- Bundles are JSON and parquet; never `saveRDS()`/`qs2` into one.
 
 ### Cells and selection (adr/0001, adr/0002, adr/0010)
 
@@ -338,8 +362,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - The other way, the page asks R with `askR(op, args)`: `{type: 'ask', id, data: {op, ...}}`,
   answered to that page only as `{type: 'answer', data: {id, data | error, code}}` (private
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
-  (adr/0019); the Data panel's `catalog`, `pull`, and the item cache's `item`, answered only to a page showing the
-  current load (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
+  (adr/0019), and `open_save` (adr/0026); the Data panel's `catalog`, `pull`, the item cache's
+  `item` and the tools bar's `save`, answered only to a page showing the current load
+  (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
   earlier load). The Regions panel's `region` (save, remove, select, compare; a compare
   answered when its job ends) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
@@ -493,7 +518,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
 `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
-`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
+`push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save()`, `saves()`, `open_save()`,
+`delete_save()`, `save_region()`, `regions()`,
 `select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
 `panels()`, `push_polygons()`,
 `analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
