@@ -108,7 +108,7 @@ test_that("Lens work is not dropped by opening without discard", {
     bx <- lens_bins_fixture()
     v <- launch_lens(bx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    v$annotations <- list(list(id = "a", name = "x", type = "polygon", geojson = "{}"))
+    v$annotations <- list(x = "{}")
     proj <- bx$g@source@path
     expect_error(v$open_project(proj), "1 annotation; save it with save\\(name\\), or pass `discard = TRUE`")
     expect_error(v$checkout("fixture"), "1 annotation")
