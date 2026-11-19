@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
+  (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an
   empty or taken name reverts. `viewer$annotations` is a list of GeoJSON strings named by
   them (it was a list of id, name, type and geojson), and `push_polygons()` refuses taken
