@@ -895,15 +895,22 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                     as.integer(data$run %||% NA)),
                 analysis_feature = private$want_feature(as.character(data$step %||% ""),
                     as.character(data$feat %||% "")),
-                analysis_region = switch(as.character(data$action %||% ""),
-                    selection = {
-                        sel <- private$viewer$selection
-                        if (!length(sel))
-                            stop("select cells first (lasso, polygon or rectangle)", call. = FALSE)
-                        self$region(sel)
-                    },
-                    all = self$region(NULL),
-                    stop("unknown region action", call. = FALSE)),
+                # The region buttons start the analysis, as a parameter does
+                analysis_region = {
+                    switch(as.character(data$action %||% ""),
+                        selection = {
+                            sel <- private$viewer$selection
+                            if (!length(sel))
+                                stop("select cells first (lasso, polygon or rectangle)", call. = FALSE)
+                            private$started <- TRUE
+                            self$region(sel)
+                        },
+                        all = {
+                            private$started <- TRUE
+                            self$region(NULL)
+                        },
+                        stop("unknown region action", call. = FALSE))
+                },
                 analysis_settings = switch(as.character(data$action %||% ""),
                     save = self$save_settings(as.character(data$name %||% "")),
                     restore = self$restore_settings(as.character(data$name %||% "")),
@@ -915,7 +922,13 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
 
         #' @description Send the schema, status and markers to a tab (internal)
         #' @param ws The tab's WebSocket
-        on_ready = function(ws) private$send_all(ws$send),
+        # A page that connects gets the panel open when announce(open = TRUE)
+        # came while none was connected
+        on_ready = function(ws) {
+            open <- isTRUE(private$open_on_ready)
+            private$open_on_ready <- FALSE
+            private$send_all(ws$send, open = open)
+        },
 
         #' @description Send the schema, status and markers to every tab;
         #'   `open` brings the Analysis panel forward (internal)
@@ -924,6 +937,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             v <- private$viewer
             if (v$connected()) private$send_all(function(m) v$send(m$type, m$data),
                 open = open, raw = TRUE)
+            else if (open) private$open_on_ready <- TRUE
             invisible(self)
         },
 
@@ -946,7 +960,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
             out <- function(type, data)
                 send(if (raw) list(type = type, data = data) else .encode_ws_message(type, data))
             out("analysis_schema", c(private$schema(), if (open) list(open = TRUE)))
-            out("analysis_status", list(steps = self$status))
+            out("analysis_status", list(steps = self$status, started = private$started))
             if (!is.null(private$markers)) out("analysis_markers", private$markers_msg())
             if (!is.null(private$color))
                 out("analysis_color", if (identical(private$pair$column, private$color))
@@ -965,7 +979,7 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
         group_cols = NULL, catalog_ = NULL, tables = list(), results = list(), runs = list(),
         run_seq = 0L, active = FALSE, panels_of = list(),
         network_dir = NULL, threads = 4L, progress_seen = NULL,
-        host = NULL, root = NULL, started = FALSE, item_keys = list(),
+        host = NULL, root = NULL, started = FALSE, open_on_ready = FALSE, item_keys = list(),
         pair = NULL, gene_sets = list(), meta_n = 0L, obj_values = NULL, menus_sent = NULL,
         meta_cats = character(), obj_networks = character(),
 
@@ -1977,7 +1991,8 @@ LensAnalysis <- R6::R6Class("LensAnalysis",
                 self$status[[r$step]]$elapsed <- as.numeric(difftime(Sys.time(), r$t0,
                     units = "secs"))
             if (private$viewer$connected())
-                private$viewer$send("analysis_status", list(steps = self$status))
+                private$viewer$send("analysis_status", list(steps = self$status,
+                    started = private$started))
         },
 
         markers_msg = function() {

@@ -42,6 +42,8 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-gobject}{\code{LensViewer$gobject()}}
     \item \href{#method-LensViewer-checkout}{\code{LensViewer$checkout()}}
     \item \href{#method-LensViewer-open_project}{\code{LensViewer$open_project()}}
+    \item \href{#method-LensViewer-detect_dataset}{\code{LensViewer$detect_dataset()}}
+    \item \href{#method-LensViewer-import_dataset}{\code{LensViewer$import_dataset()}}
     \item \href{#method-LensViewer-save}{\code{LensViewer$save()}}
     \item \href{#method-LensViewer-saves}{\code{LensViewer$saves()}}
     \item \href{#method-LensViewer-open_save}{\code{LensViewer$open_save()}}
@@ -244,6 +246,88 @@ drops the object shown; with \code{name}, it shows that snapshot, as
       \item{\code{spat_unit, feat_type, discard}}{As in \code{checkout()}}
     }
     \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-detect_dataset"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-detect_dataset}{}}}
+\subsection{\code{LensViewer$detect_dataset()}}{
+  Detect a platform's output folder, as the start page's
+import form does: Giotto's reader finds the files, and each field
+holds an argument of the platform's \code{createGiotto*Object()} as the
+reader would use it. Nothing is written.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$detect_dataset(dir, platform = "xenium")}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{dir}}{The platform's output folder}
+      \item{\code{platform}}{\code{"xenium"}}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A list: \code{dir}, \code{info} (what the run's files say), \code{notes}
+(the reader's messages and warnings), \code{fields} (\code{key} the
+argument, \code{value}, \code{default}, \code{type}), \code{project} and \code{snapshot}
+(the defaults \code{import_dataset()} takes), \code{code} (the R code of the
+import), and \code{problem} when the import would stop as detected
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-import_dataset"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-import_dataset}{}}}
+\subsection{\code{LensViewer$import_dataset()}}{
+  Import a platform's output folder into a new GiottoDisk
+project: \code{GiottoDisk::sourceCreate()}, the platform's
+\code{createGiotto*Object(backend = src)} and \code{GiottoDisk::snapshotSave()},
+run as a job in a background R process of its own. A failed or
+cancelled import deletes what it wrote.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$import_dataset(
+  dir,
+  project = NULL,
+  snapshot = "imported",
+  platform = "xenium",
+  ...,
+  description = NULL,
+  open = TRUE,
+  analyze = FALSE,
+  discard = FALSE,
+  wait = TRUE
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{dir}}{The platform's output folder}
+      \item{\code{project}}{The project folder to create: new, or an empty
+folder. \code{NULL}: preference \code{import_dir} (else the folder of the
+project open, else the working directory) and the dataset's name.}
+      \item{\code{snapshot}}{Name of the snapshot saved}
+      \item{\code{platform}}{\code{"xenium"}}
+      \item{\code{...}}{Arguments of the platform's \code{createGiotto*Object()}, such
+as \code{qv_threshold} or \code{load_images}; the others take its defaults}
+      \item{\code{description}}{Description of the snapshot, or \code{NULL}}
+      \item{\code{open}}{Whether to show the snapshot when the import ends}
+      \item{\code{analyze}}{Whether to start Preprocessing (\code{analysis()$run()})
+when the snapshot is shown; needs \code{open}}
+      \item{\code{discard}}{As in \code{set_object()}, for \code{open}}
+      \item{\code{wait}}{Whether to wait for the import. \code{FALSE} returns the job
+id at once (\code{jobs()}, \code{cancel_job()}).}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    With \code{wait}, a list of \code{path}, \code{name} and \code{code} (the R
+code of the import), invisibly; else the job id, invisibly
   }
 }
 

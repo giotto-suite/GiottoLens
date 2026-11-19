@@ -54,6 +54,10 @@ const SECTIONS: { title: string; groups: Group[] }[] = [
     { id: 'history', label: 'runs kept in History', kind: 'number', min: 1, max: 1000, step: 1 },
     { id: 'network_dir', label: 'saved networks folder', kind: 'text', placeholder: 'GiottoLens user cache' },
   ] }] },
+  { title: 'Projects', groups: [{ title: null, items: [
+    { id: 'import_dir', label: 'imported projects folder', kind: 'text', placeholder: 'folder of the project open',
+      title: 'the folder a project imported from a dataset goes in by default' },
+  ] }] },
 ];
 
 const ITEMS = SECTIONS.flatMap(s => s.groups.flatMap(g => g.items));

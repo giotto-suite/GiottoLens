@@ -1,10 +1,11 @@
 // The start page (adr/0019): open a GiottoDisk project, from the recent ones,
 // a path or the IDE's folder dialog, and open one of its saves (adr/0026) or
-// snapshots. R does
+// snapshots; or import a dataset into a new project (adr/0027, ui/import.ts). R does
 // all of it (askR()); the page only lists and asks. Shown in place of the
 // view when no object is loaded, and as a dialog from the toolbar's project
 // button when one is.
 import { askR, onConnect } from '../core/comms.js';
+import { showImport } from './import.ts';
 
 export interface Snapshot {
   name: string;
@@ -199,7 +200,8 @@ async function showProject(root: HTMLElement, body: HTMLElement, path: string, b
   }
 }
 
-async function showProjects(root: HTMLElement, body: HTMLElement, pick: (path: string) => void) {
+async function showProjects(root: HTMLElement, body: HTMLElement, pick: (path: string) => void,
+  back: () => void) {
   body.replaceChildren(el('div', 'start-sub', 'asking R…'));
   let res: Projects;
   try {
@@ -229,7 +231,11 @@ async function showProjects(root: HTMLElement, body: HTMLElement, pick: (path: s
     }
   }));
 
-  body.replaceChildren(el('div', 'start-label', 'Open a project'), form);
+  const imp = el('div', 'start-open');
+  imp.append(button('Import a dataset\u2026', () => showImport(root, body, back,
+    (path, name) => open(root, 'open', name, { path }), res.browse)));
+  body.replaceChildren(el('div', 'start-label', 'Open a project'), form,
+    el('div', 'start-label', 'New project'), imp);
   if (res.recent.length) {
     body.append(el('div', 'start-label', 'Recent'));
     const list = el('div', 'start-list');
@@ -256,7 +262,7 @@ export function initStart(host: HTMLElement, project: string | null = null) {
   root.append(el('div', 'start-title', 'GiottoLens'), body, el('div', 'start-status'));
   host.append(root);
 
-  const projects = () => showProjects(root, body, path => showProject(root, body, path, projects));
+  const projects = () => showProjects(root, body, path => showProject(root, body, path, projects), projects);
   const first = async () => {
     let path = project;
     if (!path) {

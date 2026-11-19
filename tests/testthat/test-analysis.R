@@ -391,6 +391,65 @@ test_that("an analysis runs nothing until asked, and its keys start at the snaps
     expect_false(identical(r$v$analysis(), a))
 })
 
+test_that("the status says whether the analysis started; a region button starts it", {
+    r <- lens_analysis_rig(params = lens_analysis_params, start = FALSE)
+    on.exit(r$done(), add = TRUE)
+    last_status <- function() {
+        st <- Filter(function(m) m$type == "analysis_status", r$sent())
+        if (length(st)) st[[length(st)]]$data
+    }
+    expect_true(pump_until(function() !is.null(last_status())))
+    expect_false(isTRUE(last_status()$started))
+    r$a$handle("analysis_region", list(action = "all"))
+    expect_true(pump_until(function() isTRUE(last_status()$started), 10))
+    r$a$wait(300)
+    st <- vapply(r$a$status, `[[`, "", "status")
+    expect_true(all(st[names(st) != "auto_type"] == "done"))
+})
+
+test_that("an analysis made with no page connected opens its panel on the next connect", {
+    skip_on_cran()
+    skip_if_not_installed("websocket")
+    fx <- lens_analysis_fixture()
+    v <- suppressMessages(launch_lens(fx$g, feat_type = NULL, open = FALSE))
+    on.exit(suppressMessages(v$close()), add = TRUE)
+    priv <- get("private", v$.__enclos_env__)
+    expect_false(v$connected())
+    a <- suppressMessages(v$analysis(params = lens_analysis_params))
+    cl <- ws_client(ws_url(v), load = priv$load_seq)
+    on.exit(try(cl$ws$close(), silent = TRUE), add = TRUE)
+    opened <- function() any(vapply(cl$state$msgs, function(m)
+        identical(m$type, "analysis_schema") && isTRUE(m$data$open), NA))
+    expect_true(pump_until(opened, 10))
+    # once only
+    cl2 <- ws_client(ws_url(v), load = priv$load_seq)
+    on.exit(try(cl2$ws$close(), silent = TRUE), add = TRUE)
+    expect_true(pump_until(function() any(vapply(cl2$state$msgs, function(m)
+        identical(m$type, "analysis_schema"), NA)), 10))
+    expect_false(any(vapply(cl2$state$msgs, function(m)
+        identical(m$type, "analysis_schema") && isTRUE(m$data$open), NA)))
+})
+
+test_that("the Preprocessing tab's Run button starts the analysis from the page", {
+    fx <- lens_analysis_fixture()
+    v <- suppressMessages(launch_lens(fx$g, feat_type = NULL, open = FALSE))
+    on.exit(suppressMessages(v$close()), add = TRUE)
+    br <- lens_browser(v$url, width = 1600, height = 900)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected(), 30))
+    a <- suppressMessages(v$analysis(params = lens_analysis_params))
+    expect_true(browser_wait(br, paste0("[...document.querySelectorAll('[data-panel=analysis] .an-runbar')]",
+        ".some(b => b.textContent.includes('has not started'))"), 30))
+    expect_true(browser_wait(br,
+        "document.querySelector('[data-panel=analysis] .an-overall')?.textContent === 'not started'"))
+    br$js("document.querySelector('[data-panel=analysis] .an-runbar .an-run').click()")
+    a$wait(300)
+    st <- vapply(a$status, `[[`, "", "status")
+    expect_true(all(st[names(st) != "auto_type"] == "done"))
+    expect_true(browser_wait(br, "!document.querySelector('[data-panel=analysis] .an-runbar')", 30))
+    expect_length(br$errors(), 0L)
+})
+
 test_that("an analysis's columns sit beside pulled ones, and a gene colors by item key", {
     r <- lens_analysis_rig(params = lens_analysis_params)
     on.exit(r$done(), add = TRUE)

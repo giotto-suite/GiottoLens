@@ -77,3 +77,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0024](0024-fields-hold-item-keys-items-are-cached-not-metadata.md) | A field holds an item key; items are cached by the page, not added to the metadata | Proposed | 2026-11-18 |
 | [0025](0025-jobs-run-in-one-mirai-daemon-holding-the-object.md) | Jobs run in one mirai daemon per viewer, which holds the object shown | Proposed | 2026-11-18 |
 | [0026](0026-lens-work-saved-as-a-bundle-in-the-project.md) | Lens work is saved as a bundle directory in the object's project | Proposed | 2026-11-19 |
+| [0027](0027-datasets-imported-from-the-page-through-giotto-readers.md) | Datasets are imported from the page through Giotto's readers, in a job of their own | Proposed | 2026-11-19 |

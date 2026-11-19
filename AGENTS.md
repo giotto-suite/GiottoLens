@@ -38,6 +38,9 @@ R/
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
                the IDE folder dialog (adr/0019)
+  import.R     importing a dataset into a new project (adr/0027): platforms, the form from
+               Giotto's reader (.import_detect()), its values to reader arguments
+               (.import_form_args()), project checks, the R code, the job (.jw_import())
   metadata.R   prep_meta(), .write_metadata()
   bundle.R     saves (adr/0026): the working bundle's layout, listing saves (.lens_saves()),
                finding one by name (.find_save()), copying one (.copy_bundle())
@@ -76,6 +79,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
+              import.ts + import-model.ts (the start page's import form),
               jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
               preferences.ts (the tools bar's Preferences dialog)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
@@ -279,6 +283,21 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - A button released outside the page (outside an IDE viewer pane) never reaches it;
   `ui/release.js` sends the missed `pointerup`/`mouseup`. Tools listen for `mouseup` on `window`.
 
+### Imports (adr/0027)
+
+- The form comes from Giotto's reader (`importXenium(dir)`: `@paths`, `@micron`,
+  `create_gobject` formals); GiottoLens finds no files of its own beyond the focus image
+  names and aligned images. A field's `default` is the reader's; `.import_form_args()` passes
+  only arguments that differ, keeping the keywords the reader resolves (`"cell"`,
+  `"nucleus"`, `"focus"`). A new platform is an entry in `.import_platforms()` with its
+  `form` and `args`; the page draws any form.
+- Import is the one page action that creates a project: new or empty folder, parent there,
+  not cloud-synced (`.import_project_check()`). It runs as a job with `own = TRUE`: a daemon
+  of its own, no object, stopped when it ends, not cancelled by `load()`. One import at a
+  time (`private$import_job`). A failed or cancelled import removes what it wrote
+  (`.import_cleanup()`). The page opens the result with `open`; with `analyze`,
+  `private$analyze_next` makes `open_snapshot()` of that snapshot start Preprocessing.
+
 ### Jobs (adr/0025)
 
 - Work R does for the page that takes more than a moment runs as a job: private
@@ -298,7 +317,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 - `viewer$analysis()` makes the `LensAnalysis` of the object shown (`private$lens_analysis`),
   or the page does with `analysis_open` when the Analysis panel opens. Nothing runs until a
-  step is run or a parameter set (`started`). `clear_object()` closes it; `lens_work()` counts
+  step is run, a parameter set or a region button pressed (`started`, sent in
+  `analysis_status`; the Preprocessing tab shows a Run button until then). Made while no page
+  is connected, it opens the panel on the next `ready` (`open_on_ready`). `clear_object()` closes it; `lens_work()` counts
   it once a step has run.
 - Steps run as jobs: `.AnalysisWorker` gives the poll loop (`tick()`) `call()`/`read()` over
   `start_job()`. Daemon-side functions (`.aw_*`) take the held object first and keep the
@@ -365,7 +386,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `answer()` / `ask()`). The start page's ops: `projects`, `browse`, `snapshots`, `open`
   (adr/0019), and `open_save` (adr/0026); the Data panel's `catalog`, `pull`, the item cache's
   `item` and the tools bar's `save`, answered only to a page showing the current load
-  (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
+  (`.lens_object_ops`). The start page's import form: `import_detect`, `import_paths`,
+  `import_code`, `import_run` (answered when its job ends; adr/0027). The cell table's: `cell_ids` (also refused to a page on an
   earlier load). The Regions panel's `region` (save, remove, select, compare; a compare
   answered when its job ends) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
@@ -520,7 +542,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save()`, `saves()`, `open_save()`,
-`delete_save()`, `save_region()`, `regions()`,
+`delete_save()`, `detect_dataset()`, `import_dataset()`, `save_region()`, `regions()`,
 `select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
 `panels()`, `push_polygons()`,
 `analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,

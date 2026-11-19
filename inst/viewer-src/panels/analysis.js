@@ -720,6 +720,16 @@ function openCatalog() {
   catalogOpen = bg;
 }
 
+// The Preprocessing tab before the analysis has started: nothing runs
+// until Run (or a parameter change, or a region button)
+function startBar(tab) {
+  const bar = el('div', 'an-settings an-runbar');
+  const any = pipelineSteps(model, tab.id).length > 0;
+  bar.append(el('span', 'an-region', `${tab.label} has not started`),
+    runButton(`run ${tab.label}`, { pipeline: tab.id }, any));
+  return bar;
+}
+
 // A tab whose steps wait for Run
 function runBar(tab) {
   const bar = el('div', 'an-settings an-runbar');
@@ -790,6 +800,7 @@ export function createAnalysisPanel(body, ctx) {
       'GiottoDisk expression: z-score scaling and non-standard normalization are not offered'));
     const tab = tabs.find(t => t.id === activeTab);
     if (tab && !tab.auto) root.append(runBar(tab));
+    else if (tab && !model.started) root.append(startBar(tab));
     for (const s of tab ? pipelineSteps(model, tab.id) : [])
       root.append(stepSection(s, send, tab && !tab.auto));
     createIcons({ icons, nodes: root.querySelectorAll('[data-lucide]') });
@@ -841,8 +852,9 @@ export function initAnalysis({ place }) {
     if (open) ensurePanel();
     refresh();
   });
-  onMessage('analysis_status', ({ steps }) => {
+  onMessage('analysis_status', ({ steps, started }) => {
     model.status = steps ?? {};
+    model.started = !!started;
     noteTimes(model.status);
     refresh();
   });

@@ -59,11 +59,12 @@ export interface AnalysisModel {
   suggested: Record<string, { type: string; share: number }>;
   suggestions: Suggestion[];
   tables: Record<string, ResultTable[]>;
+  started: boolean;             // R started the analysis: Preprocessing runs when stale
 }
 
 export const emptyModel = (): AnalysisModel => ({
   schema: null, status: {}, markers: [], labels: {}, inherited: {}, suggested: {}, suggestions: [],
-  tables: {},
+  tables: {}, started: false,
 });
 
 // The step and every step below it
@@ -230,7 +231,8 @@ export function overall(m: AnalysisModel, pipeline?: string): string {
   const st = ids.map(id => ({ id, s: m.status[id]?.status ?? 'stale' }));
   if (st.some(x => x.s === 'running')) return 'running…';
   if (st.some(x => x.s === 'error')) return 'error';
-  if (st.some(x => x.s === 'queued' || (x.s === 'stale' && isAuto(m, x.id)))) return 'queued';
+  if (st.some(x => x.s === 'queued')) return 'queued';
+  if (st.some(x => x.s === 'stale' && isAuto(m, x.id))) return m.started ? 'queued' : 'not started';
   if (st.some(x => x.s === 'stale')) return 'ready to run';
   return 'up to date';
 }

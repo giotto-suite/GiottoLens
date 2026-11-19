@@ -60,6 +60,9 @@ first one present when a viewer starts without saved settings.
 \link{LensViewer} \verb{$analysis()} \code{threads}, of option
 \code{GiottoLens.analysis_history} and of \code{network_dir} (empty: the user
 cache).
+\item \code{import_dir}: the folder a project imported from a dataset goes in by
+default (empty: the folder of the project open, else the working
+directory); see \link{LensViewer} \verb{$import_dataset()}.
 }
 }
 \examples{

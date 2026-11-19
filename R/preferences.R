@@ -32,7 +32,8 @@
     color_by = list(type = "text", default = ""),
     threads = list(type = "number", default = 4L, min = 1, max = 256, integer = TRUE),
     history = list(type = "number", default = 10L, min = 1, max = 1000, integer = TRUE),
-    network_dir = list(type = "text", default = "")
+    network_dir = list(type = "text", default = ""),
+    import_dir = list(type = "text", default = "")
 )
 
 # The preferences file: option GiottoLens.preferences_file, else
@@ -161,6 +162,9 @@
 #'   [LensViewer] `$analysis()` `threads`, of option
 #'   `GiottoLens.analysis_history` and of `network_dir` (empty: the user
 #'   cache).
+#' * `import_dir`: the folder a project imported from a dataset goes in by
+#'   default (empty: the folder of the project open, else the working
+#'   directory); see [LensViewer] `$import_dataset()`.
 #'
 #' @param ... `name = value` pairs to set; `name = NULL` takes the built-in
 #'   default again.

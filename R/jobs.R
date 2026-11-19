@@ -46,6 +46,14 @@
     do.call(fun, c(list(.jw_object(path, name)), args))
 }
 
+# One job in a daemon of its own (an import, adr/0027): `fun(...)`, with no
+# object
+.jw_call <- function(fun, args, progress) {
+    assign(".lens_progress_file", progress, envir = globalenv())
+    on.exit(assign(".lens_progress_file", NULL, envir = globalenv()), add = TRUE)
+    do.call(fun, args)
+}
+
 # For a job's `fun`: report how far it is, at most every 0.25 s (and always at
 # the end). The viewer reads it and tells the page.
 .lens_progress <- function(done, total, what = "") {
@@ -66,7 +74,7 @@
 # Start the daemon for compute profile `profile` and set it up
 .job_daemon <- function(profile) {
     mirai::daemons(1L, dispatcher = TRUE, cleanup = FALSE, .compute = profile)
-    helpers <- lapply(list(.jw_object = .jw_object, .jw_run = .jw_run,
+    helpers <- lapply(list(.jw_object = .jw_object, .jw_run = .jw_run, .jw_call = .jw_call,
         .lens_progress = .lens_progress, `%||%` = function(x, y) if (is.null(x)) y else x),
         .job_fun)
     mirai::everywhere({

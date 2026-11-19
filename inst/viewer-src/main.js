@@ -254,6 +254,7 @@ function showEmpty(project) {
   document.getElementById('main-layout').prepend(host);
   showStartPage(host, project);
   initRStatus();
+  initJobs();    // an import's progress (ui/import.ts)
   initComms();
   $status('no object');
 }

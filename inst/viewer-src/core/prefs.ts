@@ -27,6 +27,7 @@ export interface Prefs {
   threads: number;
   history: number;
   network_dir: string;
+  import_dir: string;
 }
 export type PrefName = keyof Prefs;
 
@@ -36,7 +37,7 @@ export const BUILTIN: Prefs = {
   gene_style: 'default', cat_palette: 'default',
   tx_palette: 'default', background: '#0d1117', outline_color: '#000000', selection_color: '#ffdc32', outline_width: 1,
   outline_opacity: 0.8, fill_opacity: 0.9, expr_values: 'normalized', de_values: 'normalized',
-  color_by: '', threads: 4, history: 10, network_dir: '',
+  color_by: '', threads: 4, history: 10, network_dir: '', import_dir: '',
 };
 
 let defaults: Prefs = { ...BUILTIN };

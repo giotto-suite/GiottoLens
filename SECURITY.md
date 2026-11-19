@@ -18,8 +18,11 @@ While a viewer runs (`launch_lens()` until `viewer$close()`), its server serves:
 
 The server cannot run R code sent from the browser: it only accepts a fixed set of message
 types. Through them, the start page can ask R to list the snapshots of a GiottoDisk project
-and to show one: any project the R user can read, found by its `giottodir.json`. It cannot list other folders or create projects. The
-paths of your recent projects are sent to the page.
+and to show one: any project the R user can read, found by its `giottodir.json`. It cannot list
+other folders. The import form can ask R to read a dataset folder with Giotto's reader, to
+report whether given paths exist and their sizes, and to create a new project in a new or
+empty folder the R user can write (adr/0027); it cannot write into a folder that holds
+files. The paths of your recent projects are sent to the page.
 
 ## What is written
 
@@ -30,6 +33,8 @@ Besides that temporary folder, GiottoLens writes:
   `launch_lens(project =)`, an object that was only in memory; the work done in the viewer,
   as it happens, in `lens/session-<id>/`, which `close()` keeps if it holds work not saved;
   and your saves (`viewer$save()`), in `lens/<name>.<id>/`;
+- **into a new project, when you import a dataset:** the project's stores, a snapshot and
+  the GiottoDisk files; a failed or cancelled import removes them;
 - **in your user data directory:** the list of recent projects.
 
 Of a project, the server serves only the stores and image files it mounted and the viewer's

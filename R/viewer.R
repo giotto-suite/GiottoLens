@@ -500,6 +500,67 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Detect a platform's output folder, as the start page's
+        #'   import form does: Giotto's reader finds the files, and each field
+        #'   holds an argument of the platform's `createGiotto*Object()` as the
+        #'   reader would use it. Nothing is written.
+        #' @param dir The platform's output folder
+        #' @param platform `"xenium"`
+        #' @returns A list: `dir`, `info` (what the run's files say), `notes`
+        #'   (the reader's messages and warnings), `fields` (`key` the
+        #'   argument, `value`, `default`, `type`), `project` and `snapshot`
+        #'   (the defaults `import_dataset()` takes), `code` (the R code of the
+        #'   import), and `problem` when the import would stop as detected
+        detect_dataset = function(dir, platform = "xenium") {
+            .import_detect(platform, dir, private$import_base(), "LensViewer$detect_dataset")
+        },
+
+        #' @description Import a platform's output folder into a new GiottoDisk
+        #'   project: `GiottoDisk::sourceCreate()`, the platform's
+        #'   `createGiotto*Object(backend = src)` and `GiottoDisk::snapshotSave()`,
+        #'   run as a job in a background R process of its own. A failed or
+        #'   cancelled import deletes what it wrote.
+        #' @param dir The platform's output folder
+        #' @param project The project folder to create: new, or an empty
+        #'   folder. `NULL`: preference `import_dir` (else the folder of the
+        #'   project open, else the working directory) and the dataset's name.
+        #' @param snapshot Name of the snapshot saved
+        #' @param platform `"xenium"`
+        #' @param ... Arguments of the platform's `createGiotto*Object()`, such
+        #'   as `qv_threshold` or `load_images`; the others take its defaults
+        #' @param description Description of the snapshot, or `NULL`
+        #' @param open Whether to show the snapshot when the import ends
+        #' @param analyze Whether to start Preprocessing (`analysis()$run()`)
+        #'   when the snapshot is shown; needs `open`
+        #' @param discard As in `set_object()`, for `open`
+        #' @param wait Whether to wait for the import. `FALSE` returns the job
+        #'   id at once (`jobs()`, `cancel_job()`).
+        #' @returns With `wait`, a list of `path`, `name` and `code` (the R
+        #'   code of the import), invisibly; else the job id, invisibly
+        import_dataset = function(dir, project = NULL, snapshot = "imported", platform = "xenium",
+                                  ..., description = NULL, open = TRUE, analyze = FALSE,
+                                  discard = FALSE, wait = TRUE) {
+            site <- "LensViewer$import_dataset"
+            spec <- .import_spec(platform, site)
+            dir <- .import_dir_check(dir, site)
+            if (is.null(project)) project <- .import_default_project(dir, private$import_base())
+            if (isTRUE(open) && isTRUE(wait)) private$check_work(site, discard)
+            out <- NULL
+            id <- private$start_import(spec, dir, list(...), project, snapshot, description,
+                analyze = isTRUE(open) && isTRUE(analyze), site = site, done = function(r) {
+                    out <<- r
+                    if (!wait && isTRUE(open) && r$state == "done")
+                        tryCatch(self$open_project(r$result$path, r$result$name, discard = discard),
+                            error = function(e) message(conditionMessage(e)))
+                })
+            if (!isTRUE(wait)) return(invisible(id))
+            while (is.null(out)) later::run_now(0.05)
+            if (out$state != "done")
+                stop("[", site, "] import ", out$state, ": ", out$message, call. = FALSE)
+            if (isTRUE(open)) self$open_project(out$result$path, out$result$name, discard = discard)
+            invisible(c(out$result, list(code = out$code)))
+        },
+
         #' @description Save the work done in the viewer on the object shown:
         #'   rules, annotations, regions, pushed panels and metadata, column
         #'   types, added images, an image registration, comparisons and the
@@ -2139,7 +2200,9 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(object$x)) object <- private$handover(object)
             # Their results would land on the next object; the daemon keeps
             # the old object until a job asks for another
-            for (id in names(private$running_jobs)) private$cancel(id, "the object shown changed")
+            for (id in names(private$running_jobs))
+                if (!is.null(private$running_jobs[[id]]$load))
+                    private$cancel(id, "the object shown changed")
             catalog <- if (!is.null(object$x)) .lens_catalog(object$x, object$spat_unit)
             imgs <- .image_entries(object$images, object$image_files)
             cells_file <- sprintf("cells-%d.parquet", private$load_seq + 1L)
@@ -2246,6 +2309,11 @@ LensViewer <- R6::R6Class("LensViewer",
                 feat_type = keys$feat_type)
             object$snapshot <- tag
             private$load(object)
+            nxt <- private$analyze_next
+            private$analyze_next <- NULL
+            if (!is.null(nxt) && identical(nxt$path, src@path) && identical(nxt$name, name))
+                later::later(function() tryCatch(self$analysis()$run(), error = function(e)
+                    message("[LensViewer] Preprocessing did not start: ", conditionMessage(e))))
         },
 
         # Stops when the object shown has Lens work and `discard` is FALSE:
@@ -2292,7 +2360,30 @@ LensViewer <- R6::R6Class("LensViewer",
                             exists = file.exists(file.path(recent$path[[i]], "giottodir.json")))),
                         browse  = .can_browse()))
                 },
-                browse = list(data = list(path = .browse_folder())),
+                browse = list(data = list(path = .browse_folder(
+                    if (identical(str1(dat$purpose), "dataset")) "Choose a dataset folder"
+                    else "Open a GiottoDisk project"))),
+                # Importing a dataset into a new project (adr/0027)
+                import_detect = list(data = .import_detect(str1(dat$platform) %||% "",
+                    str1(dat$dir), private$import_base(), "LensViewer")),
+                import_paths = {
+                    paths <- unlist(dat$paths)
+                    if (!is.character(paths) || length(paths) > 200L)
+                        return(list(error = "`paths` must be up to 200 paths"))
+                    list(data = lapply(paths, .import_path_info))
+                },
+                import_code = {
+                    run <- private$import_request(dat)
+                    list(data = list(code = .import_code(run$spec, run$dir, run$args, run$project,
+                        run$snapshot, run$description)))
+                },
+                import_run = {
+                    run <- private$import_request(dat)
+                    private$start_import(run$spec, run$dir, run$args, run$project, run$snapshot,
+                        run$description, ref = str1(dat$ref), analyze = run$analyze, site = "LensViewer",
+                        done = function(r) reply(.job_answer(r, function(x) c(x, list(code = r$code)))))
+                    NULL
+                },
                 snapshots = {
                     src <- .project_source(str1(dat$path), "LensViewer")
                     current <- !is.null(private$project) &&
@@ -2666,6 +2757,9 @@ LensViewer <- R6::R6Class("LensViewer",
 
         # Jobs (R/jobs.R, adr/0025)
         job_profile  = NULL,     # the jobs' mirai compute profile, from the first job
+        import_job   = NULL,     # id of the import running (adr/0027)
+        analyze_next = NULL,     # list(path, name): the imported snapshot whose
+                                 # opening starts Preprocessing
         running_jobs = list(),   # by id: an environment per job
         job_seq      = 0L,
 
@@ -2676,19 +2770,79 @@ LensViewer <- R6::R6Class("LensViewer",
         # (`state`: done, error or cancelled). Every tab hears of it as a
         # `job` message carrying `ref`, the page's name for it, and with
         # `progress = TRUE` how far it is (.lens_progress()). Returns its id.
+        # ── Imports (R/import.R, adr/0027) ──
+        # The folder a new project goes in by default
+        import_base = function() .import_base(if (!is.null(private$project))
+            dirname(normalizePath(private$project@path))),
+
+        # An import_code / import_run ask: the form detected again, the reader's
+        # arguments from the page's values, the project and snapshot
+        import_request = function(dat) {
+            str1 <- function(v) if (is.character(v) && length(v) == 1L && !is.na(v)) v
+            form <- .import_detect(str1(dat$platform) %||% "", str1(dat$dir),
+                private$import_base(), "LensViewer")
+            args <- tryCatch(.import_form_args(form, dat$values, "LensViewer"), error = function(e)
+                stop("[LensViewer] ", conditionMessage(e), call. = FALSE))
+            desc <- str1(dat$description)
+            list(spec = .import_spec(form$platform, "LensViewer"), dir = form$dir, args = args,
+                project = str1(dat$project) %||% form$project,
+                snapshot = str1(dat$snapshot) %||% form$snapshot,
+                description = if (nzchar(desc %||% "")) desc, analyze = isTRUE(dat$analyze))
+        },
+
+        # Start an import job; `done(r)` gets start_job()'s end, with `code`.
+        # `analyze`: opening the imported snapshot starts Preprocessing.
+        start_import = function(spec, dir, args, project, snapshot, description, ref = NULL,
+                                done = NULL, analyze = FALSE, site) {
+            if (!is.null(private$import_job))
+                stop("[", site, "] an import is running; wait for it or cancel it", call. = FALSE)
+            args <- .import_args_check(spec, args, site)
+            project <- .import_project_check(project, site)
+            .import_snapshot_check(snapshot, site)
+            if (!is.null(description) && (!is.character(description) || length(description) != 1L))
+                stop("[", site, "] `description` must be one string", call. = FALSE)
+            created <- !dir.exists(project)
+            code <- .import_code(spec, dir, args, project, snapshot, description)
+            full <- c(stats::setNames(list(dir), spec$dir_arg), args)
+            id <- private$start_job(paste("import", basename(dir)), .jw_import, list(
+                fun = spec$fun, args = full, project = project, snapshot = snapshot,
+                description = description, threads = .lens_pref("threads"),
+                method = if (requireNamespace("qs2", quietly = TRUE)) "qs2" else "rds"),
+                ref = ref, progress = TRUE, own = TRUE, on_end = function(r) {
+                    private$import_job <- NULL
+                    if (r$state == "done") {
+                        if (isTRUE(analyze)) private$analyze_next <- r$result
+                        .add_recent(r$result$path)
+                        private$add_log("import", list(dir = dir, path = r$result$path))
+                        message("[LensViewer] imported ", dir, " into ", r$result$path)
+                    } else .import_cleanup(project, created)
+                    r$code <- code
+                    if (!is.null(done)) done(r)
+                })
+            private$import_job <- id
+            id
+        },
+
+        # `own`: `fun(...)` in a daemon of its own, started for the job and
+        # stopped when it ends, with no object; not cancelled when the object
+        # shown changes (an import, adr/0027)
         start_job = function(label, fun, args = list(), apply = identity, ref = NULL,
-                             on_end = NULL, progress = FALSE) {
-            private$need_object("LensViewer")
-            if (is.null(private$project))
-                stop("[LensViewer] jobs need an object shown from a snapshot", call. = FALSE)
-            if (is.null(private$job_profile))
-                private$job_profile <- .job_daemon(paste0("giottolens-", self$port, "-", .rand_id(6L)))
+                             on_end = NULL, progress = FALSE, own = FALSE) {
+            if (!own) {
+                private$need_object("LensViewer")
+                if (is.null(private$project))
+                    stop("[LensViewer] jobs need an object shown from a snapshot", call. = FALSE)
+                if (is.null(private$job_profile))
+                    private$job_profile <- .job_daemon(paste0("giottolens-", self$port, "-", .rand_id(6L)))
+            }
             id <- private$job_seq <- private$job_seq + 1L
             job <- new.env(parent = emptyenv())
             job$id <- id
             job$label <- label
             job$ref <- ref
-            job$load <- private$load_seq
+            job$load <- if (!own) private$load_seq
+            job$profile <- if (own) .job_daemon(paste0("giottolens-", self$port, "-job", id, "-",
+                .rand_id(6L)))
             job$started <- Sys.time()
             job$cancelled <- FALSE
             job$file <- if (isTRUE(progress)) {
@@ -2697,21 +2851,27 @@ LensViewer <- R6::R6Class("LensViewer",
             }
             # .args, not `...`: kept out of the daemon's global environment,
             # which keeps the object between jobs
-            job$m <- mirai::mirai(.jw_run(fun, args, path, name, progress), .args = list(
-                fun = .job_fun(fun), args = args, path = private$project@path,
-                name = private$snapshot_name(), progress = job$file), .compute = private$job_profile)
+            job$m <- if (own) {
+                mirai::mirai(.jw_call(fun, args, progress), .args = list(fun = .job_fun(fun),
+                    args = args, progress = job$file), .compute = job$profile)
+            } else {
+                mirai::mirai(.jw_run(fun, args, path, name, progress), .args = list(
+                    fun = .job_fun(fun), args = args, path = private$project@path,
+                    name = private$snapshot_name(), progress = job$file), .compute = private$job_profile)
+            }
             private$running_jobs[[as.character(id)]] <- job
             private$job_message(job, "running")
             if (!is.null(job$file)) private$poll_progress(job)
             end <- function(state, result = NULL, msg = NULL) {
                 private$running_jobs[[as.character(id)]] <- NULL
                 if (!is.null(job$file)) unlink(paste0(job$file, c("", ".tmp")))
+                .job_stop_daemon(job$profile)
                 private$job_message(job, state, msg)
                 if (!is.null(on_end)) on_end(list(state = state, result = result, message = msg))
             }
             promises::then(job$m,
                 onFulfilled = function(value) {
-                    if (!identical(private$load_seq, job$load))
+                    if (!is.null(job$load) && !identical(private$load_seq, job$load))
                         return(end("cancelled", msg = "the object shown changed"))
                     res <- tryCatch(list(ok = apply(value)), error = function(e) e)
                     if (inherits(res, "error")) end("error", msg = conditionMessage(res))
@@ -2771,9 +2931,11 @@ LensViewer <- R6::R6Class("LensViewer",
         },
         stop_jobs = function() {
             for (id in names(private$running_jobs)) private$cancel(id, "the viewer was closed")
+            for (job in private$running_jobs) .job_stop_daemon(job$profile)
             .job_stop_daemon(private$job_profile)
             private$job_profile <- NULL
             private$running_jobs <- list()
+            private$import_job <- NULL
         },
 
         snapshot_name = function() {

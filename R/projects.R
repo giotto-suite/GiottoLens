@@ -110,7 +110,7 @@
         rstudioapi::isAvailable() && rstudioapi::hasFun("selectDirectory")
 }
 
-.browse_folder <- function() {
+.browse_folder <- function(caption = "Open a GiottoDisk project") {
     if (!.can_browse()) stop("no folder dialog in this R session", call. = FALSE)
-    rstudioapi::selectDirectory(caption = "Open a GiottoDisk project")
+    rstudioapi::selectDirectory(caption = caption)
 }

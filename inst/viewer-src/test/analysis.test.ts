@@ -244,6 +244,9 @@ describe('pipelines', () => {
     expect(overall(m, 'interactions')).toBe('queued');
     expect(canRun(m, 'proximity')).toBe(false);
     m.status.pca = { status: 'stale' };
+    // Preprocessing runs by itself only once the analysis has started
+    expect(overall(m, 'preprocess')).toBe('not started');
+    m.started = true;
     expect(overall(m, 'preprocess')).toBe('queued');
     expect(canRun(m, 'pca')).toBe(false);
     m.status.groups = { status: 'error', message: 'x' };

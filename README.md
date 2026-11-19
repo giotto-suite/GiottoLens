@@ -45,6 +45,11 @@ g <- viewer$gobject()               # the object shown, loaded from its snapshot
 viewer$checkout("clustered")        # another snapshot of the project
 viewer$open_project("~/proj")       # the project's start page; name = "clustered" opens one
 
+# A new project from a Xenium output folder (also the start page's "Import a dataset")
+form <- viewer$detect_dataset("~/data/xenium/outs")   # what Giotto's reader finds; nothing written
+viewer$import_dataset("~/data/xenium/outs", project = "~/projects/breast", qv_threshold = 30,
+    analyze = TRUE)                                   # analyze: start Preprocessing once it opens
+
 # Read what the user did
 viewer$selection            # selected cell IDs
 viewer$selection_rules      # the rules behind them (lasso, brush, histogram range, ...)
@@ -176,6 +181,9 @@ counts; × drops one, and the bar's rules button hides them.
   plot colors the cells by it.
 - **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
   ruler, and a transcript lasso that counts genes in a region.
+- **Import:** "Import a dataset" on the start page fills a form from Giotto's reader for a
+  Xenium output folder; edit any field and import it into a new GiottoDisk project, as a job
+  with progress, then open it.
 - **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move
   or split one, × closes it, and `+` adds one, including a closed spatial view. The tools bar
   at the left edge holds the project dialog, the panels toggle and the selection's actions.

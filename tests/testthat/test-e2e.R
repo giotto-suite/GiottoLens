@@ -1799,3 +1799,69 @@ test_that("the power button stops the viewer, and a stopped viewer's page stops 
     expect_true(browser_wait(br2, "document.getElementById('r-status').classList.contains('closed')"))
     expect_identical(br2$errors(), character())
 })
+
+test_that("the start page's import form fills from the reader, edits, and shows the R code", {
+    skip_if_not_installed("Giotto")
+    d <- normalizePath(fake_xenium())
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, paste0("(() => { const b = [...document.querySelectorAll('.start-btn')]",
+        ".find(b => b.textContent.startsWith('Import a dataset')); b?.click(); return !!b; })()")))
+    expect_true(browser_wait(br, "!!document.querySelector('.imp-form')"))
+    br$js(sprintf("(() => { const i = document.querySelector('.start-open .start-input'); i.value = %s;
+        i.form.requestSubmit(); return true; })()", jsonlite::toJSON(d, auto_unbox = TRUE)))
+    expect_true(browser_wait(br, "document.querySelectorAll('.imp-grid .imp-label').length > 10"))
+    labels <- br$js("[...document.querySelectorAll('.imp-label')].map(l => l.textContent)")
+    expect_true(all(c("Transcripts", "Boundaries", "Images", "Feature types", "Project folder") %in%
+        unlist(labels)))
+    expect_true(browser_wait(br, "[...document.querySelectorAll('.imp-status.ok')].length >= 5"))
+    expect_true(browser_wait(br, paste0("[...document.querySelectorAll('.imp-chip')]",
+        ".some(c => c.textContent.includes('1,234'))")))
+
+    # An edit marks its field, and the R code passes it
+    br$js("(() => { const i = document.querySelector('.imp-num'); i.value = '30';
+        i.dispatchEvent(new Event('input')); return true; })()")
+    expect_true(browser_wait(br, paste0("[...document.querySelectorAll('.imp-label.edited')]",
+        ".some(l => l.textContent === 'QV threshold')")))
+    br$js("(() => { const d = [...document.querySelectorAll('.imp-details')].pop(); d.open = true; return true; })()")
+    expect_true(browser_wait(br, "document.querySelector('.imp-code')?.textContent.includes('qv_threshold = 30')"))
+
+    # A path that does not exist is marked
+    br$js("(() => { const i = document.querySelector('.imp-cell .start-input'); i.value = '/no/such.parquet';
+        i.dispatchEvent(new Event('input')); return true; })()")
+    expect_true(browser_wait(br, "document.querySelector('.imp-cell .imp-status')?.textContent === 'not found'"))
+    expect_identical(br$errors(), character())
+})
+
+# A real Xenium folder: GIOTTOLENS_XENIUM_DIR
+test_that("the import form imports a Xenium folder and opens it", {
+    skip_if_not_installed("Giotto")
+    dir <- Sys.getenv("GIOTTOLENS_XENIUM_DIR")
+    skip_if(!nzchar(dir), "GIOTTOLENS_XENIUM_DIR not set")
+    base <- tempfile("imports")
+    dir.create(base)
+    on.exit(unlink(base, recursive = TRUE), add = TRUE)
+    withr::local_options(GiottoLens.preferences_file = tempfile(fileext = ".json"))
+    lens_preferences(import_dir = base)
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(discard = TRUE), add = TRUE)
+    br <- lens_browser(v$url)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, paste0("(() => { const b = [...document.querySelectorAll('.start-btn')]",
+        ".find(b => b.textContent.startsWith('Import a dataset')); b?.click(); return !!b; })()")))
+    expect_true(browser_wait(br, "!!document.querySelector('.imp-form')"))
+    br$js(sprintf("(() => { const i = document.querySelector('.start-open .start-input'); i.value = %s;
+        i.form.requestSubmit(); return true; })()", jsonlite::toJSON(dir, auto_unbox = TRUE)))
+    expect_true(browser_wait(br, "!!document.querySelector('.imp-actions .primary')"))
+    br$js("document.querySelector('.imp-actions .primary').click()")
+    expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n > 0", timeout = 1800))
+    priv <- get("private", v$.__enclos_env__)
+    expect_identical(dirname(priv$project@path), normalizePath(base))
+    # "Run Preprocessing" is on by default: the Analysis panel opens and runs
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=analysis] .an-step')", 120))
+    expect_true(pump_until(function() !is.null(priv$lens_analysis) &&
+        get("private", priv$lens_analysis$.__enclos_env__)$started, 60))
+    expect_identical(br$errors(), character())
+})

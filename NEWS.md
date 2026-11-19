@@ -1,5 +1,18 @@
 # GiottoLens (development version)
 
+* Import a dataset: the start page's "Import a dataset" (also in the project dialog) takes a
+  Xenium output folder, fills a form from Giotto's reader (file paths with their status, the
+  run's details, images, aligned images, feature types, QV threshold, what to load, the
+  project folder and snapshot name), and imports it into a new GiottoDisk project with
+  `createGiottoXeniumObject(backend = )` as a job, then opens the snapshot. The form shows
+  the R code of the import. `viewer$detect_dataset()` and `viewer$import_dataset()` do the
+  same from R. Preference `import_dir` sets where new projects go. See adr/0027.
+  "Run Preprocessing" (on by default; `import_dataset(analyze = TRUE)`) starts the Analysis
+  panel's Preprocessing when the imported snapshot opens.
+* The Analysis panel's Preprocessing tab shows "has not started" with a Run button until the
+  analysis starts; "whole tissue" and "analyze selection" start it too, and its header reads
+  "not started" instead of "queued". An analysis made while no page is connected opens its
+  panel when one connects.
 * Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, regions,
   pushed panels and metadata, column types, added images, an image registration, comparisons
   and the viewer's settings) with the snapshot shown, in the project's `lens/` folder.
