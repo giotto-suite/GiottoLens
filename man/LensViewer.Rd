@@ -22,7 +22,8 @@ it like a password while the viewer runs}
     \item{\code{selection_rules}}{The rules behind the current selection, as
 sent by the viewer (one per source: spatial, scatter, histogram, ...)}
 
-    \item{\code{annotations}}{List of drawn polygons: id, name, type, geojson}
+    \item{\code{annotations}}{The shapes drawn or pushed in the viewer: a list of
+GeoJSON strings named by the shapes' names, which are unique.}
 
     \item{\code{registration}}{The image being registered in the viewer, or
 \code{NULL}: image and reference names, the landmark pairs (\code{moving_x},
@@ -1514,7 +1515,9 @@ or any custom geometry in the same coordinate space as the data.
 of WKT strings — all with POLYGON/MULTIPOLYGON geometries in the
 same coordinate space as the spatial data.}
       \item{\code{names}}{Optional character vector of names (one per row).
-Falls back to an \code{x$name} column if present, else blank.}
+Falls back to an \code{x$name} column if present. Names must be unique
+and not taken by another annotation; a blank one gets a default
+name (\verb{annotation_<n>}), as a drawn shape does.}
     }
     \if{html}{\out{</div>}}
   }

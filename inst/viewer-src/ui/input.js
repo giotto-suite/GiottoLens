@@ -7,7 +7,7 @@ import { store, actions } from '../core/store.ts';
 import { requestRender } from '../render/schedule.js';
 import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
 import { lassoSpatial, brushStart, brushMove, brushEnd, strokeOp } from '../selection/selection.ts';
-import { generateAnnotId } from './annotations.js';
+import { generateAnnotId, nextAnnotName } from './annotations.js';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
 import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, consumeDrop,
@@ -184,8 +184,9 @@ async function _runTxLasso(ring) {
   }
 }
 
-function addAnnotation(type, coords) {
-  actions.addAnnotation({ id: generateAnnotId(), type, name: '', coords });
+function addAnnotation(coords) {
+  const name = nextAnnotName(store.getState().annotations.map(a => a.name));
+  actions.addAnnotation({ id: generateAnnotId(), name, coords });
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -263,7 +264,7 @@ export function attachInput(view) {
     if (toolMode() !== 'poly') return;
     if (_lastClickAddedVertex) state.drawRing.pop();
     _lastClickAddedVertex = false;
-    if (state.drawRing.length >= 3) addAnnotation('polygon', [...state.drawRing, state.drawRing[0]]);
+    if (state.drawRing.length >= 3) addAnnotation([...state.drawRing, state.drawRing[0]]);
     state.drawRing = [];
     requestRender();
   });
@@ -351,14 +352,14 @@ export function attachInput(view) {
       if (lassoDragged && ring.length >= 3) {
         if (mode === 'txlasso') _runTxLasso(ring);
         else if (mode === 'lasso') lassoSpatial(ring, lassoOp);
-        else addAnnotation('freehand', [...ring, ring[0]]);
+        else addAnnotation([...ring, ring[0]]);
       }
       requestRender();
     } else if (mode === 'rect' && state.rectStart) {
       const [x0, y0] = state.rectStart;
       const [x1, y1] = state.rectPreview ?? state.rectStart;
       if (Math.abs(x1 - x0) > 0 && Math.abs(y1 - y0) > 0)
-        addAnnotation('rectangle', [[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]);
+        addAnnotation([[x0,y0],[x1,y0],[x1,y1],[x0,y1],[x0,y0]]);
       state.rectStart   = null;
       state.rectPreview = null;
       requestRender();

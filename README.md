@@ -48,7 +48,7 @@ viewer$open_project("~/proj")       # the project's start page; name = "clustere
 # Read what the user did
 viewer$selection            # selected cell IDs
 viewer$selection_rules      # the rules behind them (lasso, brush, histogram range, ...)
-viewer$annotations          # drawn polygons as GeoJSON
+viewer$annotations          # drawn shapes as GeoJSON, by name
 viewer$log()                # recent user actions and browser errors
 viewer$state()              # layers, colouring, rules, view, counts
 
@@ -174,8 +174,8 @@ counts; × drops one, and the bar's rules button hides them.
 - **Regions:** the Regions panel saves the selection under a name and compares two regions,
   or one and every other cell, by differential expression; clicking a gene in the volcano
   plot colors the cells by it.
-- **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
-  ruler, and a transcript lasso that counts genes in a region.
+- **Annotations and measuring:** annotations drawn as polygons, rectangles or freehand,
+  named and sent to R, each able to select the cells inside it; ruler, and a transcript lasso that counts genes in a region.
 - **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move
   or split one, × closes it, and `+` adds one, including a closed spatial view. The tools bar
   at the left edge holds the project dialog, the panels toggle and the selection's actions.

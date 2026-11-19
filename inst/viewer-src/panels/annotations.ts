@@ -1,6 +1,7 @@
 // The annotations panel: the drawn and pushed shapes (store `annotations`),
 // each selectable (its name is edited in the popup over the spatial view,
-// ui/annotations.js), zoomed to, or deleted. A note until there are any.
+// ui/annotations.js), zoomed to, used to select the cells inside it (as a
+// lasso stroke of the same ring), or deleted. A note until there are any.
 import { store, actions, type Annotation } from '../core/store.ts';
 // @ts-ignore: plain JS module
 import { fitZoom, escapeHtml, withZoom } from '../ui/dom.js';
@@ -9,8 +10,7 @@ import { setViewState } from '../data/schedule.js';
 import { createIcons, icons } from 'lucide';
 import type { PanelHandle } from './dock.ts';
 import { spatialView } from '../spatial/current.ts';
-
-const TYPE_ABBR: Record<string, string> = { polygon: 'poly', rectangle: 'rect', freehand: 'free' };
+import { lassoSpatial, strokeOp } from '../selection/selection.ts';
 
 // Clamped to the fitted view's maxZoom: once the controller has moved the
 // camera its view state carries maxZoomX/maxZoomY and no maxZoom
@@ -39,12 +39,15 @@ export function createAnnotationsPanel(body: HTMLElement): PanelHandle {
       const row = Object.assign(document.createElement('div'), {
         className: 'annot-row' + (a.id === selectedAnnotId ? ' selected' : '') });
       row.dataset.id = a.id;
-      const name = a.name ? escapeHtml(a.name) : '<span class="annot-unnamed">unnamed</span>';
       row.innerHTML =
-        `<span class="annot-type-tag ${escapeHtml(a.type)}">${escapeHtml(TYPE_ABBR[a.type] ?? a.type)}</span>` +
-        `<span class="annot-name-text">${name}</span>` +
+        `<span class="annot-name-text">${escapeHtml(a.name)}</span>` +
+        `<button class="annot-row-btn annot-row-sel" title="select the cells inside (Shift adds, Alt or Ctrl/Cmd subtracts)"><i data-lucide="square-dashed-mouse-pointer"></i></button>` +
         `<button class="annot-row-btn annot-row-nav" title="zoom to"><i data-lucide="locate"></i></button>` +
         `<button class="annot-row-btn annot-row-del" title="delete"><i data-lucide="x"></i></button>`;
+      row.querySelector<HTMLElement>('.annot-row-sel')!.addEventListener('click', (e: MouseEvent) => {
+        e.stopPropagation();
+        lassoSpatial(a.coords, strokeOp(e));
+      });
       row.querySelector('.annot-row-nav')!.addEventListener('click', e => { e.stopPropagation(); zoomTo(a); });
       row.querySelector('.annot-row-del')!.addEventListener('click', e => {
         e.stopPropagation();
