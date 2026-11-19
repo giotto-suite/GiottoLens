@@ -3,6 +3,7 @@
 S3method(print,lens_description)
 S3method(print,lens_registration)
 S3method(print,lens_rules)
+export(LensAnalysis)
 export(LensViewer)
 export(export_manifest)
 export(launch_lens)

@@ -45,6 +45,8 @@ import { createToolsPanel } from './tools.ts';
 import { createSpatialPanel } from '../spatial/view.ts';
 // @ts-ignore: plain JS module
 import { abortAllTiles } from '../data/schedule.js';
+// @ts-ignore: plain JS module
+import { createAnalysisPanel } from './analysis.js';
 
 // The built-in panels. A chart (`meta`) shows a note until metadata arrives
 // and is rebuilt when it changes; there can be several. A `single` panel is
@@ -78,6 +80,9 @@ const TYPES = {
                  available: () => !!state.manifest?.layers?.transcripts },
   // A giotto object shown: R has a catalog to pull from
   data:        { create: createDataPanel, single: true, slot: 'sources',
+                 available: () => !!state.cells && !!state.manifest?.catalog },
+  // The object's analysis (viewer$analysis()): opened from "+" or when R starts one
+  analysis:    { create: createAnalysisPanel, single: true,
                  available: () => !!state.cells && !!state.manifest?.catalog },
   // Regions of the object's cells and their comparison, a tab beside the Data panel
   regions:     { create: createRegionsPanel, single: true, slot: 'sources',
@@ -341,6 +346,8 @@ function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): 
     const open = dock.getPanel(kind);
     if (open) { open.api.setActive(); return; }
   }
+  // Opened from "+" with no place given, the Analysis panel goes where it opens from R
+  if (kind === 'analysis' && !position) { placeAnalysis(); return; }
   const p = dock.addPanel({ id: isSingle(kind) ? kind : newId(kind), component: kind, title: kind,
     ...(position && { position }) });
   // A view opened again in a group of its own gets its usual width, after the
@@ -454,12 +461,16 @@ function dropUnavailable(): void {
 }
 
 // Where a pushed panel goes without a `ref`: next to the active chart, else
-// the last one active, else any chart, never among the controls nor beside
-// the spatial view or the tools bar
+// the last one active, else any chart, never among the controls, beside
+// the spatial view or the tools bar, or in the Analysis panel's group
 let lastChart: string | null = null;
+const isChart = (p?: IDockviewPanel | null) => {
+  const kind = p ? views.get(p.id)?.kind : undefined;
+  return !!p && !isSingle(kind) && kind !== 'analysis' &&
+    !p.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
+};
 function chartRef(): IDockviewPanel | undefined {
   if (!dock) return undefined;
-  const isChart = (p?: IDockviewPanel | null) => !!p && !isSingle(views.get(p.id)?.kind);
   if (isChart(dock.activePanel)) return dock.activePanel!;
   const last = lastChart ? dock.getPanel(lastChart) : undefined;
   return isChart(last) ? last : dock.panels.find(isChart);
@@ -520,7 +531,7 @@ export function initDock(host: HTMLElement): void {
     if (!byR.delete(p.id) && payloads.has(p.id)) sendToR('panel_closed', { id: p.id });
     payloads.delete(p.id);
   });
-  dock.onDidActivePanelChange(p => { if (p && !isSingle(views.get(p.id)?.kind)) lastChart = p.id; });
+  dock.onDidActivePanelChange(p => { if (isChart(p)) lastChart = p!.id; });
   dock.onDidLayoutChange(() => {
     const w = dock?.getPanel('tools')?.group.api.width;
     if (!toolsHold && w) toolsWidth = w;
@@ -603,8 +614,10 @@ export function pushPanel(p: PanelPayload): void {
   if (p.ref && !ref) reportError(new Error(`no panel '${p.ref}'; placed next to the charts`), 'push_panel');
   ref ??= chartRef();
   const where = p.where ?? 'tab';
+  // A tab next to the Analysis panel goes beside its group instead
+  const beside = where === 'tab' && !!ref && ref.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
   const position: AddPanelOptions['position'] = !ref ? { direction: 'left' }
-    : { referencePanel: ref, direction: where === 'tab' ? 'within' : where };
+    : { referencePanel: ref, direction: beside ? 'right' : where === 'tab' ? 'within' : where };
   const title = p.title ?? (typeof p.spec?.title === 'string' ? p.spec.title : null) ?? p.id;
   dock.addPanel({ id: p.id, component: 'spec', title, ...(position && { position }) });
 }
@@ -627,3 +640,15 @@ export function listPanels(): { id: string; kind: string; title: string; group: 
 
 // For tests and the browser console: a panel's handle (its Vega view, ...)
 export const panelHandle = (id: string): PanelHandle | null => views.get(id)?.panel ?? null;
+
+// Where the Analysis panel opens: beside the tools bar, left of the spatial
+// view, a third of the page wide; kept where the user or a restored layout
+// put it
+function placeAnalysis(): void {
+  if (!dock || dock.getPanel('analysis')) return;
+  const view = dock.getPanel('spatial'), tools = dock.getPanel('tools');
+  const position: AddPanelOptions['position'] = view ? { referencePanel: view, direction: 'left' }
+    : tools ? { referenceGroup: tools.group.id, direction: 'right' } : { direction: 'left' };
+  const p = dock.addPanel({ id: 'analysis', component: 'analysis', title: 'analysis', position });
+  p.group.api.setSize({ width: Math.round(window.innerWidth / 3) });
+}

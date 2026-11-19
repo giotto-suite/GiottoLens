@@ -24,6 +24,7 @@ import { showStartPage } from './ui/start.ts';
 import { initDock, placeControls, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
   showBuiltin } from './panels/dock.ts';
 import { initRegions, regionList } from './panels/regions.ts';
+import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { spatialView } from './spatial/current.ts';
 import { saveView } from './spatial/view.ts';
 import { applyTheme } from './ui/theme.ts';
@@ -165,6 +166,9 @@ async function main() {
     prefetchColumns();
   });
 
+  // Analysis: the panel opens when R starts one (viewer$analysis())
+  initAnalysis({ place: () => showBuiltin('analysis') });
+
   onMessage('push_panel', pushPanel);
   onMessage('remove_panel', ({ id }) => { removePanel(id); });
 
@@ -211,7 +215,7 @@ function showEmpty(project) {
 
 // Handles for tests and debugging from the browser console
 window.__giottolens = { state, store, actions, panel: panelHandle, regions: regionList,
-  get spatial() { return spatialView(); } };
+  analysis: analysisModel, get spatial() { return spatialView(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);

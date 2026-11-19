@@ -40,6 +40,14 @@
   `viewer$select(lens_cells(ids), source = "table")` picks rows from R.
 * A text column whose values are all numbers can be shown as a continuous scale
   (`set_column_type()` and the "treat as" menu).
+* `viewer$analysis()` opens an Analysis panel for the object shown, also offered in the "+"
+  menu. Its Preprocessing tab runs Giotto's first steps (QC filter to cell-type labels) and
+  reruns only the steps a change affects; further analyses (spatial interactions, spatial
+  genes, co-expression modules, niches, interaction-changed genes, markers between groups)
+  are added from a dialog. Steps run as jobs and nothing runs until asked. Results come back
+  as metadata columns beside pulled ones, docked charts and tables; a gene clicked in a table
+  colors the cells. Finished runs are kept under History. See adr/0021 and adr/0022.
+* Pushed charts: an interval param named `range` sends its extent to R (`panel_pick`).
 * `viewer$set_object(g)` shows another object in the same viewer: the URL stays and open tabs
   reload. The new object starts from a clean slate. If the current object has rules,
   annotations or pushed panels, it stops and names them unless `discard = TRUE`. See

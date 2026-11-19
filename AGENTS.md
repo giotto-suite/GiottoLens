@@ -46,6 +46,9 @@ R/
                (.jw_object(), .jw_run(), .lens_progress()), adr/0025
   regions.R    region names, the comparison job (.region_de()), its expression source
                (.de_source()) and volcano spec (.de_volcano()), adr/0020
+  analysis.R   LensAnalysis (step keys rooted at the snapshot, the poll loop over jobs through
+               .AnalysisWorker, results to the viewer), the daemon side (.aw_*), adr/0021
+  analysis-*.R the analysis steps and catalog: parameters, menu choices, run/result (adr/0022)
   images.R     .image_source() (the file an image is read from), .pick_images(), manifest entries,
                .tiff_info() (a TIFF's size, layout and pyramid from its header, base R)
   registration.R  registration_update parsing, registration_matrix(), write_registration(),
@@ -78,6 +81,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
               data.ts (the Data panel: what to pull from the object, through askR()),
               regions.ts (the Regions panel; regions-model.ts its helpers),
+              analysis.js + analysis-model.ts (the Analysis panel),
               picker.ts (the popover a field picks a column or an item with), images.ts,
               register.ts, annotations.ts, layers.ts (layer visibility, opacity)
   test/       vitest (+ fixtures/)
@@ -261,6 +265,41 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Cancelling interrupts (`stop_mirai()`, dispatcher on); a cancel rejects the job's promise
   like an error, so it is told apart by the job's own flag.
 
+### Analysis (adr/0021, adr/0022)
+
+- `viewer$analysis()` makes the `LensAnalysis` of the object shown (`private$lens_analysis`),
+  or the page does with `analysis_open` when the Analysis panel opens. Nothing runs until a
+  step is run or a parameter set (`started`). `clear_object()` closes it; `lens_work()` counts
+  it once a step has run.
+- Steps run as jobs: `.AnalysisWorker` gives the poll loop (`tick()`) `call()`/`read()` over
+  `start_job()`. Daemon-side functions (`.aw_*`) take the held object first and keep the
+  analysis in the daemon's `.lens_a`: the base object (the snapshot with the analysis's unit
+  and type active), the step cache by key (capped by `GiottoLens.analysis_cache_mb`) and
+  spatial networks. `.aw_init()` sets it up before the first job, and again when a step finds
+  it gone (`lens_missing_input`).
+- Step keys are a step's parameters and its input's key, rooted at `snapshot:<tag>`
+  (`step_keys()`). A gene from a result table is an item key whose `method` is
+  `analysis:<hash of the step key>`; `need_item()` asks the analysis for its job
+  (`item_job()`, `.aw_item()`), so its values never change under its key.
+- The analysis's metadata columns go through `own_columns("analysis", df)`: they replace its
+  previous columns beside pushed and pulled ones, and rules on dropped columns go.
+- Step `run()`/`result()` run in the daemon with globalenv as their environment: they call
+  packages with `::` and the `.lens_*` helpers `.aw_init()` assigns (`.aw_helpers()`), never
+  package internals. `view()` and `pick()` run on the main thread. Progress is the job's
+  (`.lens_progress()`, and a progressr handler for Giotto's `with_pbar()`).
+- Spatial networks: `.lens_network()` keys a network by an md5 of the sorted cell IDs, their
+  coordinates and the network settings, keeps it in the daemon and writes it to
+  `network_dir`. A step using another step's network includes that step's key and waits for
+  it (`network_dep()`).
+- The analysis's spatial unit and feature type are active on its base object; steps call
+  Giotto without `spat_unit`/`feat_type`.
+- Parameter types `values` and `spatial_network` are menus `LensAnalysis` fills
+  (`values_schema()`, `network_schema()`; sent as `type = "choice"`). Steps read them with
+  `.lens_values(p)` (`.values_of()`) and `.lens_net(p)` (`.network_of()`), which also take
+  the value from the nearest step above. Result names of the Preprocessing steps come from
+  `.lens_names()` (`.pre_names()`); the viewer gets the cluster and cell type column names
+  in `analysis_markers` (`columns`).
+
 ### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
@@ -418,7 +457,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save_region()`, `regions()`,
 `select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
 `panels()`, `push_polygons()`,
-`screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
+`analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
 `lens_union()`, `lens_intersect()`. New user-facing capability gets an R method; agent-facing helpers count as
 having a consumer.

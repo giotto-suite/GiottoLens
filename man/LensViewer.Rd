@@ -79,6 +79,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-select_region}{\code{LensViewer$select_region()}}
     \item \href{#method-LensViewer-compare_regions}{\code{LensViewer$compare_regions()}}
     \item \href{#method-LensViewer-de_results}{\code{LensViewer$de_results()}}
+    \item \href{#method-LensViewer-analysis}{\code{LensViewer$analysis()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
     \item \href{#method-LensViewer-remove_panel}{\code{LensViewer$remove_panel()}}
     \item \href{#method-LensViewer-panels}{\code{LensViewer$panels()}}
@@ -1153,6 +1154,63 @@ job's id, invisibly
     A data.frame with one row per comparison: \code{id}, \code{a}, \code{b},
 cell counts, \code{values} and the number of genes at FDR < 0.05; or
 the table of comparison \code{id}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-analysis"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-analysis}{}}}
+\subsection{\code{LensViewer$analysis()}}{
+  The analysis of the object shown (adr/0021): a
+\link{LensAnalysis}, made by the first call and kept until another
+object is shown. The viewer's Analysis panel shows it, and opens
+when it is made here; opening the panel from the viewer's "+" menu
+makes it too. Nothing runs until a step is run or a parameter set.
+Arguments given to a later call apply to the analysis there is.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$analysis(
+  params = NULL,
+  cell_markers = NULL,
+  analyses = NULL,
+  settings = NULL,
+  threads = 4L,
+  network_dir = .default_network_dir()
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{params}}{Parameter values: a list by step of lists by
+parameter, e.g. \code{list(filter = list(min_det_feats_per_cell = 20))}.
+Menu parameters take one of their choices; number parameters
+(thresholds, PCs, resolution, ...) any number in their range, typed
+in the viewer the same way. Parameters left out take Giotto's
+defaults; on GiottoDisk expression, z-score scaling and the
+normalization methods other than \code{"standard"} are not offered.}
+      \item{\code{cell_markers}}{Marker genes for the Automatic types step: a
+named list (cell type -> genes), a data.frame with the cell type in
+its first column and a gene in its second, or the path of such a
+CSV file. Left out, the step is blocked until one is given.}
+      \item{\code{analyses}}{Ids of the analyses to include besides
+Preprocessing; see \link{LensAnalysis} \verb{$catalog()}.}
+      \item{\code{settings}}{A JSON file written by \link{LensAnalysis}
+\verb{$write_settings()}; its saved settings are listed in the viewer,
+ready to restore.}
+      \item{\code{threads}}{Threads for UMAP and data.table in the jobs' process,
+for a new analysis.}
+      \item{\code{network_dir}}{Folder where spatial networks are saved, for a
+new analysis. A network is read from it when an analysis asks for
+one with the same cells, cell coordinates and network settings, in
+this or a later session. \code{NULL} keeps networks for the session
+only. Default: option \code{GiottoLens.network_dir}, else \code{networks} in
+\code{\link[tools:R_user_dir]{tools::R_user_dir()}}'s cache folder for GiottoLens.}
+    }
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The \link{LensAnalysis}
   }
 }
 

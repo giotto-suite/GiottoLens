@@ -7,7 +7,9 @@
 // reload, a re-push) draws the brush again and it can still be dragged. A
 // point param named `pick` sends the clicked row's fields to R
 // (`panel_pick`), e.g. a gene in a volcano plot; a click that ends a drag is
-// not sent.
+// not sent. An interval param named `range` sends its extent by field
+// (`panel_pick` with `value.range`) when the drag is released, or once it has
+// not changed for 600 ms; the same extent is sent once.
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { rangeBuffer, readColumns, numRows } from '../data/parquet.ts';
@@ -99,12 +101,23 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
 
   // A press that moves more than 4 px is a drag; the click that ends it is
   // not a pick
-  let downAt = null, dragged = false;
+  let downAt = null, dragged = false, range = null, sent = null, rangeTimer;
+  const sendRange = () => {
+    clearTimeout(rangeTimer);
+    const key = range && JSON.stringify(range);
+    if (!range || key === sent) return;
+    sent = key;
+    sendToR('panel_pick', { id: ctx.id, value: { range } });
+  };
   const onDown = e => { downAt = [e.clientX, e.clientY]; dragged = false; };
   const onMove = e => {
     if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) dragged = true;
   };
-  const onUp = () => { downAt = null; };
+  const onUp = () => {
+    if (!downAt) return;
+    downAt = null;
+    if (dragged) sendRange();
+  };
   area.addEventListener('pointerdown', onDown, true);
   window.addEventListener('pointermove', onMove, true);
   window.addEventListener('pointerup', onUp, true);
@@ -112,6 +125,7 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
     area.removeEventListener('pointerdown', onDown, true);
     window.removeEventListener('pointermove', onMove, true);
     window.removeEventListener('pointerup', onUp, true);
+    clearTimeout(rangeTimer);
   });
   try {
     view?.addSignalListener('pick', (_, v) => {
@@ -120,6 +134,13 @@ export async function createSpecPanel(body, { spec, data_url }, ctx) {
       if (Object.keys(fields).length) sendToR('panel_pick', { id: ctx.id, value: fields });
     });
   } catch (_) { /* the spec has no pick param */ }
+  try {
+    view?.addSignalListener('range', (_, v) => {
+      range = v && Object.keys(v).length ? v : null;
+      clearTimeout(rangeTimer);
+      if (range) rangeTimer = setTimeout(sendRange, 600);
+    });
+  } catch (_) { /* the spec has no range param */ }
 
   // Hidden behind another tab, it catches up when shown
   const dim = whenVisible(ctx, () => {

@@ -87,6 +87,12 @@ viewer$panels()                                   # what is docked, and where
 viewer$remove_panel("panel-1")
 viewer$push_polygons(regions)                     # SpatVector, sf or WKT
 viewer$screenshot("view.png")
+
+# An analysis of the object shown: Giotto's first steps with a panel per parameter, and more
+a <- viewer$analysis(analyses = c("interactions", "niches"))   # opens the Analysis panel
+a$set("leiden", resolution = 0.5)                 # reruns Leiden and the steps below it
+a$run("niches")                                   # runs an added analysis
+a$code()                                          # the Giotto calls, as R code
 ```
 
 Selection rules are evaluated in R as well as in the browser, so `viewer$select()` resolves

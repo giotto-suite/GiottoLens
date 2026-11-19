@@ -55,7 +55,8 @@ export function fieldLabel(name: string): string {
   const r = parseItemKey(name);
   if (!r) return name;
   const from = r.slot === 'cell_metadata' ? 'object metadata' : r.name ?? r.slot;
-  return `${r.item} · ${from}`;
+  // An analysis's item names its step result by a hash (R/analysis.R)
+  return `${r.item} · ${r.method?.startsWith('analysis:') ? `analysis, ${from}` : from}`;
 }
 
 // Expression items share one color scale, so a scale set for one gene stays

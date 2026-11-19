@@ -7,13 +7,19 @@
 # dropped. `on()` callbacks can be registered for the first two.
 .lens_inbound_types <- c("cell_selection", "annotations_update",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
-    "registration_update", "set_column_type", "ask", "close", "panel_pick")
+    "registration_update", "set_column_type", "ask", "close", "panel_pick",
+    "analysis_param", "analysis_labels",
+    "analysis_cancel", "analysis_settings", "analysis_region", "analysis_run",
+    "analysis_add", "analysis_remove", "analysis_history", "analysis_feature", "analysis_open")
 .lens_callback_types <- c("cell_selection", "annotations_update")
 
 # Messages about the object a page shows, ignored from a page that has not
 # reloaded since the last set_object() (adr/0017)
 .lens_object_types <- c("cell_selection", "annotations_update", "config",
-    "panel_closed", "registration_update", "set_column_type", "panel_pick")
+    "panel_closed", "registration_update", "set_column_type", "panel_pick",
+    "analysis_param", "analysis_labels",
+    "analysis_cancel", "analysis_settings", "analysis_region", "analysis_run",
+    "analysis_add", "analysis_remove", "analysis_history", "analysis_feature", "analysis_open")
 
 # `ask` ops about the object a page shows, refused to a page that has not
 # reloaded since the last load

@@ -38,6 +38,8 @@ describe('item keys', () => {
   it('label as item · source, and expression items share a scale', () => {
     expect(fieldLabel(KEY)).toBe('CD3E/α b · normalized');
     expect(fieldLabel('leiden_clus')).toBe('leiden_clus');
+    expect(fieldLabel(itemKey({ slot: 'expression', feat_type: 'rna', name: 'normalized',
+      method: 'analysis:0f3a', item: 'EPCAM' }))).toBe('EPCAM · analysis, normalized');
     expect(fieldLabel(itemKey({ slot: 'cell_metadata', feat_type: 'rna', item: 'x' }))).toBe('x · object metadata');
     expect(scaleKey(KEY)).toBe('@expression');
     expect(scaleKey('leiden_clus')).toBe('leiden_clus');

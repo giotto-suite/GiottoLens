@@ -1252,6 +1252,54 @@ LensViewer <- R6::R6Class("LensViewer",
                 row.names = NULL)
         },
 
+        #' @description The analysis of the object shown (adr/0021): a
+        #'   [LensAnalysis], made by the first call and kept until another
+        #'   object is shown. The viewer's Analysis panel shows it, and opens
+        #'   when it is made here; opening the panel from the viewer's "+" menu
+        #'   makes it too. Nothing runs until a step is run or a parameter set.
+        #'   Arguments given to a later call apply to the analysis there is.
+        #' @param params Parameter values: a list by step of lists by
+        #'   parameter, e.g. `list(filter = list(min_det_feats_per_cell = 20))`.
+        #'   Menu parameters take one of their choices; number parameters
+        #'   (thresholds, PCs, resolution, ...) any number in their range, typed
+        #'   in the viewer the same way. Parameters left out take Giotto's
+        #'   defaults; on GiottoDisk expression, z-score scaling and the
+        #'   normalization methods other than `"standard"` are not offered.
+        #' @param cell_markers Marker genes for the Automatic types step: a
+        #'   named list (cell type -> genes), a data.frame with the cell type in
+        #'   its first column and a gene in its second, or the path of such a
+        #'   CSV file. Left out, the step is blocked until one is given.
+        #' @param analyses Ids of the analyses to include besides
+        #'   Preprocessing; see [LensAnalysis] `$catalog()`.
+        #' @param settings A JSON file written by [LensAnalysis]
+        #'   `$write_settings()`; its saved settings are listed in the viewer,
+        #'   ready to restore.
+        #' @param threads Threads for UMAP and data.table in the jobs' process,
+        #'   for a new analysis.
+        #' @param network_dir Folder where spatial networks are saved, for a
+        #'   new analysis. A network is read from it when an analysis asks for
+        #'   one with the same cells, cell coordinates and network settings, in
+        #'   this or a later session. `NULL` keeps networks for the session
+        #'   only. Default: option `GiottoLens.network_dir`, else `networks` in
+        #'   [tools::R_user_dir()]'s cache folder for GiottoLens.
+        #' @returns The [LensAnalysis]
+        analysis = function(params = NULL, cell_markers = NULL, analyses = NULL, settings = NULL,
+                            threads = 4L, network_dir = .default_network_dir()) {
+            a <- private$lens_analysis
+            if (is.null(a)) {
+                a <- private$start_analysis("LensViewer$analysis", params = params,
+                    cell_markers = cell_markers, analyses = analyses %||% character(),
+                    threads = threads, network_dir = network_dir)
+                a$announce(open = TRUE)
+            } else {
+                for (s in names(params)) do.call(a$set, c(list(s), params[[s]]))
+                if (!is.null(cell_markers)) a$cell_markers(cell_markers)
+                for (id in setdiff(analyses, names(a$analyses()))) a$add(id)
+            }
+            if (!is.null(settings)) a$read_settings(settings)
+            a
+        },
+
         #' @description Show a Vega-Lite chart as a docked panel, for example
         #'   from `GiottoVisuals::renderSpec(..., engine = "vegalite")`. Rows
         #'   with a `cell_ID` are linked to the viewer: they dim when not
@@ -1414,6 +1462,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   same; open tabs say the viewer is stopped.
         close = function() {
             private$stop_jobs()
+            private$close_analysis()
             if (!is.null(private$server)) {
                 # Tabs stop trying to reconnect and say the viewer is stopped
                 if (self$connected()) {
@@ -1477,6 +1526,74 @@ LensViewer <- R6::R6Class("LensViewer",
         meta_values = list(),   # numbers behind numeric columns shown as categories
         col_types   = list(),
         catalog_data = NULL,    # what the object shown can pull (.lens_catalog())
+        # ── Its analysis (R/analysis.R) ──
+        lens_analysis = NULL,
+        owned = list(),         # metadata columns by owner (the analysis), own_columns()
+
+        start_analysis = function(site, ...) {
+            cat <- private$need_catalog(site)
+            if (!requireNamespace("Giotto", quietly = TRUE))
+                stop("[", site, "] an analysis needs the Giotto package", call. = FALSE)
+            expr <- Filter(function(s) s$slot == "expression", cat$sources)
+            ft <- private$feat_type %||% if (length(expr)) expr[[1L]]$feat_type else "rna"
+            private$lens_analysis <- LensAnalysis$new(self, self$gobject(),
+                host = private$analysis_host(), spat_unit = cat$spat_unit, feat_type = ft, ...)
+            private$lens_analysis
+        },
+        # What the analysis is given of the viewer
+        analysis_host = function() list(
+            root = paste0("snapshot:", private$snapshot),
+            start_job = function(label, fun, args, progress = FALSE, on_end = NULL)
+                private$start_job(label, fun, args, progress = progress, on_end = on_end),
+            cancel = function(id, why) private$cancel(id, why),
+            progress_file = function(id) private$running_jobs[[as.character(id)]]$file %||% NA_character_,
+            columns = function(df) private$own_columns("analysis", df),
+            color_item = function(key, done) private$color_item(key, done)),
+        close_analysis = function() {
+            a <- private$lens_analysis
+            private$lens_analysis <- NULL
+            if (!is.null(a)) a$close()
+        },
+        # A message for the analysis from a tab: `analysis_open` makes one
+        analysis_message = function(ws, type, dat) tryCatch({
+            if (identical(type, "analysis_open")) {
+                if (is.null(private$lens_analysis)) private$start_analysis("LensViewer")
+                private$lens_analysis$announce()
+            } else if (!is.null(private$lens_analysis)) private$lens_analysis$handle(type, dat)
+        }, error = function(e) {
+            private$add_log("error", list(where = type, message = conditionMessage(e)))
+            warning("[LensViewer] ", .console_text(conditionMessage(e)), call. = FALSE)
+        }),
+        # The metadata columns `owner` keeps in the metadata shown, beside
+        # those pushed and pulled: `df` (cell_ID and its columns now) replaces
+        # its previous set, and rules on columns it no longer has are dropped
+        own_columns = function(owner, df) {
+            cols <- setdiff(names(df), "cell_ID")
+            gone <- setdiff(private$owned[[owner]] %||% character(), cols)
+            msg <- private$cached_meta %||% list(n = length(private$cell_ids), columns = list())
+            if (length(gone)) msg$columns <- Filter(function(cl) !cl$name %in% gone, msg$columns)
+            if (length(cols)) {
+                out <- .write_metadata(df, private$meta_dir(), private$cell_ids,
+                    types = unlist(private$col_types), site = "LensViewer")
+                private$col_types[out$dropped] <- NULL
+                for (cn in names(out$values)) private$meta_values[cn] <- list(out$values[[cn]])
+                msg <- .merge_meta(msg, out$msg)
+            }
+            private$meta_values[gone] <- NULL
+            private$owned[[owner]] <- cols
+            private$publish_meta(list(msg = msg), drop_rules_on = gone)
+            invisible(cols)
+        },
+        # Colour every tab's cells by item `key` once it is read; `done(r)`
+        # gets the read's answer
+        color_item = function(key, done = NULL) {
+            private$need_item(key, "LensViewer", function(r) {
+                if (is.null(r$error) && self$connected())
+                    private$broadcast(.encode_ws_message("set_color_by",
+                        list(column = key, item = r$data)))
+                if (!is.null(done)) done(r)
+            })
+        },
         # ── Regions and their comparisons (R/regions.R) ──
         region_sets = list(),   # region name -> cell IDs
         de          = list(),   # compare_regions() results by id
@@ -1621,11 +1738,22 @@ LensViewer <- R6::R6Class("LensViewer",
             }
             cat <- private$need_catalog(site)
             ref <- .parse_item_key(key, site)
-            src <- .catalog_source_for(cat, ref, site)
-            plan <- .pull_plan(cat, data.frame(source = src$id, item = ref$item,
-                type = NA_character_))
-            res <- plan$cols$result
-            id <- private$start_job(paste("read", ref$item), .plan_values, list(keys = plan$keys),
+            # An analysis's item names the step result it is read from
+            # (adr/0021); others, a catalog source of the snapshot shown
+            if (startsWith(ref$method %||% "", "analysis:")) {
+                job <- if (!is.null(private$lens_analysis)) private$lens_analysis$item_job(key)
+                if (is.null(job))
+                    stop("[", site, "] '", key, "' is not an item of the analysis", call. = FALSE)
+                res <- "item"
+            } else {
+                src <- .catalog_source_for(cat, ref, site)
+                plan <- .pull_plan(cat, data.frame(source = src$id, item = ref$item,
+                    type = NA_character_))
+                res <- plan$cols$result
+                job <- list(label = paste("read", ref$item), fun = .plan_values,
+                    args = list(keys = plan$keys))
+            }
+            id <- private$start_job(job$label, job$fun, job$args,
                 apply = function(vals) {
                     if (!res %in% names(vals))
                         stop("'", ref$item, "' was not found in the object", call. = FALSE)
@@ -2118,6 +2246,7 @@ LensViewer <- R6::R6Class("LensViewer",
         # is shown again (adr/0017). Keeping Lens work is a save's job;
         # set_object() refuses to drop work unless told to.
         clear_object = function() {
+            private$close_analysis()
             for (id in names(private$pushed)) private$drop_panel_file(id)
             .prune_meta_files(private$meta_dir(), character())
             .prune_meta_files(private$items_dir(), character())
@@ -2129,6 +2258,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$item_reads   <- list()
             private$region_sets  <- list()
             private$de           <- list()
+            private$owned        <- list()
             private$config_json  <- NULL
             private$rule_set     <- list()
             private$combine      <- "and"
@@ -2152,6 +2282,8 @@ LensViewer <- R6::R6Class("LensViewer",
                 region = length(private$region_sets), `pushed panel` = length(private$pushed))
             parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
             if (!is.null(self$registration)) parts <- c(parts, "image registration")
+            if (!is.null(private$lens_analysis) && private$lens_analysis$has_work())
+                parts <- c(parts, "an analysis")
             if (length(parts)) paste(parts, collapse = ", ")
         },
 
@@ -2252,11 +2384,21 @@ LensViewer <- R6::R6Class("LensViewer",
                             # Jobs already running: a reload or a new tab lists them too
                             for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
                             ws$send(.encode_ws_message("regions", priv$regions_msg()))
+                            if (!is.null(priv$lens_analysis)) priv$lens_analysis$on_ready(ws)
                         },
                         # A click on a point of a pushed chart's `pick` param:
-                        # on a volcano plot, colour the cells by that gene
-                        panel_pick = if (is.character(dat$id) && length(dat$id) == 1L)
-                            priv$pick_gene(ws, dat$id, unlist(dat$value$gene)[1L]),
+                        # on a volcano plot, colour the cells by that gene; on
+                        # an analysis panel, the analysis acts on it
+                        panel_pick = if (is.character(dat$id) && length(dat$id) == 1L) {
+                            if (!is.null(priv$de[[dat$id]]))
+                                priv$pick_gene(ws, dat$id, unlist(dat$value$gene)[1L])
+                            else if (!is.null(priv$lens_analysis))
+                                priv$analysis_message(ws, "panel_pick", dat)
+                        },
+                        analysis_param = , analysis_labels = , analysis_cancel = , analysis_settings = ,
+                        analysis_region = , analysis_run = , analysis_add = , analysis_remove = ,
+                        analysis_history = , analysis_feature = , analysis_open =
+                            priv$analysis_message(ws, parsed$type, dat),
                         ask = priv$answer(ws, parsed$id, dat),
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
@@ -2381,7 +2523,7 @@ print.lens_description <- function(x, ...) {
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
-    "transcripts", "data", "regions", "images", "register", "annotations", "layers")
+    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
