@@ -30,7 +30,7 @@ test_that(".ws_allowed needs the token", {
     expect_false(.ws_allowed(list(PATH_INFO = "/lens/abcd/ws"), "abc"))
 })
 
-test_that("tokens come from the OS random source, not R's RNG", {
+test_that("tokens come from a cryptographic random source, not R's RNG", {
     set.seed(1); a <- .rand_id(24L); state <- .Random.seed
     set.seed(1); b <- .rand_id(24L)
     expect_false(identical(a, b))
