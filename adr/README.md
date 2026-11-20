@@ -78,3 +78,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0025](0025-jobs-run-in-one-mirai-daemon-holding-the-object.md) | Jobs run in one mirai daemon per viewer, which holds the object shown | Proposed | 2026-11-18 |
 | [0026](0026-lens-work-saved-as-a-bundle-in-the-project.md) | Lens work is saved as a bundle directory in the object's project | Proposed | 2026-11-19 |
 | [0027](0027-datasets-imported-from-the-page-through-giotto-readers.md) | Datasets are imported from the page through Giotto's readers, in a job of their own | Proposed | 2026-11-19 |
+| [0028](0028-one-window-shows-the-viewer-data-under-a-secret-path.md) | One window shows the viewer; the data is served under a secret sent to it | Proposed | 2026-11-19 |

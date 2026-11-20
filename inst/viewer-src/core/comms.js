@@ -4,18 +4,32 @@
 // checks.
 // Reconnects every 2s until R's event loop processes the initial handshake.
 //
+// One window shows the viewer (adr/0028). On every connect the page says
+// 'hello' with the key of its last grant. R answers 'grant' (the data secret
+// and a key): the page then sends 'ready' and is live. Or it answers 'wait'
+// (a code): the page shows the code until it is given to R, in the console or
+// typed in the window that shows the viewer. 'released' says the viewer moved
+// to another window.
+// ui/gate.ts shows these states.
+//
 // Messages are { type, id?, data }. A message from R with an `id` is a
 // request: the handler's return value (or error) goes back as
 // { type: 'reply', id, data | error }. The page asks R in the other direction
 // with askR(): { type: 'ask', id, data: { op, ... } }, answered with
 // { type: 'answer', data: { id, data | error, code? } }.
 
+import { dataRoot, setDataRoot } from './base.ts';
+
 // Bump when the message format changes; R warns on a mismatch
-export const PROTOCOL = 7;
+export const PROTOCOL = 8;
 
 let ws             = null;
 let reconnectTimer = null;
 let stopped        = false;   // R said the viewer is closing: no reconnect
+let granted        = false;   // R gave this window the viewer on this socket
+let live           = false;   // and 'ready' was sent on it
+let registered     = false;   // initComms() ran: every handler is registered
+let quiet          = false;   // the viewer moved to another window: no 'hello' until asked
 const handlers     = new Map();   // type → Set of handlers
 const outQueue     = new Map();   // type → latest message while disconnected
 
@@ -24,7 +38,68 @@ let askSeq         = 0;
 const asked        = new Map();   // ask id → { resolve, reject }
 const connectFns   = new Set();   // called on every connect (onConnect())
 
-export const isConnected = () => ws?.readyState === WebSocket.OPEN;
+export const isConnected = () => ws?.readyState === WebSocket.OPEN && live;
+
+// The key of this window's last grant, kept for a reload. Per page path: a
+// proxy may serve several viewers from one origin.
+const KEY = `giottolens-window:${globalThis.location?.pathname ?? ''}`;
+const windowKey = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
+
+// Whether this window shows the viewer: { state: 'connecting' | 'granted' |
+// 'waiting' | 'released' | 'closed', code? }. `fn` gets the current one at
+// once and each change; the returned function unsubscribes.
+let gate = { state: 'connecting' };
+const gateFns = new Set();
+export function onGate(fn) {
+  gateFns.add(fn);
+  fn(gate);
+  return () => gateFns.delete(fn);
+}
+function setGate(g) {
+  gate = g;
+  gateFns.forEach(fn => fn(g));
+}
+
+function sayHello() {
+  ws.send(JSON.stringify({ type: 'hello', data: { protocol: PROTOCOL, key: windowKey() } }));
+}
+
+// Ask R for the viewer again, from a window it was moved away from
+export function requestViewer() {
+  quiet = false;
+  if (ws?.readyState === WebSocket.OPEN) sayHello();
+}
+
+let resolveGrant;
+const firstGrant = new Promise(r => { resolveGrant = r; });
+
+// Connect and wait until R gives this window the viewer: the data cannot be
+// read before. Call before the first dataUrl() fetch.
+export function acquire() {
+  if (!ws) connect();
+  return firstGrant;
+}
+
+function onGrant({ data, key }) {
+  try { sessionStorage.setItem(KEY, key); } catch { /* a reload asks again */ }
+  // The page's URLs are those of an earlier grant: start over with this one
+  if (dataRoot() && dataRoot() !== `d/${data}/`) { location.reload(); return; }
+  setDataRoot(data);
+  granted = true;
+  setGate({ state: 'granted' });
+  resolveGrant();
+  if (registered) announce();
+}
+
+// Handlers are registered, so R may send right away
+function announce() {
+  ws.send(JSON.stringify({ type: 'ready', data: { ...hello, protocol: PROTOCOL } }));
+  live = true;
+  setRStatus('connected');
+  for (const m of outQueue.values()) ws.send(m);
+  outQueue.clear();
+  for (const fn of connectFns) fn();
+}
 
 // What the page tells R on every connect besides its protocol: the load its
 // manifest came from, so R can make a page from before a set_object() reload
@@ -77,8 +152,9 @@ export function reportError(err, where = '') {
   });
 }
 
-// The connection to R ('connecting', 'connected', 'disconnected', or
-// 'closed' once R has stopped the viewer), shown in the selection bar
+// The connection to R ('connecting', 'connected' once this window shows the
+// viewer and said 'ready', 'disconnected', or 'closed' once R has stopped
+// the viewer), shown in the selection bar
 // (ui/selbar.js). `fn` gets the current one at once and each
 // change; the returned function unsubscribes.
 let rStatus = 'connecting';
@@ -125,26 +201,31 @@ function connect() {
 
   ws.onopen = () => {
     clearTimeout(reconnectTimer);
-    setRStatus('connected');
-    // Handlers are registered before connect(), so R may send right away
-    ws.send(JSON.stringify({ type: 'ready', data: { ...hello, protocol: PROTOCOL } }));
-    for (const m of outQueue.values()) ws.send(m);
-    outQueue.clear();
-    for (const fn of connectFns) fn();
+    if (!quiet) sayHello();
   };
 
   ws.onmessage = ({ data }) => {
     let msg;
     try { msg = JSON.parse(data); } catch (e) { reportError(e, 'parsing a message from R'); return; }
-    if (msg.type === 'answer') onAnswer(msg.data ?? {});
+    if (msg.type === 'grant') onGrant(msg.data ?? {});
+    else if (msg.type === 'wait') setGate({ state: 'waiting', code: msg.data?.code });
+    else if (msg.type === 'released') {
+      granted = live = false;
+      quiet = true;
+      setRStatus('disconnected');
+      setGate({ state: 'released' });
+    }
     // viewer$close(): the server is going away, so stop trying to reach it
-    else if (msg.type === 'closed') stopped = true;
+    else if (msg.type === 'closed') { stopped = true; setGate({ state: 'closed' }); }
+    else if (!granted) return;
+    else if (msg.type === 'answer') onAnswer(msg.data ?? {});
     else dispatch(msg);
   };
 
   ws.onerror = () => setRStatus('disconnected');
 
   ws.onclose = () => {
+    granted = live = false;
     setRStatus(stopped ? 'closed' : 'disconnected');
     // Their answers would come on this socket
     for (const p of asked.values()) p.reject(new Error('R disconnected'));
@@ -158,6 +239,7 @@ let _started = false;
 export function initComms() {
   if (_started) return;
   _started = true;
+  registered = true;
   window.addEventListener('error', e => reportError(e.error ?? e.message, 'uncaught'));
   // A request aborted on purpose (a tile that left the view, an image hidden
   // while loading) is not an error, also where a library leaves it unawaited
@@ -165,5 +247,6 @@ export function initComms() {
     if (e.reason?.name === 'AbortError') { e.preventDefault(); return; }
     reportError(e.reason, 'unhandled rejection');
   });
-  connect();
+  if (!ws) connect();
+  else if (granted && ws.readyState === WebSocket.OPEN) announce();
 }

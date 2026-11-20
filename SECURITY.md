@@ -16,6 +16,10 @@ While a viewer runs (`launch_lens()` until `viewer$close()`), its server serves:
   lead outside it;
 - a WebSocket through which the page and R exchange selections and commands.
 
+One browser window shows the viewer at a time (adr/0028). The data above is served under a
+path that R sends only to that window; the viewer URL alone gives the viewer's code and
+nothing else. R listens only to that window.
+
 The server cannot run R code sent from the browser: it only accepts a fixed set of message
 types. Through them, the start page can ask R to list the snapshots of a GiottoDisk project
 and to show one: any project the R user can read, found by its `giottodir.json`. It cannot list
@@ -58,14 +62,27 @@ control.
   link inside a store that leads elsewhere is not followed.
 - **Origin check.** The WebSocket also rejects pages from foreign sites. Behind RStudio
   Server's proxy this check is off and the token alone protects the connection.
+- **One window, chosen by you.** The window `launch_lens()` opens shows the viewer. Any other
+  window that opens the URL shows a four-digit code and waits. The viewer moves to it only
+  when you type the code it shows, in the window that shows the viewer or in R with
+  `viewer$allow(code)`. The code is shown in the waiting window and nowhere else (not in R,
+  not in the other window), so it can only come from a window you can see. The window that had the viewer can no longer read
+  the data. After `launch_lens(open = FALSE)`, open the URL and run `viewer$allow(code)`;
+  in a script, `viewer$allow()` before the URL is opened lets the next window in.
 
 ## What you should know
 
-- **Treat `viewer$url` like a password while the viewer runs.** Anyone who has it and can
-  reach your machine's localhost (other users on a shared server, for example) can read the
-  data being shown and drive the viewer. It is printed in the console and by
-  `viewer$describe()`; avoid pasting it into shared logs or chats. It stops working after
-  `viewer$close()` or a relaunch.
+- **Keep `viewer$url` to yourself while the viewer runs.** Someone who has it and can reach
+  your machine's localhost (other users on a shared server, for example) can open a window
+  that waits with a code; it reads no data and cannot drive the viewer unless you let it in.
+  If a window you did not open is waiting (R prints "a window asks to show the viewer"), you
+  cannot let it in by mistake: moving the viewer needs the code only that window shows. The URL is printed in the console and by `viewer$describe()`,
+  and stops working after `viewer$close()` or a relaunch.
+- **The first window after `launch_lens()`.** `launch_lens()` lets in the first window that
+  connects after it opens the viewer. If your own window shows a code instead of the viewer,
+  another window connected first: close the viewer and launch again.
+- **Code running in your own window.** A browser extension that can read pages, or a script
+  injected into the page, can do what the page can. This is the case for any web page.
 - **Shared machines (HPC login nodes).** Other users can see that a port is open, but without
   the token they cannot read anything through it.
 - **Port forwarding.** Forwarding the port to your laptop (e.g. `ssh -L`) keeps the token

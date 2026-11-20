@@ -29,8 +29,12 @@ viewer$close()                              # work not saved stays in the projec
 ```
 
 `launch_lens()` serves the viewer on `127.0.0.1` and a free port, under a random path that
-changes every launch, and opens it in the browser or viewer pane. Treat `viewer$url` like a
-password while the viewer runs (see [SECURITY.md](SECURITY.md)). The project folder is never served, only the stores the viewer mounts. Use `host = "0.0.0.0"` to
+changes every launch, and opens it in the browser or viewer pane. One window shows the viewer
+at a time: another window that opens `viewer$url` shows a code and waits until you type that
+code in the first window or run `viewer$allow(code)`; in a script, after
+`launch_lens(open = FALSE)`, run `viewer$allow()` before opening the URL. Set
+`options(GiottoLens.viewer = "browser")` to open in the system's default browser. Keep `viewer$url` to yourself while the viewer runs
+(see [SECURITY.md](SECURITY.md)). The project folder is never served, only the stores the viewer mounts. Use `host = "0.0.0.0"` to
 expose it to the network, and `url_prefix` when the browser reaches R through a proxy or port
 forward (for example R on an HPC node).
 
@@ -126,6 +130,8 @@ viewer without seeing the screen.
 viewer$describe(by = "leiden_clus")   # what is on screen and what is selected, as text
 viewer$log()                          # what the user did, and any browser errors
 viewer$jobs()                         # work running in the background; cancel_job(id) stops one
+viewer$allow(4089)                    # give the viewer to the waiting window that shows this code
+viewer$allow()                        # none waiting: the next window to open the URL gets it
 
 # Ask the user to draw, then work with what they chose
 sel <- viewer$wait_for_selection()    # returns once the user lassos or brushes

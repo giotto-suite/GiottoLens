@@ -44,8 +44,8 @@
 #'   port forward.
 #' @param open       Open the viewer (default `TRUE`): in the IDE's viewer pane
 #'   in RStudio (Desktop, Server, Workbench) and Positron, otherwise in the
-#'   browser. Set `options(GiottoLens.viewer = "browser")` to always use the
-#'   browser.
+#'   browser. Set `options(GiottoLens.viewer = "browser")` (in `~/.Rprofile`
+#'   to keep it) to always use the system's default browser.
 #' @param transfer   How the browser reads tiles: `"whole"` fetches each tile
 #'   file in one request (fastest when the browser and R share a machine),
 #'   `"columns"` fetches only the drawn columns with merged Range requests
@@ -102,7 +102,10 @@ launch_lens <- function(
 
     viewer <- LensViewer$new(port = port, host = host, url_prefix = url_prefix,
         transfer = transfer, object = object, project = start)
-    if (open) .open_viewer(viewer$url)
+    if (open) {
+        suppressMessages(viewer$allow())
+        .open_viewer(viewer$url)
+    }
     message("Viewer: ", viewer$url)
     invisible(viewer)
 }
@@ -119,7 +122,8 @@ serve_lens <- function(...) {
 
 # RStudio shows localhost URLs in its viewer pane through its `viewer` option
 # (as htmlwidgets does), and RStudio Server / Workbench proxy them there.
-# Positron's browseURL() already opens its Viewer pane. Shiny is not involved:
+# Positron's browseURL() already opens its Viewer pane, so the system browser
+# is reached through .open_system() there. Shiny is not involved:
 # the pane only needs a URL on this machine.
 .ide <- function() {
     if (nzchar(Sys.getenv("POSITRON"))) return("positron")
@@ -128,11 +132,21 @@ serve_lens <- function(...) {
     "none"
 }
 
-.open_viewer <- function(url, ide = .ide(), pane = getOption("viewer")) {
-    use_pane <- ide %in% c("rstudio", "rstudio-server") && is.function(pane) &&
-        !identical(getOption("GiottoLens.viewer"), "browser")
-    if (use_pane) pane(url) else utils::browseURL(url)
-    invisible(if (use_pane) "pane" else "browser")
+.open_viewer <- function(url, ide = .ide(), pane = getOption("viewer"), system = .open_system) {
+    browser <- identical(getOption("GiottoLens.viewer"), "browser")
+    use_pane <- ide %in% c("rstudio", "rstudio-server") && is.function(pane) && !browser
+    if (use_pane) pane(url)
+    else if (browser && ide == "positron") system(url)
+    else utils::browseURL(url)
+    invisible(if (use_pane) "pane" else if (browser && ide == "positron") "system" else "browser")
+}
+
+# Open `url` in the system's default browser, whatever `options(browser =)` is
+.open_system <- function(url) {
+    if (Sys.info()[["sysname"]] == "Darwin") system2("open", shQuote(url))
+    else if (.Platform$OS.type == "windows") shell.exec(url)
+    else system2("xdg-open", shQuote(url), wait = FALSE)
+    invisible(url)
 }
 
 # Running viewers by port, so a relaunch on the same port can close the old
@@ -356,8 +370,8 @@ serve_lens <- function(...) {
 #'
 #' Owns the httpuv server for one viewer. WebSocket messages from the browser
 #' (selection, annotations) arrive on the main R thread and update the public
-#' fields. Several browser tabs may connect; messages to the viewer go to all
-#' of them.
+#' fields. One browser window shows the viewer at a time; `allow()` moves it
+#' to another.
 #'
 #' @export
 LensViewer <- R6::R6Class("LensViewer",
@@ -400,8 +414,10 @@ LensViewer <- R6::R6Class("LensViewer",
             private$session_id <- .rand_id(16L)
             private$token     <- .rand_id(24L)
             private$conns     <- new.env(parent = emptyenv())
+            private$knocks    <- new.env(parent = emptyenv())
             private$conn_load <- new.env(parent = emptyenv())
             private$routes    <- new.env(parent = emptyenv())
+            private$routes$secret <- .rand_id(24L)
             private$routes$mounts <- list()
             private$routes$images <- list()
             private$session   <- file.path(tempdir(), "giottolens",
@@ -659,7 +675,7 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description Send a typed message to every connected tab
+        #' @description Send a typed message to the window that shows the viewer
         #' @param type Message type
         #' @param data Payload (converted with jsonlite)
         send = function(type, data = NULL) {
@@ -671,8 +687,42 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description Whether any browser tab is connected
+        #' @description Whether a browser window shows the viewer
         connected = function() length(private$conns) > 0L,
+
+        #' @description Give the viewer to a browser window. One window shows
+        #'   the viewer at a time (adr/0028): the one [launch_lens()] opened.
+        #'   Any other window that opens the viewer URL shows a code and
+        #'   waits; `allow(code)` with that code moves the viewer to it, as
+        #'   does typing the code in the window that shows the viewer. The
+        #'   code is shown in the waiting window only. Without a code or with
+        #'   a code no waiting window shows, `allow()` warns and changes
+        #'   nothing. Without a code and with no window waiting, the next
+        #'   window to open the URL gets the viewer, as after
+        #'   `launch_lens(open = FALSE)` in a script.
+        #' @param code The code the waiting window shows
+        allow = function(code = NULL) {
+            how <- "Read the code that window shows, then run viewer$allow(<code>)"
+            if (is.null(code)) {
+                if (length(private$waiting)) {
+                    warning("[LensViewer] a window is waiting for the viewer. ", how, call. = FALSE)
+                    return(invisible(self))
+                }
+                private$allow_next <- TRUE
+                message("[LensViewer] the next window to open the viewer URL shows the viewer")
+                return(invisible(self))
+            }
+            if (length(code) != 1L || is.na(code))
+                stop("[LensViewer$allow] `code` must be one code", call. = FALSE)
+            id <- private$waiting_id(as.character(code))
+            if (is.null(id)) {
+                warning("[LensViewer] no waiting window shows code ", code, ". ",
+                    if (length(private$waiting)) how else "No window is waiting", call. = FALSE)
+                return(invisible(self))
+            }
+            private$grant(id)
+            invisible(self)
+        },
 
         #' @description Push cell metadata to the viewer for coloring, the
         #'   tooltip and the stats panels. Works before a browser connects:
@@ -1291,7 +1341,8 @@ LensViewer <- R6::R6Class("LensViewer",
                 tryCatch(self$state(timeout = 5), error = function(e) NULL)
             n   <- length(private$cell_ids)
             out <- list(
-                url = self$url, connected = self$connected(), n_cells = n,
+                url = self$url, connected = self$connected(),
+                waiting = length(private$waiting), n_cells = n,
                 cells = if (!is.null(private$cells)) list(
                     source = private$cells$source,
                     mark = .drawn_mark(private$cells, st$config$cellMark)),
@@ -1749,13 +1800,18 @@ LensViewer <- R6::R6Class("LensViewer",
             private$close_analysis()
             if (!is.null(private$server)) {
                 # Tabs stop trying to reconnect and say the viewer is stopped
-                if (self$connected()) {
+                others <- c(as.list(private$knocks), list(private$pending$ws))
+                if (self$connected() || length(others)) {
                     private$broadcast(.encode_ws_message("closed"))
+                    for (ws in others) try(ws$send(.encode_ws_message("closed")), silent = TRUE)
                     later::run_now(0.05)
                 }
                 private$server$stop()
                 private$server <- NULL
                 rm(list = ls(private$conns), envir = private$conns)
+                rm(list = ls(private$knocks), envir = private$knocks)
+                private$waiting <- list()
+                private$pending <- NULL
                 unlink(private$session, recursive = TRUE)
                 if (!is.null(unsaved) && !discard) {
                     message("[LensViewer] work not saved (", unsaved, ") is kept in ",
@@ -1785,7 +1841,9 @@ LensViewer <- R6::R6Class("LensViewer",
                 cat("  snapshot:    ", private$snapshot, "\n")
             if (!is.null(private$saved_tag))
                 cat("  save:        ", private$saved_tag, "\n")
-            cat("  connected:   ", length(private$conns), "tab(s)\n")
+            cat("  connected:   ", if (self$connected()) "yes" else "no", "\n")
+            if (length(private$waiting))
+                cat("  waiting:     ", length(private$waiting), "window(s)\n")
             cat("  selection:   ", length(self$selection), "cell(s)\n")
             cat("  annotations: ", length(self$annotations), "polygon(s)\n")
             invisible(self)
@@ -1805,6 +1863,13 @@ LensViewer <- R6::R6Class("LensViewer",
         cells_file  = NULL,     # its cell table in the session dir (.export_session())
         load_seq    = 0L,       # loads so far; the manifest and each tab's ready carry it
         conn_load   = NULL,     # env: connection id -> the load its page came from
+        # One window shows the viewer (adr/0028): `conns` holds its socket
+        knocks      = NULL,     # env: connection id -> socket of every other window
+        waiting     = list(),   # connection id -> the code of a window asking for the viewer
+        window_key  = NULL,     # held by the window that shows the viewer; a reload sends it back
+        allow_next  = FALSE,    # the next window to ask gets the viewer (allow())
+        pending     = NULL,     # list(id, ws): the window given the viewer, until its `ready`
+        mount_links = logical(),  # per mount, whether .links_outside()
         image_names = character(),
         image_files = character(),  # image name -> the image's own file
         added_images = list(),      # manifest entries of add_image(), in order
@@ -2121,7 +2186,7 @@ LensViewer <- R6::R6Class("LensViewer",
             c(private$cells_xy, list(meta = if (!is.null(private$cached_meta)) private$meta_column))
         },
 
-        # Send a request to the first tab and wait for its reply
+        # Send a request to the viewer and wait for its reply
         request = function(type, data = NULL, timeout = 10) {
             private$need_object("LensViewer")
             if (!self$connected())
@@ -2472,6 +2537,18 @@ LensViewer <- R6::R6Class("LensViewer",
                             NULL
                         },
                         list(error = "unknown region action"))
+                },
+                # The window that shows the viewer gives it to a waiting one, by
+                # the code typed there (adr/0028). Answered before the move.
+                claim = {
+                    code <- str1(dat$code)
+                    id <- if (!is.null(code)) private$waiting_id(trimws(code))
+                    if (is.null(id))
+                        return(list(error = "no waiting window shows that code", code = "code"))
+                    reply(list(data = list()))
+                    message("[LensViewer] the viewer moved to another window")
+                    private$grant(id)
+                    NULL
                 },
                 # A job the page started (its `job` messages carry the id)
                 cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
@@ -3005,13 +3082,143 @@ LensViewer <- R6::R6Class("LensViewer",
         set_routes = function(mounts, images) {
             mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
             images <- lapply(images, normalizePath, mustWork = TRUE)
-            root <- .lens_root(private$token)
+            root <- private$data_root()
             for (m in names(private$routes$mounts))
                 private$server$removeStaticPath(paste0(root, "/files/", m))
-            paths <- .files_paths(root, mounts)
+            linked <- vapply(mounts, .links_outside, NA)
+            paths <- .files_paths(root, mounts, linked)
             if (length(paths)) private$server$setStaticPath(.list = paths)
             private$routes$mounts <- mounts
             private$routes$images <- images
+            private$mount_links <- linked
+        },
+
+        data_root = function() .data_root(.lens_root(private$token), private$routes$secret),
+
+        # Serve the data under a new secret; the paths of the old one end
+        new_secret = function() {
+            paths <- function() .data_paths(private$data_root(), private$session,
+                private$routes$mounts, private$mount_links)
+            for (p in names(paths())) private$server$removeStaticPath(p)
+            private$routes$secret <- .rand_id(24L)
+            private$server$setStaticPath(.list = paths())
+        },
+
+        # ── The window that shows the viewer (adr/0028) ──────────────────────
+        # A window says `hello` on connect. It gets the viewer (`grant`, with
+        # the data secret and a key) when it sends the key of the window that
+        # shows the viewer (a reload), or when allow() said the next one may.
+        # Any other window gets a code (`wait`) and the viewer only when that
+        # code comes back: through allow(code), or typed in the window that
+        # shows the viewer (the `claim` ask).
+
+        knock_id = function(ws) {
+            for (id in ls(private$knocks))
+                if (identical(get(id, envir = private$knocks), ws)) return(id)
+            NULL
+        },
+
+        hello = function(ws, dat) {
+            id <- private$knock_id(ws)
+            if (is.null(id)) {
+                if (!is.null(private$conn_id(ws)) || private$is_pending(ws)) private$send_grant(ws)
+                return(invisible())
+            }
+            key <- dat$key
+            known <- is.character(key) && length(key) == 1L && !is.na(key) &&
+                !is.null(private$window_key) && identical(key, private$window_key)
+            if (known || private$allow_next) private$grant(id, known)
+            else private$queue_window(id)
+        },
+
+        # Connection `id` is given the viewer; the window that had it is
+        # released. It is in `conns`, where R's messages go, from its `ready`
+        # (admit()). `known`: it is the same window again, so its key and data
+        # paths stay.
+        grant = function(id, known = FALSE) {
+            ws <- get(id, envir = private$knocks)
+            rm(list = id, envir = private$knocks)
+            code <- private$waiting[[id]]
+            private$waiting[[id]] <- NULL
+            release <- function(old, ows) {
+                try(ows$send(.encode_ws_message("released")), silent = TRUE)
+                assign(old, ows, envir = private$knocks)
+            }
+            for (old in ls(private$conns)) {
+                release(old, get(old, envir = private$conns))
+                rm(list = old, envir = private$conns)
+                if (exists(old, envir = private$conn_load, inherits = FALSE))
+                    rm(list = old, envir = private$conn_load)
+            }
+            if (!is.null(private$pending)) release(private$pending$id, private$pending$ws)
+            if (!known) {
+                private$allow_next <- FALSE
+                private$window_key <- .rand_id(24L)
+                private$new_secret()
+            }
+            private$pending <- list(id = id, ws = ws)
+            private$send_grant(ws)
+            private$add_log("window", if (known) "the same window again" else
+                if (is.null(code)) "allowed" else "by its code")
+        },
+
+        is_pending = function(ws) !is.null(private$pending) && identical(private$pending$ws, ws),
+
+        # The window given the viewer said `ready`
+        admit = function() {
+            assign(private$pending$id, private$pending$ws, envir = private$conns)
+            private$pending <- NULL
+        },
+
+        send_grant = function(ws) {
+            try(ws$send(.encode_ws_message("grant", list(data = private$routes$secret,
+                key = private$window_key))), silent = TRUE)
+        },
+
+        # Connection `id` waits with a code, sent to it alone: the console and
+        # the window that shows the viewer hear that a window waits
+        queue_window = function(id) {
+            ws <- get(id, envir = private$knocks)
+            code <- private$waiting[[id]]
+            if (is.null(code)) {
+                if (length(private$waiting) >= .lens_waiting_max) {
+                    try(ws$close(), silent = TRUE)
+                    return(invisible())
+                }
+                repeat {
+                    code <- .rand_code()
+                    if (!code %in% unlist(private$waiting)) break
+                }
+                private$waiting[[id]] <- code
+                message("[LensViewer] a window asks to show the viewer; ",
+                    "viewer$allow(<the code it shows>) moves the viewer to it")
+            }
+            try(ws$send(.encode_ws_message("wait", list(code = code))), silent = TRUE)
+            private$tell_waiting()
+        },
+
+        # The window that shows the viewer hears how many windows wait, never
+        # their codes
+        tell_waiting = function() {
+            private$broadcast(.encode_ws_message("claim_request",
+                list(waiting = length(private$waiting))))
+        },
+
+        # The connection waiting with `code`, or NULL
+        waiting_id = function(code) {
+            id <- names(private$waiting)[match(code, unlist(private$waiting))]
+            if (length(id) && !is.na(id)) id
+        },
+
+        # A window that does not show the viewer closed
+        drop_knock = function(ws) {
+            id <- private$knock_id(ws)
+            if (is.null(id)) return(invisible())
+            rm(list = id, envir = private$knocks)
+            code <- private$waiting[[id]]
+            if (is.null(code)) return(invisible())
+            private$waiting[[id]] <- NULL
+            private$tell_waiting()
         },
 
         # A new load: tabs reload, and until they do, what they send about
@@ -3046,14 +3253,25 @@ LensViewer <- R6::R6Class("LensViewer",
             pub  <- self
             handlers <- list(
                 open = function(ws) {
+                    if (length(priv$knocks) >= .lens_knocks_max) {
+                        ws$close()
+                        return(invisible())
+                    }
                     priv$next_id <- priv$next_id + 1L
                     id <- as.character(priv$next_id)
-                    assign(id, ws, envir = priv$conns)
+                    assign(id, ws, envir = priv$knocks)
                 },
                 message = function(ws, msg) {
                     parsed <- .parse_ws_message(msg)
                     if (is.null(parsed)) return(invisible())
                     dat <- parsed$data
+                    if (parsed$type == "hello") {
+                        priv$hello(ws, dat)
+                        return(invisible())
+                    }
+                    if (parsed$type == "ready" && priv$is_pending(ws)) priv$admit()
+                    # Only the window that shows the viewer is listened to
+                    if (is.null(priv$conn_id(ws))) return(invisible())
                     # A page still showing the previous object: what it says
                     # about that object would land on this one
                     if (parsed$type %in% .lens_object_types && !priv$conn_current(ws))
@@ -3099,6 +3317,9 @@ LensViewer <- R6::R6Class("LensViewer",
                             for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
                             ws$send(.encode_ws_message("regions", priv$regions_msg()))
                             if (!is.null(priv$lens_analysis)) priv$lens_analysis$on_ready(ws)
+                            if (length(priv$waiting))
+                                ws$send(.encode_ws_message("claim_request",
+                                    list(waiting = length(priv$waiting))))
                         },
                         # A click on a point of a pushed chart's `pick` param:
                         # on a volcano plot, colour the cells by that gene; on
@@ -3186,9 +3407,14 @@ LensViewer <- R6::R6Class("LensViewer",
                     )
                 },
                 close = function(ws) {
+                    if (priv$is_pending(ws)) {
+                        priv$pending <- NULL
+                        return(invisible())
+                    }
                     id <- priv$conn_id(ws)
-                    if (!is.null(id)) rm(list = id, envir = priv$conns)
-                    if (!is.null(id) && exists(id, envir = priv$conn_load, inherits = FALSE))
+                    if (is.null(id)) return(priv$drop_knock(ws))
+                    rm(list = id, envir = priv$conns)
+                    if (exists(id, envir = priv$conn_load, inherits = FALSE))
                         rm(list = id, envir = priv$conn_load)
                 }
             )
@@ -3223,6 +3449,8 @@ print.lens_description <- function(x, ...) {
     cat("GiottoLens viewer\n")
     line("url", x$url)
     line("browser", if (x$connected) "connected" else "not connected")
+    if (isTRUE(x$waiting > 0L))
+        line("waiting", sprintf("%d window(s); viewer$allow(<code>) moves the viewer", x$waiting))
     line("cells", paste0(format(x$n_cells, big.mark = ","), if (!is.null(x$cells))
         sprintf(" from %s, drawn as %s",
             if (x$cells$source == "polygons") "polygons" else "spatial locations",

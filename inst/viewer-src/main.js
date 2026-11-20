@@ -1,6 +1,8 @@
 import { state } from './core/state.js';
 import { store, actions } from './core/store.ts';
-import { initComms, onMessage, reportError, setHello } from './core/comms.js';
+import { acquire, initComms, onMessage, reportError, setHello } from './core/comms.js';
+import { dataUrl } from './core/base.ts';
+import { initGate } from './ui/gate.ts';
 import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
@@ -83,7 +85,7 @@ function setImageDefaults(img, show) {
 
 async function loadImages(entries) {
   state.images = new Map();
-  const added = await fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : [], () => []);
+  const added = await fetch(dataUrl('session/images_added.json'), { cache: 'no-store' }).then(r => r.ok ? r.json() : [], () => []);
   entries = [...entries, ...(Array.isArray(added) ? added : [])];
   if (!entries.length) return;
   const opened = await Promise.allSettled(entries.map(e => openImage(e, pool(), state.manifest.extent)));
@@ -110,9 +112,13 @@ async function addImage(entry) {
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function main() {
+  // The data is readable once R gives this window the viewer (adr/0028)
+  initGate();
+  $status('connecting to R…');
+  await acquire();
   $status('loading manifest…');
   // Never from the cache: the file changes when R loads another object
-  state.manifest = await fetch('session/manifest.json', { cache: 'no-store' }).then(r => {
+  state.manifest = await fetch(dataUrl('session/manifest.json'), { cache: 'no-store' }).then(r => {
     if (!r.ok) throw new Error(`manifest.json not found (${r.status})`);
     return r.json();
   });
@@ -128,8 +134,8 @@ async function main() {
   for (const layer of Object.values(state.manifest.layers))
     for (const t of layer.tiles ?? []) {
       if (!t.url) continue;   // a cell chunk without polygons has no file
-      t.url = new URL(t.url, document.baseURI).href;
-      if (t.file) t.file = new URL(t.file, document.baseURI).href;
+      t.url = dataUrl(t.url);
+      if (t.file) t.file = dataUrl(t.file);
     }
   setTransfer(state.manifest.transfer ?? 'auto');
   const imagesLoaded = loadImages(state.manifest.images ?? []);
@@ -260,11 +266,12 @@ function showEmpty(project) {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, panel: panelHandle, regions: regionList,
+window.__giottolens = { state, store, actions, dataUrl, panel: panelHandle, regions: regionList,
   analysis: analysisModel, get spatial() { return spatialView(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);
+  initGate();
   initComms();   // so the error still reaches R
   reportError(err, 'boot');
 });

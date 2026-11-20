@@ -23,36 +23,45 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
     expect_identical(idx$status_code, 200L)
     expect_match(rawToChar(idx$content), "<html", ignore.case = TRUE)
 
-    man <- http_get(paste0(v$url, "session/manifest.json"))
+    man <- http_get(lens_data_url(v, "session/manifest.json"))
     expect_identical(man$status_code, 200L)
     m <- jsonlite::fromJSON(rawToChar(man$content), simplifyVector = FALSE)
     tile <- m$layers$transcripts$tiles[[1]]
 
-    part <- http_get(paste0(v$url, tile$url), list(Range = "bytes=0-3"))
+    part <- http_get(lens_data_url(v, tile$url), list(Range = "bytes=0-3"))
     expect_identical(part$status_code, 206L)
     expect_identical(rawToChar(part$content), "PAR1")
     expect_identical(part$headers_list[["content-range"]], sprintf("bytes 0-3/%d", tile$bytes))
 
-    whole <- http_get(paste0(v$url, tile$url))
+    whole <- http_get(lens_data_url(v, tile$url))
     expect_identical(whole$status_code, 200L)
     expect_length(whole$content, tile$bytes)
 
     # The same file whole from httpuv's static thread (no R callback)
     expect_match(tile$file, "^files/transcripts/")
-    static <- http_get(paste0(v$url, tile$file))
+    static <- http_get(lens_data_url(v, tile$file))
     expect_identical(static$status_code, 200L)
     expect_identical(static$content, whole$content)
     expect_identical(m$transfer, "auto")
 
-    expect_identical(http_get(paste0(v$url, "data/transcripts/../x"))$status_code, 404L)
+    expect_identical(http_get(lens_data_url(v, "data/transcripts/../x"))$status_code, 404L)
 
     # Nothing is served without this launch's token in the path
     other <- sub("/lens/[^/]+/", "/lens/AAAAAAAAAAAAAAAAAAAAAAAA/", v$url)
-    for (p in c("", "session/manifest.json", tile$url, tile$file)) {
+    data <- sub(v$url, "", lens_data_url(v), fixed = TRUE)
+    for (p in c("", paste0(data, c("session/manifest.json", tile$url, tile$file)))) {
         expect_identical(http_get(paste0(other, p))$status_code, 404L, info = p)
         expect_identical(http_get(paste0(base, "/lens/", p))$status_code, 404L, info = p)
     }
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
+
+    # No data is served without the data secret in the path (adr/0028)
+    for (p in c("session/manifest.json", tile$url, tile$file)) {
+        expect_identical(http_get(paste0(v$url, p))$status_code, 404L, info = p)
+        expect_identical(http_get(paste0(v$url, "d/", p))$status_code, 404L, info = p)
+        expect_identical(http_get(paste0(v$url, "d/AAAAAAAAAAAAAAAAAAAAAAAA/", p))$status_code,
+            404L, info = p)
+    }
 })
 
 test_that("set_outline checks its arguments before sending", {
@@ -168,15 +177,15 @@ test_that("style_categories checks its arguments before sending", {
     expect_error(v$style_categories(alpha = c(0.2, A = 1)), "no viewer connected")
 })
 
-test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs", {
+test_that("WebSocket needs the token, rejects foreign origins, and tracks its window", {
     fx <- lens_fixture()
     skip_if_not_installed("websocket")
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
 
-    bad <- ws_client(ws_url(v, token = "wrong"))
+    bad <- ws_client(ws_url(v, token = "wrong"), allow = FALSE)
     expect_true(pump_until(function() bad$state$closed))
-    evil <- ws_client(ws_url(v), origin = "https://evil.example.com")
+    evil <- ws_client(ws_url(v), origin = "https://evil.example.com", allow = FALSE)
     expect_true(pump_until(function() evil$state$closed))
     expect_false(v$connected())
 
@@ -210,12 +219,10 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     expect_true(pump_until(function() !is.null(got)))
     expect_identical(v$annotations[[1]]$id, "q")
 
-    b <- ws_client(ws_url(v))
-    expect_true(pump_until(function() b$state$open))
     expect_warning(v$set_selection(c("cell_010", "nope")), "1 ID")
     expect_identical(v$selection, "cell_010")
     got_sel <- function(st) Filter(function(m) m$type == "set_rule", st$msgs)
-    expect_true(pump_until(function() length(got_sel(a$state)) && length(got_sel(b$state))))
+    expect_true(pump_until(function() length(got_sel(a$state)) > 0L))
     sent <- got_sel(a$state)[[1]]$data
     expect_identical(sent$rule$kind, "ids")
     expect_identical(sent$combine, "or")
@@ -234,7 +241,7 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks tabs",
     a$ws$send(sel_msg("cell_002", NULL))
     expect_true(pump_until(function() identical(v$selection, "cell_002")))
 
-    a$ws$close(); b$ws$close()
+    a$ws$close()
     expect_true(pump_until(function() !v$connected()))
 })
 
@@ -318,6 +325,13 @@ test_that("the viewer opens in RStudio's pane, else the browser", {
     expect_identical(.open_viewer("u", ide = "rstudio", pane = NULL), "browser")
     options(GiottoLens.viewer = "browser")
     expect_identical(.open_viewer("u", ide = "rstudio", pane = pane), "browser")
+    expect_identical(opened, "browser: u")
+    # Positron's browseURL() shows its pane: the system's browser is opened instead
+    sys <- function(url) opened <<- paste("system:", url)
+    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys), "system")
+    expect_identical(opened, "system: u")
+    expect_identical(.open_viewer("u", ide = "none", pane = pane, system = sys), "browser")
+    expect_identical(opened, "browser: u")
 })
 
 test_that(".ide reads the IDE from the environment", {
@@ -403,7 +417,7 @@ test_that("set_mark checks its arguments, and describe() reports the cells", {
 test_that("a viewer starts without an object and refuses what needs one", {
     v <- launch_lens(open = FALSE)
     on.exit(v$close(), add = TRUE)
-    m <- jsonlite::fromJSON(rawToChar(http_get(paste0(v$url, "session/manifest.json"))$content))
+    m <- jsonlite::fromJSON(rawToChar(http_get(lens_data_url(v, "session/manifest.json"))$content))
     expect_true(m$empty)
     expect_identical(m$load, 1L)
     expect_error(v$push_metadata(data.frame(cell_ID = "a", x = 1)), "no object loaded")
@@ -428,8 +442,8 @@ test_that("set_object() serves another object from a clean slate", {
     on.exit(v$close(), add = TRUE)
     priv <- get("private", v$.__enclos_env__)
     manifest <- function() jsonlite::fromJSON(rawToChar(
-        http_get(paste0(v$url, "session/manifest.json"))$content), simplifyVector = FALSE)
-    status <- function(u) http_get(paste0(v$url, u))$status_code
+        http_get(lens_data_url(v, "session/manifest.json"))$content), simplifyVector = FALSE)
+    status <- function(u) http_get(lens_data_url(v, u))$status_code
     tile <- manifest()$layers$cells$tiles[[1]]
     expect_identical(c(status(tile$url), status(tile$file)), c(200L, 200L))
 
