@@ -46,8 +46,8 @@ control.
   cannot reach it. `launch_lens(host = "0.0.0.0")` exposes it to your network; do that only on
   a network you trust, since there is no TLS.
 - **An unguessable URL.** Everything is served under `/lens/<token>/`, with a new random
-  24-character token each launch, drawn from the operating system's random source (not R's
-  random numbers, which `set.seed()` makes predictable). Without the token, the server answers
+  24-character token each launch, drawn from a cryptographic random source on every platform,
+  Windows included (not R's random numbers, which `set.seed()` makes predictable). Without the token, the server answers
   nothing but "not found", including to other users on the same machine.
 - **Only the stores you launched on.** Files are served from inside those stores; a symbolic
   link inside a store that leads elsewhere is not followed.

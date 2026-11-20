@@ -1,5 +1,8 @@
 # GiottoLens (development version)
 
+* On Windows, the viewer's token comes from a cryptographic random source, as on macOS and
+  Linux; before, it came from R's random numbers reseeded from the clock, which a local user
+  could narrow down. See `SECURITY.md`.
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an

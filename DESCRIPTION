@@ -20,6 +20,7 @@ Imports:
     later,
     methods,
     mirai (>= 2.0.0),
+    nanonext,
     promises,
     R6,
     stats,
