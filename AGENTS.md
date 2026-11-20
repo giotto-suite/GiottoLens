@@ -419,7 +419,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `loadOmeTiff()` misreads Xenium's per-channel files. Levels must halve and share a tile size.
   Above 4096 px a side, a file in strips or without a pyramid is refused (`layoutProblem()`):
   Viv would read it as one tile at every zoom.
-- A giottoAffineImage's `@affine` (applied as `xy %*% L + shift` to the raster's extent
+- A giottoAffineImage's `@affine` (a column-vector matrix applied to the raster's extent
   coordinates) goes to the manifest as `affine` (`.image_affine()`) and is multiplied onto
   the model matrix; the file and extent stay untransformed.
 - RGB is decided from the TIFF tags (`imageKind()`: 3 or 4 samples, 8-bit, RGB or YCbCr), not
@@ -458,8 +458,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   and, with a fit, the other pane's points mapped through it. `link` moves either pane with
   the other through the fit (`onMainView()`, `paneViewChange()`).
 - Affines are `[a, b, c, d, e, f]` (x' = a x + b y + c) in the browser and 3 x 3 matrices on
-  column vectors in R. GiottoClass applies an image's `@affine` as `xy %*% m[1:2, 1:2]`, so
-  `.registered_image()` passes the transposed linear part.
+  column vectors in R, as GiottoClass stores an image's `@affine`, so `.registered_image()`
+  and `.image_affine()` pass them through unchanged.
 - Every registration change is sent as `registration_update` (debounced) and kept as
   `LensViewer$registration`; `set_registration` (R to viewer) starts, loads (`fixed_ref` and
   `alignment` in reference pixels) or resets it.

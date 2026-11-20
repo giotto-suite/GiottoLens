@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* Requires GiottoClass 0.8.0, which stores image affines in the standard
+  column-vector convention that the viewer already uses.
 * On Windows, the viewer's token comes from a cryptographic random source, as on macOS and
   Linux; before, it came from R's random numbers reseeded from the clock, which a local user
   could narrow down. See `SECURITY.md`.
