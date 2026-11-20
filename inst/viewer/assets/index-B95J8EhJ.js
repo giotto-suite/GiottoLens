@@ -1,4 +1,4 @@
-import{c as N}from"./expression-Bl_GL2tO.js";import{e as f,h as v,r as m,f as k,A as M,i as V,j as L,b as S,G as z,k as y,l as R,C as $,m as _}from"./index-C1rOLw2-.js";import{n as fe}from"./index-C1rOLw2-.js";const B=`fn arithmetic_add(x: {TYPE}, y: {TYPE}) -> {TYPE} {
+import{c as N}from"./expression-Bl_GL2tO.js";import{e as f,h as v,r as m,f as k,A as M,i as V,j as L,b as S,G as z,k as y,l as R,C as $,m as _}from"./index-0DIchU20.js";import{n as fe}from"./index-0DIchU20.js";const B=`fn arithmetic_add(x: {TYPE}, y: {TYPE}) -> {TYPE} {
   return x + y;
 }
 
