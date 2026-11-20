@@ -994,7 +994,7 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
     expect_equal(diff(dom()), diff(zoomed), tolerance = 1e-6)
     expect_identical(moved(), r)
     # The hand tool: a plain drag pans, and leaves the rectangle alone
-    tool <- function(t) br$js(sprintf("document.querySelector('[data-panel=density] .stats-controls button[title^=\"%s\"]').click()", t))
+    tool <- function(t) br$js(sprintf("document.querySelector('[data-panel=density] .chart-tools button[title^=\"%s\"]').click()", t))
     width <- diff(dom())
     tool("pan")
     # Rebuilt for the new tool, at the same zoom
@@ -1008,7 +1008,7 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
     expect_true(pump_until(function() dom()[1] < before[1] - 1e-9))
     expect_identical(moved(), r)
     tool("select")
-    br$js("document.querySelector('[data-panel=density] .stats-controls button[title^=\"zoom to fit\"]').click()")
+    br$js("document.querySelector('[data-panel=density] .chart-tools button[title^=\"zoom to fit\"]').click()")
     expect_true(pump_until(function() isTRUE(all.equal(dom(), full))))
     expect_true(pump_until(function() { b <- box(); !is.null(b$x) && isTRUE(all.equal(b$x, r[1:2], tolerance = 1e-6)) }))
 

@@ -201,6 +201,10 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     const w = view.width(), h = view.height(), dpr = window.devicePixelRatio || 1;
     Object.assign(tex.style, { left: `${r.left - a.left + ox}px`, top: `${r.top - a.top + oy}px`,
       width: `${w}px`, height: `${h}px` });
+    // The tools inside the plot's lower right, clear of the axes
+    const b = body.getBoundingClientRect();
+    Object.assign(ctrls.tools.style, { right: `${b.right - (r.left + ox + w) + 6}px`,
+      bottom: `${b.bottom - (r.top + oy + h) + 6}px` });
     const pw = Math.max(1, Math.round(w * dpr)), ph = Math.max(1, Math.round(h * dpr));
     if (tex.width !== pw || tex.height !== ph) { tex.width = pw; tex.height = ph; }
     paint();

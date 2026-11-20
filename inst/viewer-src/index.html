@@ -157,7 +157,12 @@
     }
     .ctl-actions button:hover { background: var(--bg-3); color: var(--fg-0); }
     .ctl-actions button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-fg); }
-    .stats-ctrl-sep { width: 1px; height: 14px; background: var(--bg-3); margin: 0 4px; flex-shrink: 0; align-self: center; }
+    /* A chart's view tools (panels/controls.js): a column over the chart's lower right */
+    .chart-tools {
+      position: absolute; right: 8px; bottom: 8px; z-index: 5;
+      display: flex; flex-direction: column; gap: 2px; padding: 3px;
+      background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 6px; opacity: 0.92;
+    }
     .gene-count { color: var(--fg-3); font-size: 11px; margin-left: 6px; align-self: center; }
 
     .gene-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; font-size: 12px; }

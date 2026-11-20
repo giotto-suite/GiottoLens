@@ -37,6 +37,7 @@ export function createScatterPanel(body, ctx) {
   ]);
   const area = chartArea(body);
   area.classList.add('lens-dark');   // dark in both themes, like the spatial view (ui/theme.ts)
+  ctrls.tools.classList.add('lens-dark');
 
   function setMode(m) {
     mode = m;

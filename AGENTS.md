@@ -82,7 +82,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               scatter.js, histogram.js,
               density.ts (2D bins as one image), table.ts (the cell table), spec.js (pushed
               Vega-Lite), controls.js (chart
-              control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
+              control bar and tool stack); controls: cells.ts (colour by, legend), transcripts.ts (genes),
               data.ts (the Data panel: what to pull from the object, through askR()),
               regions.ts (the Regions panel; regions-model.ts its helpers),
               analysis.js + analysis-model.ts (the Analysis panel),

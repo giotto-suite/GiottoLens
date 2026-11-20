@@ -4,6 +4,9 @@
   within 256 MB: above it, the least recently used are dropped, never one that colours the
   cells, a rule uses or a chart shows. Before, opening the table loaded every column.
 
+* The scatter and density panels' view tools (pan, lasso or select, zoom to fit) are a
+  column over the chart's lower right; the bar along the top holds only the fields.
+
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an
