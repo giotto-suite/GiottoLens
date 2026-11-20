@@ -161,3 +161,53 @@ test_that("the page asks R over the socket and gets answers back", {
     expect_true(any(vapply(a$state$msgs, function(m) m$type == "reload", NA)))
     a$ws$close()
 })
+
+test_that("object_info() reads the snapshot's sidecars: save tags and contents", {
+    bx <- lens_bins_fixture()
+    g <- .fixture_project(bx$mem)
+    src <- g@source
+    on.exit(unlink(src@path, recursive = TRUE), add = TRUE)
+    GiottoDisk::snapshotMetadata(src, "fixture", description = "bins <1>",
+        labels = c("qc", "v2"), extra = list(owner = "ana", tissue = "lung"))
+    v <- launch_lens(project = src@path, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$object_info(), "no object is shown")
+    v$checkout("fixture", spat_unit = "bin", feat_type = NULL)
+
+    i <- v$object_info()
+    s <- i$snapshot
+    expect_identical(s$name, "fixture")
+    expect_identical(s$owner, "ana")
+    expect_identical(s$description, "bins <1>")
+    expect_identical(s$labels, list("qc", "v2"))
+    expect_identical(s$extra, list(tissue = "lung"))
+    expect_true(s$keep)
+    expect_null(i$save)
+    expect_identical(i$object$class, "giotto")
+    expect_identical(i$counts$cells$bin, 900L)
+    # metadata lists its columns without the ID; a record with only the ID is left out
+    meta <- unlist(lapply(i$contents$cell_metadata, function(grp)
+        vapply(grp$items, `[[`, "", "name")))
+    expect_false("cell_ID" %in% meta)
+    expect_true(all(lengths(lapply(i$contents$cell_metadata, `[[`, "items")) > 0L))
+    expect_false(any(c("cell_ID", "feat_ID") %in% names(i$contents)))
+    expect_identical(vapply(i$contents$spatial_locs[[1]]$items, `[[`, "", "name"), "raw")
+
+    # the page's ask answers the same, as JSON
+    res <- ask(v, op = "object_info")
+    expect_identical(res$data$snapshot$owner, "ana")
+    expect_match(.encode_ws_message("answer", res), '"labels":\\["qc","v2"\\]')
+
+    # the Lens save open
+    v$annotations <- list(a = "{}")
+    v$save("tumor", description = "regions")
+    expect_identical(v$object_info()$save[c("name", "description")],
+        list(name = "tumor", description = "regions"))
+
+    # a snapshot saved without a manifest still describes the save
+    unlink(file.path(src@path, "giottosave", s$tag, "manifest.json"))
+    i <- v$object_info()
+    expect_identical(i$snapshot$owner, "ana")
+    expect_null(i$contents)
+    expect_null(i$counts)
+})

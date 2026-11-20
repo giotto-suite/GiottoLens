@@ -703,6 +703,22 @@ LensViewer <- R6::R6Class("LensViewer",
             .catalog_table(private$need_catalog("LensViewer$catalog"))
         },
 
+        #' @description What the snapshot shown is and holds, from the files
+        #'   saved beside it (`snapshot.json` and `manifest.json`), without
+        #'   loading it. The tools bar's info button shows the same.
+        #' @returns A list: `project` (its path); `snapshot` (`name`, `tag`,
+        #'   `created`, `creator`, `owner` (from `extra`, see
+        #'   [GiottoDisk::snapshotMetadata()]), `keep`, `description`,
+        #'   `labels`, `parents` (their names), `session`, `object` (its uid),
+        #'   `extra`); `save` (the Lens save open, if any: `name`, `updated`,
+        #'   `description`, `labels`); `object` (`class`, `uid`, `written_by`,
+        #'   `history_steps`); `counts` (`cells` per spatial unit, `features`
+        #'   per feature type); `contents` (per slot, groups of items: `on`
+        #'   the keys they share, `items` a list of `name` and `detail`;
+        #'   metadata lists its columns). `object`, `counts` and `contents`
+        #'   are NULL for a snapshot saved without a manifest.
+        object_info = function() private$read_object_info("LensViewer$object_info"),
+
         #' @description Add values from the object shown to the viewer's
         #'   metadata: one [GiottoClass::spatValues()] call, run as a job (see
         #'   `jobs()`) over the object the jobs' process holds. Pulled columns are
@@ -2349,6 +2365,8 @@ LensViewer <- R6::R6Class("LensViewer",
                     list(data = list(snapshot = private$snapshot))
                 },
                 catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
+                # The tools bar's info button
+                object_info = list(data = private$read_object_info("LensViewer")),
                 # One item's file, for a field that shows it (data/items.ts)
                 item = {
                     private$need_item(str1(dat$key) %||% "", "LensViewer", reply)
@@ -2407,6 +2425,16 @@ LensViewer <- R6::R6Class("LensViewer",
                 },
                 list(error = "unknown request")
             )
+        },
+
+        read_object_info = function(site) {
+            if (!private$loaded || is.null(private$snapshot))
+                stop("[", site, "] no object is shown", call. = FALSE)
+            save <- if (!is.null(private$saved_tag)) {
+                s <- .lens_saves(private$project)
+                s[basename(s$dir) == private$saved_tag, , drop = FALSE]
+            }
+            .object_info(private$project, private$snapshot, save)
         },
 
         save_snapshot = function(src, x, keep) {

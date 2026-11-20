@@ -12,6 +12,7 @@ import { invertSelection, filterMeta } from '../selection/selection.ts';
 import { escapeHtml } from '../ui/dom.js';
 import { initProjectButton } from '../ui/start.ts';
 import { jobsButton } from '../ui/jobs.ts';
+import { infoButton } from '../ui/info.ts';
 import { initPreferencesButton } from '../ui/preferences.ts';
 import { askR } from '../core/comms.js';
 import { togglePanels, panelsShown, onLayoutChange, openAddMenu, type PanelHandle } from './dock.ts';
@@ -22,6 +23,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   bar.className = 'tools-bar';
   bar.innerHTML = `
     <button class="tool-btn" data-act="project" title="project: open a save, a snapshot or another project"><i data-lucide="folder-open"></i></button>
+    <button class="tool-btn" data-act="info" title="about the object shown: its snapshot and what it holds (viewer$object_info())"><i data-lucide="info"></i></button>
     <button class="tool-btn" data-act="save" title="save the work in the viewer (viewer$save())"><i data-lucide="save"></i></button>
     <button class="tool-btn" data-act="panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
     <button class="tool-btn" data-act="add" title="add a panel"><i data-lucide="plus"></i></button>
@@ -46,6 +48,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   showState();
   // Jobs R runs for the page, and cancelling them (ui/jobs.ts)
   const offJobs = jobsButton(bar.querySelector('[data-act=jobs]') as HTMLElement);
+  const closeInfo = infoButton(bar.querySelector('[data-act=info]') as HTMLElement);
 
   // The selection: AND or OR, invert, clear
   const btn = (act: string) => bar.querySelector(`[data-act=${act}]`) as HTMLElement;
@@ -58,7 +61,7 @@ export function createToolsPanel(body: HTMLElement): PanelHandle {
   const closeMeta = selectByMetadata(btn('meta'));
   const closeSave = saveForm(btn('save'));
 
-  return { destroy() { off.abort(); offLayout(); offCombine(); closeMeta(); closeSave(); offJobs(); } };
+  return { destroy() { off.abort(); offLayout(); offCombine(); closeMeta(); closeSave(); offJobs(); closeInfo(); } };
 }
 
 // Save the viewer's work (adr/0026): a name and a description, beside the

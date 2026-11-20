@@ -39,6 +39,92 @@
     })
 }
 
+# What the info button and object_info() show of snapshot `tag` of `src`,
+# read from its sidecars without loading it: snapshot.json (who saved it, why,
+# from what) and manifest.json (what the object holds). `save` is the row of
+# .lens_saves() for the Lens save open, if any. A snapshot without a manifest
+# has NULL `object`, `counts` and `contents`.
+.object_info <- function(src, tag, save = NULL) {
+    all <- GiottoDisk::snapshotInfo(src, deleted = TRUE)
+    s <- all[all$tag == tag, , drop = FALSE]
+    if (!nrow(s)) stop("[LensViewer] no snapshot '", tag, "' in ", src@path, call. = FALSE)
+    val <- function(v) if (length(v) && !is.na(v[[1L]])) v[[1L]]
+    iso <- function(t) val(format(t, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+    # A field GiottoDisk does not have (an owner, say) is kept in `extra`
+    extra <- s$extra[[1L]]
+    text <- function(v) if (is.atomic(v)) paste(v, collapse = ", ") else
+        as.character(jsonlite::toJSON(v, auto_unbox = TRUE))
+    parents <- unlist(s$parents[[1L]])
+    parent_names <- vapply(parents, function(p) {
+        n <- all$name[all$tag == p]
+        if (length(n)) n[[1L]] else p
+    }, "", USE.NAMES = FALSE)
+    m <- file.path(src@path, "giottosave", tag, "manifest.json")
+    m <- if (file.exists(m)) jsonlite::fromJSON(m, simplifyVector = FALSE)
+    list(
+        project  = src@path,
+        snapshot = list(
+            name = s$name[[1L]], tag = tag, created = iso(s$created),
+            creator = val(s$creator), owner = if (!is.null(extra$owner)) text(extra$owner),
+            keep = val(s$keep), description = val(s$description),
+            labels = as.list(unlist(s$labels[[1L]])), parents = as.list(parent_names),
+            session = val(s$session), object = val(s$object),
+            extra = lapply(extra[setdiff(names(extra), "owner")], text)),
+        save = if (!is.null(save) && nrow(save)) list(
+            name = save$name[[1L]], updated = iso(save$updated),
+            description = val(save$description),
+            labels = if (nzchar(save$labels[[1L]])) as.list(strsplit(save$labels[[1L]], ", ")[[1L]])
+                else list()),
+        object = if (!is.null(m)) list(class = m$object$class, uid = m$object$uid,
+            written_by = m$generated_by, history_steps = m$summary$n_history_steps),
+        counts = if (!is.null(m)) list(cells = m$summary$n_cells, features = m$summary$n_features),
+        contents = if (!is.null(m)) .manifest_contents(m$slots)
+    )
+}
+
+# A manifest's slots for reading: slot -> list of groups {on, items}, `on`
+# the keys a group's records share ("cell / rna", "" for none), each item a
+# {name, detail}. Metadata items are its columns, the ID column left out, and
+# a record with no other column is left out. cell_ID and feat_ID are in the
+# counts instead.
+.manifest_contents <- function(slots) {
+    item <- function(name, detail = NULL) list(name = name, detail = detail)
+    one <- function(slot, r) {
+        k <- r$keys
+        if (slot %in% c("cell_metadata", "feat_metadata")) {
+            cols <- setdiff(names(r$columns), c("cell_ID", "feat_ID"))
+            if (!length(cols)) return(NULL)
+            return(list(on = paste(unlist(k), collapse = " / "),
+                items = lapply(cols, function(c) item(c, r$columns[[c]]$dtype))))
+        }
+        on <- unlist(k[setdiff(names(k), c("name", "reduction_method", "nn_type", "reduction"))])
+        name <- k$name %||% k$feat_type
+        detail <- switch(slot,
+            expression = r$dtype,
+            spatial_info = if (length(r$overlaps_computed))
+                paste("overlaps:", paste(unlist(r$overlaps_computed), collapse = ", ")),
+            feat_info = if (!identical(r$class, "giottoPoints")) r$class,
+            dimension_reduction = paste(c(
+                if (!identical(k$reduction_method, k$name)) k$reduction_method,
+                if (identical(k$reduction, "feats")) "over features"), collapse = ", "),
+            nn_network = k$nn_type,
+            images = r$class,
+            NULL)
+        if (identical(detail, "")) detail <- NULL
+        if (slot == "feat_info") on <- NULL
+        list(on = paste(on, collapse = " / "), items = list(item(name, detail)))
+    }
+    slots <- slots[setdiff(names(slots), c("cell_ID", "feat_ID"))]
+    out <- lapply(names(slots), function(slot) {
+        recs <- Filter(Negate(is.null), lapply(slots[[slot]], function(r) one(slot, r)))
+        on <- vapply(recs, `[[`, "", "on")
+        lapply(unique(on), function(g) list(on = g,
+            items = do.call(c, lapply(recs[on == g], `[[`, "items"))))
+    })
+    names(out) <- names(slots)
+    Filter(length, out)
+}
+
 # Spatial units with cells (polygons or spatial locations) and feature types
 # with points, from a snapshot's manifest.json; NULL fields if it has none.
 # "cell" / "rna" come first when present: the page's pickers open on the first.

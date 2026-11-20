@@ -52,6 +52,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
     \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
     \item \href{#method-LensViewer-catalog}{\code{LensViewer$catalog()}}
+    \item \href{#method-LensViewer-object_info}{\code{LensViewer$object_info()}}
     \item \href{#method-LensViewer-pull}{\code{LensViewer$pull()}}
     \item \href{#method-LensViewer-set_selection}{\code{LensViewer$set_selection()}}
     \item \href{#method-LensViewer-select}{\code{LensViewer$select()}}
@@ -465,6 +466,33 @@ loaded; the viewer's Data panel shows the same.
 \code{feat_type}, \code{name} (the matrix, enrichment or reduction; \code{NA}
 for cell metadata), \code{item} and \code{key} (the item's key, which
 \code{color_by()} takes).
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-object_info"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-object_info}{}}}
+\subsection{\code{LensViewer$object_info()}}{
+  What the snapshot shown is and holds, from the files
+saved beside it (\code{snapshot.json} and \code{manifest.json}), without
+loading it. The tools bar's info button shows the same.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$object_info()}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    A list: \code{project} (its path); \code{snapshot} (\code{name}, \code{tag},
+\code{created}, \code{creator}, \code{owner} (from \code{extra}, see
+\code{\link[GiottoDisk:snapshotMetadata]{GiottoDisk::snapshotMetadata()}}), \code{keep}, \code{description},
+\code{labels}, \code{parents} (their names), \code{session}, \code{object} (its uid),
+\code{extra}); \code{save} (the Lens save open, if any: \code{name}, \code{updated},
+\code{description}, \code{labels}); \code{object} (\code{class}, \code{uid}, \code{written_by},
+\code{history_steps}); \code{counts} (\code{cells} per spatial unit, \code{features}
+per feature type); \code{contents} (per slot, groups of items: \code{on}
+the keys they share, \code{items} a list of \code{name} and \code{detail};
+metadata lists its columns). \code{object}, \code{counts} and \code{contents}
+are NULL for a snapshot saved without a manifest.
   }
 }
 

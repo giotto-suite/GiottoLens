@@ -44,6 +44,7 @@ viewer$set_object(g)                # another object; refuses to drop work not s
 g <- viewer$gobject()               # the object shown, loaded from its snapshot
 viewer$checkout("clustered")        # another snapshot of the project
 viewer$open_project("~/proj")       # the project's start page; name = "clustered" opens one
+viewer$object_info()                # the snapshot shown: owner, description, labels, what it holds
 
 # Read what the user did
 viewer$selection            # selected cell IDs

@@ -37,7 +37,8 @@ R/
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
-               the IDE folder dialog (adr/0019)
+               the IDE folder dialog (adr/0019); what a snapshot is and holds from its
+               sidecars (.object_info())
   metadata.R   prep_meta(), .write_metadata()
   bundle.R     saves (adr/0026): the working bundle's layout, listing saves (.lens_saves()),
                finding one by name (.find_save()), copying one (.copy_bundle())
@@ -77,6 +78,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
               jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
+              info.ts (the tools bar's info button: the snapshot shown, from its sidecars),
               preferences.ts (the tools bar's Preferences dialog)
   panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
               scatter.js, histogram.js,

@@ -1,5 +1,12 @@
 # GiottoLens (development version)
 
+* The tools bar's info button shows the snapshot on view: its description, labels, owner,
+  who saved it and from which snapshot, and what the object holds (cells and features per
+  spatial unit and feature type, expression, polygons, points, metadata columns, dim
+  reductions, networks, images). It reads the files saved beside the snapshot, so nothing
+  is loaded. `viewer$object_info()` returns the same. An owner shows when it is set in
+  `extra` with `GiottoDisk::snapshotMetadata()`.
+
 * The cell table loads metadata columns as they scroll into view, and loaded columns stay
   within 256 MB: above it, the least recently used are dropped, never one that colours the
   cells, a rule uses or a chart shows. Before, opening the table loaded every column.

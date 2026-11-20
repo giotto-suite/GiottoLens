@@ -678,6 +678,31 @@
     .job-what, .job-msg { margin-top: 2px; color: var(--fg-3); overflow-wrap: anywhere; }
     .job-row.state-error .job-msg { color: #fca5a5; }
     :root[data-theme="light"] .job-row.state-error .job-msg { color: #b91c1c; }
+    /* The info button's popover (ui/info.ts) */
+    .info-popover { width: 320px; max-height: 75vh; }
+    .info-title { display: flex; align-items: center; gap: 6px; color: var(--fg-0); font-size: 12px; margin: 2px 0 4px; overflow-wrap: anywhere; }
+    .info-desc { color: var(--fg-1); margin: 2px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .info-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0 4px; }
+    .info-tag { padding: 0 6px; border-radius: 8px; background: var(--accent-bg); color: var(--accent-fg); font-size: 10px; }
+    .info-tag.info-temp { background: var(--tag-amber-bg); color: var(--tag-amber-fg); }
+    .info-row { display: flex; gap: 8px; line-height: 1.6; }
+    .info-key { flex: 0 0 auto; min-width: 72px; color: var(--fg-3); }
+    .info-val { flex: 1; min-width: 0; color: var(--fg-1); overflow-wrap: anywhere; }
+    .info-val.info-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .info-val.info-path { color: var(--fg-2); font-size: 10px; }
+    .info-head { color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; margin: 8px 0 2px;
+      padding-top: 6px; border-top: 1px solid var(--bg-2); }
+    .info-none { color: var(--fg-3); margin-top: 8px; }
+    .info-slot { border-top: 1px solid var(--bg-2); }
+    .info-slot:first-of-type { margin-top: 8px; }
+    .info-slot summary { display: flex; justify-content: space-between; padding: 4px 0; cursor: pointer; color: var(--fg-1); }
+    .info-slot summary:hover { color: var(--fg-0); }
+    .info-count { color: var(--fg-3); }
+    .info-group { padding: 0 0 6px 8px; }
+    .info-on { color: var(--fg-3); font-size: 10px; margin-bottom: 2px; }
+    .info-items { display: flex; flex-wrap: wrap; gap: 3px; }
+    .info-item { padding: 0 5px; border-radius: 3px; background: var(--bg-2); color: var(--fg-1); }
+    .info-detail { margin-left: 4px; color: var(--fg-3); font-size: 10px; }
     .lens-tools-group .dock-actions { display: none; }
     .lens-tools-group .dv-tabs-container, .lens-tools-group .dv-tab { flex: 1; padding: 0; }
     .lens-tools-group .dv-void-container { display: none; }
