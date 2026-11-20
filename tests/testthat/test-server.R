@@ -62,13 +62,38 @@ test_that("a store with links leading out of it is not served by the static thre
     expect_true(.links_outside(root))
 
     app <- .lens_app(.viewer_dir(), tempdir(), lens_routes(list(m = root)), "tok", list())
-    expect_true(app$staticPaths[["/lens/tok/files/m"]]$options$exclude)
+    expect_true(app$staticPaths[["/lens/tok/d/sec/files/m"]]$options$exclude)
     # ...so files/ goes through .data_response, which checks real paths
     req <- function(path) list(PATH_INFO = path, REQUEST_METHOD = "GET")
-    expect_identical(app$call(req("/lens/tok/files/m/sub/f.bin"))$status, 200L)
-    expect_identical(app$call(req("/lens/tok/files/m/inside.bin"))$status, 200L)
-    expect_identical(app$call(req("/lens/tok/files/m/sub/out.bin"))$status, 404L)
-    expect_identical(app$call(req("/lens/tok/data/m/sub/out.bin"))$status, 404L)
+    expect_identical(app$call(req("/lens/tok/d/sec/files/m/sub/f.bin"))$status, 200L)
+    expect_identical(app$call(req("/lens/tok/d/sec/files/m/inside.bin"))$status, 200L)
+    expect_identical(app$call(req("/lens/tok/d/sec/files/m/sub/out.bin"))$status, 404L)
+    expect_identical(app$call(req("/lens/tok/d/sec/data/m/sub/out.bin"))$status, 404L)
+})
+
+test_that("the data is served under the data secret, and follows it when it changes", {
+    root <- tempfile("mount")
+    dir.create(root)
+    on.exit(unlink(root, recursive = TRUE), add = TRUE)
+    writeBin(as.raw(1:10), file.path(root, "f.bin"))
+    routes <- lens_routes(list(m = root))
+    app <- .lens_app(.viewer_dir(), tempdir(), routes, "tok", list())
+    static <- function(p) !isTRUE(app$staticPaths[[p]]$options$exclude)
+    expect_setequal(names(app$staticPaths), c("/lens/tok", "/lens/tok/d/sec",
+        "/lens/tok/d/sec/session", "/lens/tok/d/sec/files/m"))
+    # Only the bundle, session/ and a store's files/ come from the static thread
+    expect_identical(vapply(names(app$staticPaths), static, NA, USE.NAMES = FALSE),
+        names(app$staticPaths) != "/lens/tok/d/sec")
+    req <- function(path) list(PATH_INFO = path, REQUEST_METHOD = "GET")
+    expect_identical(app$call(req("/lens/tok/d/sec/data/m/f.bin"))$status, 200L)
+    for (p in c("/lens/tok/data/m/f.bin", "/lens/tok/d/data/m/f.bin", "/lens/tok/d/other/data/m/f.bin",
+                "/lens/tok/d/sec/../sec/data/m/f.bin", "/lens/tok/d/se/data/m/f.bin"))
+        expect_identical(app$call(req(p))$status, 404L, info = p)
+    routes$secret <- "new"
+    expect_identical(app$call(req("/lens/tok/d/new/data/m/f.bin"))$status, 200L)
+    expect_identical(app$call(req("/lens/tok/d/sec/data/m/f.bin"))$status, 404L)
+    expect_identical(names(.data_paths("/lens/tok/d/new", tempdir(), routes$mounts)),
+        c("/lens/tok/d/new", "/lens/tok/d/new/session", "/lens/tok/d/new/files/m"))
 })
 
 test_that(".data_response serves ranges and refuses paths outside a mount", {

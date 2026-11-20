@@ -96,10 +96,10 @@ test_that("the page hears of jobs and their progress, and can cancel one", {
         m$type == "job" && identical(m$data$id, id) && identical(m$data$state, "running"), NA))))
     hit <- Find(function(m) m$type == "job", b$state$msgs)
     expect_true(is.numeric(hit$data$started))
-    a$ws$send(jsonlite::toJSON(list(type = "ask", id = "c1", data = list(op = "cancel_job", id = id)),
+    b$ws$send(jsonlite::toJSON(list(type = "ask", id = "c1", data = list(op = "cancel_job", id = id)),
         auto_unbox = TRUE))
     expect_true(pump_until(function() identical(end$state, "cancelled"), timeout = 10))
-    ans <- Find(function(m) m$type == "answer" && identical(m$data$id, "c1"), a$state$msgs)
+    ans <- Find(function(m) m$type == "answer" && identical(m$data$id, "c1"), b$state$msgs)
     expect_true(ans$data$data$cancelled)
 })
 

@@ -16,6 +16,9 @@ lens_browser <- function(url, width = 1200, height = 800) {
     })
     b$Runtime$exceptionThrown(callback_ = function(m)
         add(m$exceptionDetails$exception$description %||% m$exceptionDetails$text))
+    # As launch_lens(open = TRUE): the next window to open the URL shows the viewer
+    viewer <- lens_viewer_at(url)
+    if (!is.null(viewer)) suppressMessages(viewer$allow())
     b$Page$navigate(url, wait_ = FALSE)
     list(
         session = b,

@@ -1,5 +1,16 @@
 # GiottoLens (development version)
 
+* One browser window shows the viewer at a time. The window `launch_lens()` opens gets it.
+  Any other window that opens the viewer URL shows a four-digit code and waits: type that
+  code in the window that shows the viewer, or run `viewer$allow(code)`. The code is shown
+  in the waiting window only. `viewer$allow()` without the code of a waiting window warns
+  and changes nothing. After `launch_lens(open = FALSE)` in a script, call `viewer$allow()`
+  before opening the URL. The data
+  (tiles, cell table, metadata, images) is served under a path sent only to that window, so
+  the viewer URL alone reads none of it. `viewer$describe()` lists waiting windows. Protocol
+  8. See adr/0028 and `SECURITY.md`.
+* `options(GiottoLens.viewer = "browser")` opens the viewer in the system's default browser
+  from Positron too, where it opened the Viewer pane.
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an

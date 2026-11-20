@@ -2,6 +2,7 @@
 // cell layer's tiles (polygon tiles, or chunks of spatial locations)
 // concatenated in manifest order, so tile t holds cells offset .. offset +
 // n - 1. Selections, colours and metadata use this index (adr/0002, adr/0010).
+import { dataUrl } from '../core/base.ts';
 import { rangeBuffer, readColumns } from './parquet.ts';
 
 export interface CellTile {
@@ -21,7 +22,7 @@ export interface Cells {
 
 export async function loadCells(cellLayer: any): Promise<Cells | null> {
   if (!cellLayer?.cells) return null;
-  const url = new URL(cellLayer.cells.url, document.baseURI).href;
+  const url = dataUrl(cellLayer.cells.url);
   const cols = await readColumns(await rangeBuffer(url), ['x', 'y']);
   const n = cellLayer.cells.n;
   const tiles: CellTile[] = cellLayer.tiles

@@ -1,11 +1,12 @@
 # ── Viewer → R messages ──────────────────────────────────────────────────────
 
 # Bump with PROTOCOL in inst/viewer-src/core/comms.js
-.lens_protocol <- 7L
+.lens_protocol <- 8L
 
 # Message types the viewer sends; anything else arriving on the socket is
-# dropped. `on()` callbacks can be registered for the first two.
-.lens_inbound_types <- c("cell_selection", "annotations_update",
+# dropped. `on()` callbacks can be registered for the first two. `hello` is
+# the only one read from a window that does not show the viewer (adr/0028).
+.lens_inbound_types <- c("cell_selection", "annotations_update", "hello",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
     "registration_update", "set_column_type", "ask", "close", "panel_pick",
     "analysis_param", "analysis_labels",
