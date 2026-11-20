@@ -14,7 +14,7 @@ import { initSelection, recompute } from './selection/selection.ts';
 import { onLive } from './selection/live.ts';
 import { cellColorBuffer, columnScale } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
-import { initAnnotations, generateAnnotId } from './ui/annotations.js';
+import { initAnnotations, generateAnnotId, nextAnnotName } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
 import { initRuleStrip } from './ui/rules.js';
 import { initSelectionBar, initRStatus } from './ui/selbar.js';
@@ -203,10 +203,15 @@ async function main() {
   onMessage('push_panel', pushPanel);
   onMessage('remove_panel', ({ id }) => { removePanel(id); });
 
-  onMessage('push_polygons', ({ polygons }) =>
-    actions.addAnnotations((polygons ?? []).map(p => ({
-      id: generateAnnotId(), type: 'polygon', name: p.name ?? '', coords: p.coords,
-    }))));
+  // R refuses taken names; one taken here since R last heard gets a default
+  onMessage('push_polygons', ({ polygons }) => {
+    const names = store.getState().annotations.map(a => a.name);
+    actions.addAnnotations((polygons ?? []).map(p => {
+      const name = p.name && !names.includes(p.name) ? p.name : nextAnnotName(names);
+      names.push(name);
+      return { id: generateAnnotId(), name, coords: p.coords };
+    }));
+  });
 
   // Before R can ask about images
   await imagesLoaded;

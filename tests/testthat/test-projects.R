@@ -24,6 +24,19 @@ test_that("a snapshot's spatial units and feature types come from its manifest",
     expect_identical(k$spat_units, "cell")
     expect_identical(k$feat_types, "rna")
     expect_identical(.manifest_keys(tempfile()), list())
+    # "cell" / "rna" lead, whatever the manifest's order
+    f <- tempfile(fileext = ".json")
+    jsonlite::write_json(list(slots = list(
+        spatial_info = list(list(keys = list(name = "nucleus")), list(keys = list(name = "cell"))),
+        spatial_locs = list(list(keys = list(spat_unit = "aggregate"))),
+        feat_info    = list(list(keys = list(feat_type = "protein")),
+            list(keys = list(feat_type = "rna"))))), f, auto_unbox = TRUE)
+    k <- .manifest_keys(f)
+    expect_identical(k$spat_units, c("cell", "nucleus", "aggregate"))
+    expect_identical(k$feat_types, c("rna", "protein"))
+    jsonlite::write_json(list(slots = list(
+        spatial_info = list(list(keys = list(name = "z0"))))), f, auto_unbox = TRUE)
+    expect_identical(.manifest_keys(f), list(spat_units = "z0", feat_types = NULL))
     # Newest first; other tests may have saved into the fixture's project
     s <- .project_snapshots(src)
     created <- vapply(s, `[[`, "", "created")
@@ -40,6 +53,13 @@ test_that("left-out keys come from the object: preferred, its defaults, its firs
     fx <- lens_image_fixture()
     expect_identical(.default_keys(fx$g, prefer_unit = "nope"),
         list(spat_unit = "cell", feat_type = "rna"))
+    # "cell" leads the object's active unit, as on the start page
+    sw <- function(...) suppressMessages(suppressWarnings(...))
+    g <- sw(GiottoClass::setGiotto(bx$mem, GiottoClass::createSpatLocsObj(
+        bx$xy, spat_unit = "cell", name = "raw", verbose = FALSE), verbose = FALSE))
+    GiottoClass::instructions(g, "active_spat_unit", initialize = FALSE) <- "bin"
+    expect_identical(.default_keys(g)$spat_unit, "cell")
+    expect_identical(.default_keys(g, prefer_unit = "bin")$spat_unit, "bin")
 })
 
 test_that("open_project() shows the start page, and checkout() a snapshot as saved", {
@@ -88,7 +108,7 @@ test_that("Lens work is not dropped by opening without discard", {
     bx <- lens_bins_fixture()
     v <- launch_lens(bx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    v$annotations <- list(list(id = "a", name = "x", type = "polygon", geojson = "{}"))
+    v$annotations <- list(x = "{}")
     proj <- bx$g@source@path
     expect_error(v$open_project(proj), "1 annotation; save it with save\\(name\\), or pass `discard = TRUE`")
     expect_error(v$checkout("fixture"), "1 annotation")

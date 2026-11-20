@@ -13,6 +13,16 @@
   analysis starts; "whole tissue" and "analyze selection" start it too, and its header reads
   "not started" instead of "queued". An analysis made while no page is connected opens its
   panel when one connects.
+* Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
+  (its pickers list them first) and from `checkout()` / `open_project(name =)`.
+* Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an
+  empty or taken name reverts. `viewer$annotations` is a list of GeoJSON strings named by
+  them (it was a list of id, name, type and geojson), and `push_polygons()` refuses taken
+  names. The panel no longer tags shapes as polygon, rectangle or freehand.
+* An annotation's select button selects the cells inside it (Shift adds, Alt or Ctrl/Cmd
+  subtracts).
+* Annotations come back on the page after a reload and when a save is opened; before, R
+  kept them but the page showed none, and the next one drawn replaced them.
 * Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, regions,
   pushed panels and metadata, column types, added images, an image registration, comparisons
   and the viewer's settings) with the snapshot shown, in the project's `lens/` folder.
@@ -169,6 +179,8 @@
   places a chart next to them. A closed control stays closed after a reload.
 * `viewer$panels()` lists panels in layout order, and a chart pushed without `ref` goes next to
   the charts.
+* An annotation's zoom button no longer zooms the view far out after the view was moved by
+  hand.
 
 # GiottoLens 0.1.5
 

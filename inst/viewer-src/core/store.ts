@@ -39,7 +39,6 @@ export type Combine = 'or' | 'and';
 
 export interface Annotation {
   id: string;
-  type: 'polygon' | 'rectangle' | 'freehand';
   name: string;
   coords: [number, number][];
 }

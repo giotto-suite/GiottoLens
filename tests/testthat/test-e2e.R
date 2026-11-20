@@ -1478,6 +1478,74 @@ test_that("set_view sets the zoom after the view was zoomed by hand", {
     expect_identical(br$errors(), character())
 })
 
+test_that("zoom to an annotation after the view was zoomed by hand", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br,
+        "!!document.querySelector('.r-status.connected')"))
+    v$push_polygons("POLYGON((5 -95,15 -95,15 -85,5 -85,5 -95))")
+    zoom <- function() br$js("window.__giottolens.spatial.deck.getViewports()[0].zoom")
+    z0 <- zoom()
+
+    # The controller's view state has maxZoomX/maxZoomY, not maxZoom
+    r <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
+        deltaX = 0, deltaY = -500)
+    expect_true(browser_wait(br, sprintf(
+        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z0)))
+
+    dock_tab(br, "annotations")
+    expect_true(browser_wait(br, "!!document.querySelector('.annot-row-nav')"))
+    br$js("document.querySelector('.annot-row-nav').click()")
+    expect_true(browser_wait(br,
+        "Math.abs(window.__giottolens.spatial.viewState.target[0] - 10) < 1e-6"))
+    expect_true(is.finite(zoom()))
+    expect_gt(zoom(), z0)
+    expect_identical(br$errors(), character())
+})
+
+test_that("an annotation's select button selects the cells inside it", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 900, height = 700)
+    on.exit(br$close(), add = TRUE)
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    v$push_polygons(c("POLYGON((0 -100,22 -100,22 -78,0 -78,0 -100))",
+        "POLYGON((80 -20,100 -20,100 0,80 0,80 -20))"))
+    expect_true(pump_until(function() length(v$annotations) == 2L))
+    expect_identical(names(v$annotations), c("annotation_1", "annotation_2"))
+
+    dock_tab(br, "annotations")
+    expect_true(browser_wait(br, "document.querySelectorAll('.annot-row-sel').length === 2"))
+    click <- function(i, shift = FALSE) br$js(sprintf(
+        "document.querySelectorAll('.annot-row-sel')[%d].dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: %s }))",
+        i, if (shift) "true" else "false"))
+    click(0)
+    first <- c("cell_001", "cell_002", "cell_011", "cell_012")
+    expect_true(pump_until(function() setequal(v$selection, first)))
+    # Shift adds, as with the lasso
+    click(1, shift = TRUE)
+    expect_true(pump_until(function() setequal(v$selection, c(first, "cell_089", "cell_090", "cell_099", "cell_100"))))
+
+    # Names are unique: a taken one is marked and reverts; a free one is the key
+    br$js("document.querySelectorAll('.annot-row')[1].click()")
+    expect_true(browser_wait(br, "document.querySelector('.annot-popup.visible .annot-name')?.value === 'annotation_2'"))
+    rename <- function(to) br$js(sprintf("(() => { const i = document.querySelector('.annot-popup.visible .annot-name');
+        i.value = '%s'; i.dispatchEvent(new Event('input')); const bad = i.classList.contains('invalid');
+        i.dispatchEvent(new Event('change')); return [bad, i.value]; })()", to))
+    expect_identical(rename("annotation_1"), list(TRUE, "annotation_2"))
+    expect_identical(rename(""), list(TRUE, "annotation_2"))
+    expect_identical(rename("tumor"), list(FALSE, "tumor"))
+    expect_true(pump_until(function() identical(names(v$annotations), c("annotation_1", "tumor"))))
+    expect_identical(br$errors(), character())
+})
+
 test_that("a type change redraws a histogram of the column once it loads", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
@@ -1592,6 +1660,8 @@ test_that("the page saves the work and opens the save from the start page", {
     v$color_by("half")
     expect_true(browser_wait(br, "window.__giottolens.state.meta?.has?.('half')"))
     v$save_region("top", ids[1:20])
+    v$push_polygons("POLYGON((40 -70,60 -70,60 -50,40 -50,40 -70))", names = "kept")
+    expect_true(pump_until(function() identical(names(v$annotations), "kept")))
 
     # The tools bar's save button
     br$js("document.querySelector('[data-panel=tools] [data-act=save]').click()")
@@ -1605,6 +1675,7 @@ test_that("the page saves the work and opens the save from the start page", {
 
     # More work, then the save opened from the project dialog, after asking
     v$save_region("bottom", ids[880:900])
+    v$push_polygons("POLYGON((0 -100,10 -100,10 -90,0 -90,0 -100))", names = "dropped")
     br$js("document.querySelector('[data-panel=tools] [data-act=project]').click()")
     open_save <- paste0("(() => { const r = [...document.querySelectorAll('.start-row')]",
         ".find(r => r.querySelector('.start-name')?.firstChild?.textContent === 'first');",
@@ -1615,6 +1686,11 @@ test_that("the page saves the work and opens the save from the start page", {
     expect_true(pump_until(function() identical(v$regions()$name, "top")))
     expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",
         "!document.querySelector('.start-overlay') && window.__giottolens.state.metaInfo?.has?.('half')")))
+    # The saved annotation is back on the reloaded page, and stays in R
+    expect_true(browser_wait(br,
+        "window.__giottolens.store.getState().annotations.map(a => a.name).join() === 'kept'"))
+    pump_until(function() FALSE, timeout = 0.5)
+    expect_identical(names(v$annotations), "kept")
     expect_identical(br$errors(), character())
 })
 
