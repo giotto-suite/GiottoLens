@@ -88,7 +88,7 @@ function onGrant({ data, key }) {
   granted = true;
   setGate({ state: 'granted' });
   resolveGrant();
-  if (registered) announce();
+  if (registered && !live) announce();
 }
 
 // Handlers are registered, so R may send right away
@@ -248,5 +248,7 @@ export function initComms() {
     reportError(e.reason, 'unhandled rejection');
   });
   if (!ws) connect();
-  else if (granted && ws.readyState === WebSocket.OPEN) announce();
+  // In a task of its own, as a socket's open is: what asked R during this one
+  // has heard its refusal by then, and asks again on connect
+  else setTimeout(() => { if (granted && !live && ws?.readyState === WebSocket.OPEN) announce(); }, 0);
 }

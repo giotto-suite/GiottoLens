@@ -443,6 +443,8 @@ test_that("the Preprocessing tab's Run button starts the analysis from the page"
     expect_true(browser_wait(br,
         "document.querySelector('[data-panel=analysis] .an-overall')?.textContent === 'not started'"))
     br$js("document.querySelector('[data-panel=analysis] .an-runbar .an-run').click()")
+    # R reads the page's message on its event loop, which the click does not run
+    expect_true(pump_until(function() isTRUE(get("private", a$.__enclos_env__)$started), 30))
     a$wait(300)
     st <- vapply(a$status, `[[`, "", "status")
     expect_true(all(st[names(st) != "auto_type"] == "done"))

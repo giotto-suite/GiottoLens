@@ -64,9 +64,12 @@ describe('window handshake', () => {
     expect(gates.at(-1)).toEqual({ state: 'granted' });
     expect(base.dataUrl('session/manifest.json')).toBe('http://lens/lens/tok/d/SECRET/session/manifest.json');
     expect([...store.values()]).toEqual(['KEY']);
-    // 'ready' goes once the handlers are registered
+    // 'ready' goes once the handlers are registered, in a task of its own
     expect(ws.types()).toEqual(['hello']);
     comms.initComms();
+    expect(ws.types()).toEqual(['hello']);
+    expect(comms.isConnected()).toBe(false);
+    await new Promise(r => setTimeout(r, 0));
     expect(ws.types()).toEqual(['hello', 'ready']);
     expect(comms.isConnected()).toBe(true);
   });

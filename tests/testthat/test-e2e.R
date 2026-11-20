@@ -1035,8 +1035,8 @@ test_that("both tile transfer modes load the same transcripts", {
         # requests the page's resource timing does not list)
         urls <- unlist(br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => /\\/(data|files)\\/polygons\\//.test(u))"))
         expect_gt(length(urls), 0L)
-        if (mode == "whole") expect_true(all(grepl("/lens/[^/]+/files/polygons/", urls)))
-        else expect_true(all(grepl("/lens/[^/]+/data/polygons/", urls)))
+        if (mode == "whole") expect_true(all(grepl("/lens/[^/]+/d/[^/]+/files/polygons/", urls)))
+        else expect_true(all(grepl("/lens/[^/]+/d/[^/]+/data/polygons/", urls)))
         expect_identical(br$errors(), character())
         br$close(); v$close()
     }

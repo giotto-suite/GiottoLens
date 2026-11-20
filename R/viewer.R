@@ -144,7 +144,7 @@ serve_lens <- function(...) {
 # Open `url` in the system's default browser, whatever `options(browser =)` is
 .open_system <- function(url) {
     if (Sys.info()[["sysname"]] == "Darwin") system2("open", shQuote(url))
-    else if (.Platform$OS.type == "windows") shell.exec(url)
+    else if (.Platform$OS.type == "windows") do.call("shell.exec", list(url))
     else system2("xdg-open", shQuote(url), wait = FALSE)
     invisible(url)
 }
