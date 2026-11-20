@@ -5,7 +5,7 @@ import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
-import { setMetaInfo, prefetchColumns } from './data/meta.ts';
+import { setMetaInfo, prefetchColumns, pinColumns } from './data/meta.ts';
 import { fieldColumn, fieldExists, needFields, isItemKey, scaleKey, setItemPins } from './data/items.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
@@ -154,9 +154,10 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
-  // The item colouring the cells stays loaded, and goes to the front of the
-  // colour-by menu's recent group
+  // The item or column colouring the cells stays loaded; an item goes to the
+  // front of the colour-by menu's recent group
   setItemPins(() => [store.getState().colorBy].filter(isItemKey));
+  pinColumns(() => [store.getState().colorBy].filter(c => c && !isItemKey(c)));
   store.subscribe(s => s.colorBy, c => { if (isItemKey(c)) actions.noteItem(c); });
   store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);

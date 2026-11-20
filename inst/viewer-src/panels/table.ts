@@ -1,8 +1,10 @@
 // The cell table: one row per cell in the selection of every other source
 // (all cells when there is none), one column per metadata column. Rows are
 // drawn from the typed arrays the page holds, only those in view, so a
-// million rows scroll without paging from R. Cell IDs are asked of R for the
-// rows in view only: the page keys nothing by ID (adr/0002).
+// million rows scroll without paging from R. Columns load as they come into
+// view, and those in view are pinned (data/meta.ts), so a wide table never
+// loads every column. Cell IDs are asked of R for the rows in view only: the
+// page keys nothing by ID (adr/0002).
 //
 // Picked rows are this panel's rule (source `table`, an `ids` rule), combined
 // with the other sources like any rule: they add to the selection, or in
@@ -14,12 +16,13 @@ import { store, actions } from '../core/store.ts';
 import { askR } from '../core/comms.js';
 import { maskExcept, ctx as selCtx } from '../selection/selection.ts';
 import { evaluate, encodeMask, primeMask, countMask, type Rule } from '../selection/rules.ts';
-import { metaColumn, metaValue, needColumns, onColumnsLoaded } from '../data/meta.ts';
+import { metaColumn, metaValue, onColumnsLoaded, pinColumns } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 
 export const ROW_H = 20;            // px
 const MAX_H = 8_000_000;            // px: browsers cap an element's height near 2^25
 const OVERSCAN = 4;
+const COL_OVERSCAN = 2;
 const COL_W = 110, ID_W = 150;      // px
 const ID_CACHE = 20_000;            // cell IDs kept from R
 const ID_DELAY_MS = 60;             // a scroll settles before IDs are asked for
@@ -54,6 +57,14 @@ export function windowFor(scrollTop: number, viewH: number, nRows: number, rowH 
   // Scaled, the rows are drawn at the view's top: more would grow the scroll range
   const extra = full <= maxH ? OVERSCAN : 0;
   return { first, count: Math.max(0, Math.min(shown + extra, nRows - first)), top, height };
+}
+
+// The columns in view at `scrollLeft`, past the cell_ID column held at the left
+export function colWindowFor(scrollLeft: number, viewW: number, nCols: number,
+  colW = COL_W, idW = ID_W, overscan = COL_OVERSCAN) {
+  const first = Math.max(0, Math.floor(scrollLeft / colW) - overscan);
+  const end = Math.min(nCols, Math.ceil((scrollLeft + Math.max(0, viewW - idW)) / colW) + overscan);
+  return { first, count: Math.max(0, end - first) };
 }
 
 export type PickMode = 'replace' | 'toggle' | 'range';
@@ -103,6 +114,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
   body.append(bar, scroll);
 
   let columns: string[] = [];
+  let inView: string[] = [];              // columns in view, pinned while shown
   let rows: Int32Array = new Int32Array(0);
   let rowsFor: unknown[] | null = null;   // the rules and mode the rows were made from
   let anchor: number | null = null;       // the last row clicked, for shift
@@ -136,7 +148,6 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
       ...columns.map(c => el('div', { className: 'table-cell', textContent: c, title: c }))];
     head.replaceChildren(...cells);
     inner.style.width = `${ID_W + columns.length * COL_W}px`;
-    void needColumns(columns);
   }
 
   function render() {
@@ -146,7 +157,12 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
     inner.style.height = `${w.height + ROW_H}px`;
     rowsEl.style.top = `${w.top + ROW_H}px`;
     const p = picks();
-    const cols = columns.map(c => metaColumn(c));
+    const cw = colWindowFor(scroll.scrollLeft, scroll.clientWidth, columns.length);
+    inView = columns.slice(cw.first, cw.first + cw.count);
+    // '…' while a column in view loads; a column out of view shows only if
+    // already loaded, since reading it would load it
+    const cols = columns.map((c, j) => j >= cw.first && j < cw.first + cw.count
+      ? metaColumn(c) ?? null : state.meta?.get(c) ?? undefined);
     const out: HTMLElement[] = [];
     const missing: number[] = [];
     for (let k = w.first; k < w.first + w.count; k++) {
@@ -156,7 +172,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
       const id = ids.get(cell);
       if (id == null) missing.push(cell);
       row.append(el('div', { className: 'table-cell table-id', textContent: id ?? '…' }),
-        ...cols.map(c => el('div', { className: 'table-cell', textContent: c ? fmt(metaValue(c, cell)) : '…' })));
+        ...cols.map(c => el('div', { className: 'table-cell', textContent: c ? fmt(metaValue(c, cell)) : c === null ? '…' : '' })));
       out.push(row);
     }
     rowsEl.replaceChildren(...out);
@@ -201,6 +217,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
     store.subscribe(s => s.combine, refresh),
     store.subscribe(s => s.selection.version, refresh),
     onColumnsLoaded(render),
+    pinColumns(() => ctx.visible() ? inView : []),
   ];
   buildHeader();
   updateRows();

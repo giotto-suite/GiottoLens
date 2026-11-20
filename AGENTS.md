@@ -249,6 +249,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
   `state.metaInfo`. Rules wait for their columns before evaluating (`recompute()`).
+- Over the budget (`META_CACHE_BYTES`) loaded columns are dropped least recently used first.
+  Code that keeps reading a column from `state.meta` pins it with `pinColumns()` (colour-by,
+  rules, chart axes, the table's columns in view) and unpins when it stops showing it.
 
 ### Data model (adr/0003)
 

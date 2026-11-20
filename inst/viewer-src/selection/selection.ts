@@ -5,7 +5,7 @@ import { state } from '../core/state.js';
 // @ts-ignore: plain JS module
 import { sendToR } from '../core/comms.js';
 import { combine, evaluate, primeMask, markSegment, encodeMask, resetMaskCache, ruleColumns, type Rule, type Ctx, type CompareOp } from './rules.ts';
-import { needColumns } from '../data/meta.ts';
+import { needColumns, pinColumns } from '../data/meta.ts';
 import type { Pt, Ring } from './geometry.ts';
 
 export function ctx(): Ctx | null {
@@ -90,6 +90,12 @@ export function sendSelection(): void {
 }
 
 export function initSelection(): void {
+  // The rules' columns stay loaded: every selection reads them
+  pinColumns(() => {
+    const cols = new Set<string>();
+    for (const r of Object.values(store.getState().rules)) if (r) ruleColumns(r, cols);
+    return cols;
+  });
   store.subscribe(s => s.rules, () => recompute());
   store.subscribe(s => s.combine, () => recompute());
   store.subscribe(s => s.selection.version, scheduleSend);

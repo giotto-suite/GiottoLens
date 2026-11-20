@@ -17,7 +17,7 @@ import { store, actions } from '../core/store.ts';
 import { maskExcept } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
 import type { Rule } from '../selection/rules.ts';
-import { needColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
+import { needColumns, pinColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 // @ts-ignore: plain JS module
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
@@ -369,6 +369,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     show: sel => paint(sel),
   }));
   const counted = whenVisible(ctx, refresh);
+  unsub.push(pinColumns(() => [ctrls.x.value, ctrls.y.value]));
   unsub.push(store.subscribe(s => s.selection.version, counted.update));
   unsub.push(store.subscribe(s => s.combine, counted.update));
   draw();

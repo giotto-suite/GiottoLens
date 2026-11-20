@@ -5,8 +5,11 @@
 // state.metaInfo lists every column (what exists and its type, from the
 // payload); state.meta holds the columns loaded so far. A column loads when
 // something needs it (metaColumn(), needColumns()); after a payload, the rest
-// load in the background while all columns fit PREFETCH_BYTES, so typical
-// datasets end up fully loaded and larger ones keep only what is used.
+// load in the background while all columns fit META_CACHE_BYTES, so typical
+// datasets end up fully loaded. Above that, loaded columns are dropped least
+// recently used first until they fit, except those pinned: what something
+// shows (colour-by, rules, chart axes, the table's columns in view), each
+// consumer naming its own with pinColumns().
 import { state } from '../core/state.js';
 import { readColumns } from './parquet.ts';
 
@@ -28,11 +31,14 @@ export interface MetaColumn extends Omit<MetaInfo, 'url'> {
 
 export type Meta = Map<string, MetaColumn>;
 
-export const PREFETCH_BYTES = 256 * 2 ** 20;
+export const META_CACHE_BYTES = 256 * 2 ** 20;
 const PREFETCH_CONCURRENCY = 3;
 
 const loading = new Map<string, Promise<void>>();   // url → load in flight
 const loadedHooks = new Set<() => void>();
+const pinSources = new Set<() => Iterable<string>>();
+const used = new Map<string, number>();              // column → last use, for eviction
+let clock = 0;
 let prefetch: 'idle' | 'loading' | 'done' | 'over' = 'idle';
 let payloadGen = 0;
 
@@ -56,6 +62,7 @@ export function setMetaInfo(columns: (MetaInfo & { number_text?: boolean })[]): 
   }
   state.metaInfo = info;
   state.meta = meta;
+  for (const k of used.keys()) if (!meta.has(k)) used.delete(k);
   prefetch = 'idle';
   return true;
 }
@@ -66,7 +73,8 @@ const sameInfo = (a: Omit<MetaInfo, 'url'>, b: MetaInfo) => a.name === b.name &&
 // A loaded column, or undefined while it loads (the load starts here)
 export function metaColumn(name: string): MetaColumn | undefined {
   const c = state.meta?.get(name);
-  if (!c && state.metaInfo?.has(name)) void needColumns([name]);   // never rejects
+  if (c) used.set(name, ++clock);
+  else if (state.metaInfo?.has(name)) void needColumns([name]);   // never rejects
   return c;
 }
 
@@ -82,6 +90,33 @@ export function onColumnsLoaded(fn: () => void): () => void {
   return () => loadedHooks.delete(fn);
 }
 
+// Columns `fn` returns are never dropped; returns an unpin. `fn` is read at
+// each eviction, so it names what the consumer shows then.
+export function pinColumns(fn: () => Iterable<string>): () => void {
+  pinSources.add(fn);
+  return () => pinSources.delete(fn);
+}
+
+// Least recently used first, never a pinned column nor `fresh` (the one just
+// loaded, which its caller is about to read), until the rest fit
+export function evictColumns(cap = META_CACHE_BYTES, fresh?: string): void {
+  const meta = state.meta;
+  if (!meta) return;
+  let total = 0;
+  for (const c of meta.values()) total += c.values.byteLength;
+  if (total <= cap) return;
+  const keep = new Set<string>(fresh == null ? [] : [fresh]);
+  for (const fn of pinSources) for (const k of fn()) keep.add(k);
+  const order = [...meta.keys()].filter(k => !keep.has(k))
+    .sort((a, b) => (used.get(a) ?? 0) - (used.get(b) ?? 0));
+  for (const k of order) {
+    if (total <= cap) break;
+    total -= meta.get(k)!.values.byteLength;
+    meta.delete(k);
+    used.delete(k);
+  }
+}
+
 // Whether columns not loaded yet are on their way: 'loading' while the
 // background load runs, 'over' when all columns do not fit the budget
 export function prefetchState() { return prefetch; }
@@ -92,7 +127,7 @@ export async function prefetchColumns(): Promise<void> {
   const info = [...(state.metaInfo?.values() ?? [])] as MetaInfo[];
   const n = state.cells?.n ?? 0;
   const bytes = info.reduce((s, c) => s + n * (c.kind === 'categorical' ? 4 : 8), 0);
-  if (bytes > PREFETCH_BYTES) { prefetch = 'over'; return; }
+  if (bytes > META_CACHE_BYTES) { prefetch = 'over'; return; }
   const gen = payloadGen;
   prefetch = 'loading';
   await Promise.allSettled([...loading.values()]);
@@ -112,6 +147,8 @@ function load(m: MetaInfo): Promise<void> {
         // Kept only if the payload still has this file for the column
         if (state.metaInfo?.get(m.name)?.url !== m.url) return;
         state.meta.set(m.name, { ...state.metaInfo.get(m.name), ...col });
+        used.set(m.name, ++clock);
+        evictColumns(META_CACHE_BYTES, m.name);
         loadedHooks.forEach(fn => fn());
       })
       .catch(e => { console.warn('GiottoLens: could not load metadata column', m.name, e); throw e; })

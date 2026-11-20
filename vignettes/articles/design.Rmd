@@ -86,8 +86,11 @@ never needs a string ID (adr/0002, adr/0010). Consequences:
   rules and `describe()`, and a type change (`set_column_type()`) rewrites one file. The
   browser lists every column from the payload and loads one when it is used (colour-by,
   a panel, a rule), whole, from the session's static path, so no read goes through R; the
-  rest load in the background while all columns fit 256 MB of typed arrays. A column whose
-  file did not change stays loaded across pushes. At 1M cells and 30 columns: ~35 KB kept
+  rest load in the background while all columns fit 256 MB of typed arrays. Above that,
+  loaded columns are dropped least recently used first to stay within it, except those
+  something shows (colour-by, rules, chart axes, the table's columns in view), which are
+  pinned; the table loads only the columns scrolled into view. A column whose file did not
+  change stays loaded across pushes. At 1M cells and 30 columns: ~35 KB kept
   in R (it was ~450 MB), a push 0.85 s, a type change 0.03 to 0.06 s, a column read in R 4
   to 23 ms; in the browser a column decodes in 25 to 35 ms. Single-column parquet over raw
   typed arrays: raw saves that decode but is up to 12 times larger for codes and integer

@@ -1,5 +1,9 @@
 # GiottoLens (development version)
 
+* The cell table loads metadata columns as they scroll into view, and loaded columns stay
+  within 256 MB: above it, the least recently used are dropped, never one that colours the
+  cells, a rule uses or a chart shows. Before, opening the table loaded every column.
+
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an
