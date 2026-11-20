@@ -14,6 +14,10 @@
 * The scatter and density panels' view tools (pan, lasso or select, zoom to fit) are a
   column over the chart's lower right; the bar along the top holds only the fields.
 
+* An image's default contrast and slider range come from a few full-resolution tiles where
+  there is tissue, not from the smallest overview, whose averaging dimmed the bright end to
+  under half; images opened saturated. Opening an image reads 8 more tiles.
+
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an

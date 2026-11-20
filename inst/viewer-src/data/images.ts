@@ -117,9 +117,48 @@ export async function openImage(entry: ImageEntry, pool: ImagePool, box?: Extent
   const modelMatrix = new Matrix4(matrix4(transform));
 
   if (rgb) return { entry, rgb, levels: sources, width, height, transform, modelMatrix, contrast: [0, 255], domain: [0, 255] };
-  const { data } = await sources[sources.length - 1].getRaster({ selection: { t: 0, c: 0, z: 0 } });
-  const { contrast, domain } = defaultContrast(data as ArrayLike<number>, dtype);
+  const { contrast, domain } = defaultContrast(await contrastSample(sources), dtype);
   return { entry, rgb, levels: sources, width, height, transform, modelMatrix, contrast, domain };
+}
+
+// Full-resolution tiles the default contrast is taken from. Each level of a
+// pyramid averages the one above, which keeps the mean but pulls the bright
+// tail down (to under half by the smallest level of a Xenium morphology
+// image), so the smallest level only chooses where to look
+const SAMPLE_TILES = 8;
+
+async function contrastSample(sources: TiffPixelSource<string[]>[]): Promise<ArrayLike<number>> {
+  const selection = { t: 0, c: 0, z: 0 };
+  const small = await sources[sources.length - 1].getRaster({ selection });
+  if (sources.length === 1) return small.data as ArrayLike<number>;
+  const [h, w] = sources[0].shape.slice(-2);
+  const tiles = sampleTiles(small.data as ArrayLike<number>, small.width, small.height, w, h, sources[0].tileSize, SAMPLE_TILES);
+  if (!tiles.length) return small.data as ArrayLike<number>;
+  const got = await Promise.all(tiles.map(([x, y]) => sources[0].getTile({ x, y, selection })));
+  const out = new (got[0].data.constructor as any)(got.reduce((n, t) => n + t.data.length, 0));
+  let at = 0;
+  for (const t of got) { out.set(t.data, at); at += t.data.length; }
+  return out;
+}
+
+// Tiles (x, y) of a w x h full-resolution level whose centre falls on tissue
+// in the smallest level (`small`, sw x sh): at or above its median nonzero
+// pixel. `n` of them spread evenly in reading order, so the same file always
+// gives the same defaults
+export function sampleTiles(small: ArrayLike<number>, sw: number, sh: number,
+                            w: number, h: number, tile: number, n: number): [number, number][] {
+  const nz = Float64Array.from(Array.prototype.filter.call(small, (x: number) => x > 0) as number[]).sort();
+  if (!nz.length) return [];
+  const thr = nz[Math.floor(nz.length / 2)];
+  const cand: [number, number][] = [];
+  for (let y = 0; y < Math.ceil(h / tile); y++)
+    for (let x = 0; x < Math.ceil(w / tile); x++) {
+      const cx = Math.min(w, (x + 0.5) * tile), cy = Math.min(h, (y + 0.5) * tile);
+      const v = small[Math.min(sh - 1, Math.floor(cy / h * sh)) * sw + Math.min(sw - 1, Math.floor(cx / w * sw))];
+      if (v > 0 && v >= thr) cand.push([x, y]);
+    }
+  const k = Math.min(n, cand.length);
+  return Array.from({ length: k }, (_, i) => cand[Math.floor((i + 0.5) * cand.length / k)]);
 }
 
 // Viv expects each level to halve the one above and share its tile size;
@@ -154,9 +193,9 @@ async function reducedLevels(tiff: any, base: GeoTIFFImage): Promise<GeoTIFFImag
   return out;
 }
 
-// From the smallest level: the 0.5th to 99.9th percentile of nonzero pixels
-// (zero is usually padding or empty slide), and a control range up to twice
-// the brightest pixel, since full-resolution peaks exceed the downsampled ones
+// The 0.5th to 99.9th percentile of nonzero pixels (zero is usually padding
+// or empty slide), and a control range up to twice the brightest pixel,
+// since tiles outside the sample may be brighter
 export function defaultContrast(data: ArrayLike<number>, dtype: string) {
   const v = Float64Array.from(Array.prototype.filter.call(data, (x: number) => x > 0) as number[]).sort();
   const top = dtype === 'Uint8' ? 255 : dtype === 'Uint16' ? 65535 : Infinity;
