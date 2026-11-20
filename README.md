@@ -57,7 +57,7 @@ viewer$import_dataset("~/data/xenium/outs", project = "~/projects/breast", qv_th
 # Read what the user did
 viewer$selection            # selected cell IDs
 viewer$selection_rules      # the rules behind them (lasso, brush, histogram range, ...)
-viewer$annotations          # drawn polygons as GeoJSON
+viewer$annotations          # drawn shapes as GeoJSON, by name
 viewer$log()                # recent user actions and browser errors
 viewer$state()              # layers, colouring, rules, view, counts
 
@@ -185,8 +185,8 @@ counts; × drops one, and the bar's rules button hides them.
 - **Regions:** the Regions panel saves the selection under a name and compares two regions,
   or one and every other cell, by differential expression; clicking a gene in the volcano
   plot colors the cells by it.
-- **Annotations and measuring:** polygon, rectangle and freehand annotations (sent to R),
-  ruler, and a transcript lasso that counts genes in a region.
+- **Annotations and measuring:** annotations drawn as polygons, rectangles or freehand,
+  named and sent to R, each able to select the cells inside it; ruler, and a transcript lasso that counts genes in a region.
 - **Import:** "Import a dataset" on the start page fills a form from Giotto's reader for a
   Xenium output folder; edit any field and import it into a new GiottoDisk project, as a job
   with progress, then open it.

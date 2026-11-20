@@ -215,9 +215,12 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
     got <- NULL
     v$on("annotations_update", function(d) got <<- d)
     expect_error(v$on("bogus", identity), "must be one of")
-    a$ws$send('{"type":"annotations_update","data":{"annotations":[{"id":"q","type":"polygon","geojson":"{}"}]}}')
+    a$ws$send('{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}')
     expect_true(pump_until(function() !is.null(got)))
-    expect_identical(v$annotations[[1]]$id, "q")
+    expect_identical(v$annotations, list(q = "{}"))
+    sq <- "POLYGON((0 0,1 0,1 1,0 1,0 0))"
+    expect_error(v$push_polygons(sq, names = "q"), "must be unique; taken or repeated: q")
+    expect_error(v$push_polygons(c(sq, sq), names = c("r", "r")), "repeated: r")
 
     expect_warning(v$set_selection(c("cell_010", "nope")), "1 ID")
     expect_identical(v$selection, "cell_010")
@@ -453,7 +456,7 @@ test_that("set_object() serves another object from a clean slate", {
     v$select(lens_categories("leiden_clus", "a"))
     expect_message(v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)), NA)
     cfg <- '{"state":{"genes":["Actb"]},"version":2}'
-    annot <- '{"type":"annotations_update","data":{"annotations":[{"id":"q","type":"polygon","geojson":"{}"}]}}'
+    annot <- '{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}'
     a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
     a$ws$send(annot)
     expect_true(pump_until(function() identical(priv$config_json, cfg) && length(v$annotations) == 1L))

@@ -387,7 +387,8 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @field selection_rules The rules behind the current selection, as
         #'   sent by the viewer (one per source: spatial, scatter, histogram, ...)
         selection_rules = NULL,
-        #' @field annotations List of drawn polygons: id, name, type, geojson
+        #' @field annotations The shapes drawn or pushed in the viewer: a list of
+        #'   GeoJSON strings named by the shapes' names, which are unique.
         annotations = list(),
         #' @field registration The image being registered in the viewer, or
         #'   `NULL`: image and reference names, the landmark pairs (`moving_x`,
@@ -1737,14 +1738,23 @@ LensViewer <- R6::R6Class("LensViewer",
         #'   of WKT strings — all with POLYGON/MULTIPOLYGON geometries in the
         #'   same coordinate space as the spatial data.
         #' @param names  Optional character vector of names (one per row).
-        #'   Falls back to an `x$name` column if present, else blank.
+        #'   Falls back to an `x$name` column if present. Names must be unique
+        #'   and not taken by another annotation; a blank one gets a default
+        #'   name (`annotation_<n>`), as a drawn shape does.
         push_polygons = function(x, names = NULL) {
             private$need_object("LensViewer$push_polygons")
             if (!self$connected()) {
                 warning("[LensViewer] no viewer connected yet", call. = FALSE)
                 return(invisible(self))
             }
-            self$send("push_polygons", list(polygons = .prep_overlay_polys(x, names)))
+            polys <- .prep_overlay_polys(x, names)
+            nms <- vapply(polys, function(p) p$name, "")
+            nms <- nms[!is.na(nms) & nzchar(nms)]
+            clash <- unique(c(nms[duplicated(nms)], intersect(nms, names(self$annotations))))
+            if (length(clash))
+                stop("[LensViewer$push_polygons] annotation names must be unique; taken or ",
+                    "repeated: ", paste(clash, collapse = ", "), call. = FALSE)
+            self$send("push_polygons", list(polygons = polys))
             invisible(self)
         },
 
@@ -2614,7 +2624,7 @@ LensViewer <- R6::R6Class("LensViewer",
         # comparison tables in de/; here only what tells them apart.
         state_list = function() list(
             rules = private$rule_set, combine = private$combine,
-            annotations = self$annotations, registration = private$registration_msg,
+            annotations = .annotations_rows(self$annotations), registration = private$registration_msg,
             regions = private$region_md5, pushed = private$pushed,
             meta = private$cached_meta, meta_values = private$meta_values,
             col_types = private$col_types, added = unname(private$added_args),
@@ -2784,9 +2794,7 @@ LensViewer <- R6::R6Class("LensViewer",
                 self$selection <- private$cell_ids[hit]
                 self$selection_rules <- unname(rules)
             }
-            self$annotations <- lapply(st$annotations %||% list(), function(a) list(
-                id = as.character(a$id %||% ""), name = as.character(a$name %||% ""),
-                type = as.character(a$type %||% ""), geojson = as.character(a$geojson %||% "")))
+            self$annotations <- .annotations_from_rows(st$annotations)
             if (is.list(st$registration)) {
                 private$registration_msg <- st$registration
                 self$registration <- .parse_registration(st$registration)
@@ -3299,7 +3307,8 @@ LensViewer <- R6::R6Class("LensViewer",
                             # it was; then the data and panels it refers to
                             ws$send(.encode_ws_message("preferences", .lens_pref_msg()))
                             ws$send(.encode_ws_message("restore", list(
-                                config = priv$config_json, panels = as.list(names(priv$pushed)))))
+                                config = priv$config_json, panels = as.list(names(priv$pushed)),
+                                annotations = .annotations_rows(pub$annotations))))
                             if (!is.null(priv$cached_meta))
                                 ws$send(.encode_ws_message("load_metadata", priv$cached_meta))
                             # The rules carry R's rule count (`seq`); with
