@@ -88,7 +88,10 @@ function applyMode(mode) {
   releaseHandle();
   applyController();
   view.deck.setProps({
-    getCursor: ({ isDragging }) => mode === 'pan' && !spaceHeld() && overHandle() ? 'move' : isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
+    // A handle of the annotation being edited moves; otherwise the hand is
+    // for panning and every other tool points with a crosshair
+    getCursor: ({ isDragging }) => mode === 'pan' && !spaceHeld() && overHandle() ? 'move'
+      : isDragging ? 'grabbing' : m === 'pan' ? 'grab' : 'crosshair',
   });
   refreshPaneCursor();
   view.root.querySelectorAll('.tool-btn[data-mode]').forEach(b =>

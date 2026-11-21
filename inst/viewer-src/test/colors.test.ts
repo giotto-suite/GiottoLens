@@ -109,6 +109,10 @@ describe('migrateConfig', () => {
     expect(migrateConfig({ colorScales: { x: {} } }, 3).colorScales).toEqual({ x: {} });
     expect(migrateConfig({ genes: ['a'] }, 1).genes).toEqual([]);
   });
+  it('drops controls closed in the dock, which left it for the tray', () => {
+    expect(migrateConfig({ closedPanels: ['layers', 'spatial', 'cells'] }, 3).closedPanels).toEqual(['spatial']);
+    expect(migrateConfig({ closedPanels: ['layers'] }, 4).closedPanels).toEqual(['layers']);
+  });
 });
 
 describe('low / mid / high handles', () => {

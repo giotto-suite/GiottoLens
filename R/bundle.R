@@ -7,11 +7,11 @@
 #   bundle.json     what it was made on: the snapshot's tag, the object, the
 #                   spatial unit and feature type, a fingerprint of the cells,
 #                   and for a save its name, description and labels
-#   state.json      the work: rules, annotations, registration, regions,
+#   state.json      the work: rules, annotations, registration, saved selections,
 #                   pushed panels, metadata columns and their types, added
 #                   images, comparisons
 #   config.json     the page's config, as it sent it
-#   metadata/ panels/ de/ regions.parquet   the files state.json points to
+#   metadata/ panels/ de/   the files state.json points to
 #
 # JSON and parquet only: nothing in a bundle is deserialized as R objects.
 
@@ -145,8 +145,7 @@
     one <- function(u) if (is.character(u) && length(u) == 1L) sub("^work/", "", u) else ""
     files <- c(vapply(state$meta$columns %||% list(), function(cl) one(cl$url), ""),
         vapply(state$pushed %||% list(), function(p) one(p$data_url), ""),
-        vapply(state$de %||% list(), function(d) one(d$file), ""),
-        if (isTRUE(state$regions)) "regions.parquet")
+        vapply(state$de %||% list(), function(d) one(d$file), ""))
     files[nzchar(files) & !grepl("(^|/)\\.\\.?(/|$)|\\\\|^/", files)]
 }
 

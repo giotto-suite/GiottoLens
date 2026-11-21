@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-11-07
 - **Supersedes:** 0009 in part (only chart panels dock)
-- **Superseded by:** —
+- **Superseded by:** 0027 in part (controls in a tray, not the dock)
 
 ## Context
 

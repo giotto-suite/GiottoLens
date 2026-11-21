@@ -5,7 +5,7 @@ import { state } from '../core/state.js';
 // @ts-ignore: plain JS module
 import { sendToR } from '../core/comms.js';
 import { combine, evaluate, primeMask, markSegment, encodeMask, resetMaskCache, ruleColumns, type Rule, type Ctx, type CompareOp } from './rules.ts';
-import { needColumns } from '../data/meta.ts';
+import { needColumns, pinColumns } from '../data/meta.ts';
 import type { Pt, Ring } from './geometry.ts';
 
 export function ctx(): Ctx | null {
@@ -90,6 +90,12 @@ export function sendSelection(): void {
 }
 
 export function initSelection(): void {
+  // The rules' columns stay loaded: every selection reads them
+  pinColumns(() => {
+    const cols = new Set<string>();
+    for (const r of Object.values(store.getState().rules)) if (r) ruleColumns(r, cols);
+    return cols;
+  });
   store.subscribe(s => s.rules, () => recompute());
   store.subscribe(s => s.combine, () => recompute());
   store.subscribe(s => s.selection.version, scheduleSend);
@@ -190,10 +196,16 @@ export function invertSelection(): void {
   actions.setRules({ spatial: rule });
 }
 
-export function filterMeta(column: string, op: CompareOp, value: string): void {
-  const rule: Rule = { source: 'meta', kind: 'compare', space: column, params: { op, value } };
-  if (store.getState().combine === 'and') actions.setRule('meta', rule);
-  else actions.setRules({ meta: rule });
+// The metadata filter (the table's filter button): one rule, source `meta`,
+// apart from the table's picked rows. `replace` sets it to this condition;
+// `add` intersects it with the conditions it has. A rule like any other: in OR
+// mode it adds to the selection rather than narrowing it.
+export function filterMeta(column: string, op: CompareOp, value: string, mode: 'replace' | 'add' = 'replace'): void {
+  const cond: Rule = { source: 'meta', kind: 'compare', space: column, params: { op, value } };
+  const old = store.getState().rules.meta;
+  if (mode === 'replace' || !old) { actions.setRule('meta', cond); return; }
+  const parts = old.kind === 'intersect' && !old.negate ? old.params.parts : [old];
+  actions.setRule('meta', { source: 'meta', kind: 'intersect', params: { parts: [...parts, cond] } });
 }
 
 export function setRangeRule(source: string, column: string, range: [number, number] | null): void {

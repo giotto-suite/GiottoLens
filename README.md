@@ -48,6 +48,7 @@ viewer$set_object(g)                # another object; refuses to drop work not s
 g <- viewer$gobject()               # the object shown, loaded from its snapshot
 viewer$checkout("clustered")        # another snapshot of the project
 viewer$open_project("~/proj")       # the project's start page; name = "clustered" opens one
+viewer$object_info()                # the snapshot shown: owner, description, labels, what it holds
 
 # Read what the user did
 viewer$selection            # selected cell IDs
@@ -67,6 +68,7 @@ cat <- viewer$catalog()
 viewer$color_by(cat[cat$item == "CD3E" & cat$name %in% "normalized", ])
                                                   # one gene, not added to the metadata
 viewer$set_outline(color = "black", width = 2, alpha = 1)  # cell outline color, width (px), opacity
+viewer$set_annotation_style(color = "white", names = TRUE)  # annotation outlines; names on the view
 viewer$set_selection_color("#00e5ff")             # selected cells' color; NULL: the preference
 viewer$set_theme("light")                         # light panels; the spatial view stays dark
 viewer$style_categories(colors = c(Myeloid = "#d62728"),   # per-category color, on/off, fill opacity
@@ -76,8 +78,9 @@ viewer$catalog()                                  # what the object holds that c
 viewer$pull(c("CD3E", "leiden_clus"), types = list(leiden_clus = "categorical"))
                                                   # adds them to the metadata; or rows of catalog()
 viewer$select(lens_cells(ids), source = "table")  # pick rows in the cell table
-viewer$save_region("tumor")                       # the selection, saved under a name; regions() lists them
-de <- viewer$compare_regions("tumor", "stroma")   # scran t-test as a job, docked as a volcano plot;
+viewer$save_selection("tumor")                    # the selection's rules, saved under a name
+viewer$restore_selection("tumor")                 # those rules back, editable; selections() lists them
+de <- viewer$compare_selections("tumor", "stroma")  # scran t-test as a job, docked as a volcano plot;
                                                   # b = NULL: every other cell
 viewer$set_color_scale("nr_feats", style = "sequential", preset = "viridis")  # Giotto's styles:
 viewer$set_color_scale("nr_feats", style = "divergent", midpoint = 100,      # divergent (default)
@@ -158,7 +161,7 @@ counts; × drops one, and the bar's rules button hides them.
   bins) grow from dots into circles or squares at their true size as you zoom in.
 - **Transcripts:** tiles loaded around the view, decoded in background workers; 1/16 and 1/4
   sampling when zoomed out; gene search and highlighting.
-- **Selection:** lasso, brush (`[` `]` resize), invert, select by metadata, scatter lasso,
+- **Selection:** lasso, brush (`[` `]` resize), invert, the table's metadata filter, scatter lasso,
   histogram brush, and brushes on panels pushed from R. A lasso or brush stroke replaces its
   view's selection; Shift adds to it, Alt (Option) or Ctrl/Cmd subtracts from it, and × on
   its rule drops it. Sources intersect in cross-filter mode (the default), or combine as a
@@ -177,9 +180,10 @@ counts; × drops one, and the bar's rules button hides them.
 - **Panels:** a scatter of any two metadata columns (UMAP by default), a histogram or bar
   chart, and Vega-Lite specs pushed from R; rows with a `cell_ID` are linked to the
   selection.
-- **Regions:** the Regions panel saves the selection under a name and compares two regions,
-  or one and every other cell, by differential expression; clicking a gene in the volcano
-  plot colors the cells by it.
+- **Saved selections:** the selection panel saves the selection's rules under a name and
+  brings them back, editable; `viewer$compare_selections()` compares the cells of two, or
+  one and every other cell, by
+  differential expression, and clicking a gene in the volcano plot colors the cells by it.
 - **Annotations and measuring:** annotations drawn as polygons, rectangles or freehand,
   named and sent to R, each able to select the cells inside it; ruler, and a transcript lasso that counts genes in a region.
 - **Layout:** the spatial view, the charts and the controls are panels. Drag a tab to move

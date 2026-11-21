@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-11-18
 - **Supersedes:** —
-- **Superseded by:** —
+- **Superseded by:** 0029 in part (saved selections are rule sets; no Regions panel)
 
 ## Context
 

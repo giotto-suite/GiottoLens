@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-11-17
 - **Supersedes:** 0009 in part (the spatial view stays one view, where it is)
-- **Superseded by:** —
+- **Superseded by:** 0027 in part (the selection's actions are a tray control; the tools bar is a fixed rail)
 
 ## Context
 

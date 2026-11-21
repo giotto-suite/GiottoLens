@@ -1,12 +1,13 @@
 // The selection bar along the bottom of the page (adr/0023). The selection is
 // one for the whole page, rules from every view and panel combined with OR or
-// AND, so its count and its rules (ui/rules.js) live here rather than in a
-// view; the actions on it are the tools bar's (panels/tools.ts). R's
-// connection and the stop button (viewer$close()) are at its left end, the
-// status line at its right.
+// AND, so its count lives here rather than in a view, with how many rules make
+// it and how they combine; that opens the selection panel, which lists them
+// (panels/selection.ts). R's connection and the stop button (viewer$close())
+// are at its left end, the status line at its right.
 import { store, actions } from '../core/store.ts';
 import { liveView, onLive } from '../selection/live.ts';
 import { onRStatus, sendToR } from '../core/comms.js';
+import { showControl } from '../panels/tray.ts';
 
 const CLOSE_ARM_MS = 3000;
 
@@ -60,6 +61,27 @@ export function initSelectionBar() {
   store.subscribe(s => s.selection, update);
   onLive(update);
   update();
+
+  // The rules, before the count so the count's width moves nothing: amber
+  // when they leave no cell, as AND over sources that do not overlap does
+  const rules = document.getElementById('sel-rules');
+  const updateRules = () => {
+    const s = store.getState();
+    const n = Object.keys(s.rules).length;
+    rules.style.display = n ? '' : 'none';
+    rules.textContent = n > 1 ? `${n} rules · ${s.combine}` : '1 rule';
+    const empty = n > 0 && s.selection.count === 0 && !liveView();
+    rules.classList.toggle('empty', empty);
+    rules.title = empty
+      ? (n > 1 && s.combine === 'and' ? 'no cell meets every rule: ' : 'the rules select no cell: ') +
+        'show them in the selection panel'
+      : 'show the rules in the selection panel';
+  };
+  rules.addEventListener('click', () => showControl('selection'));
+  store.subscribe(s => s.rules, updateRules);
+  store.subscribe(s => s.combine, updateRules);
+  store.subscribe(s => s.selection, updateRules);
+  updateRules();
 
   // Escape returns the panels' tools to pan; C clears the selection
   document.addEventListener('keydown', e => {

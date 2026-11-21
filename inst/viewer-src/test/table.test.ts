@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tableRows, windowFor, applyPick, ROW_H } from '../panels/table.ts';
+import { tableRows, windowFor, colWindowFor, applyPick, ROW_H } from '../panels/table.ts';
 
 describe('cell table', () => {
   it('rows are the cells a mask holds, or all', () => {
@@ -42,5 +42,13 @@ describe('cell table', () => {
     const range = applyPick(one, 10, rows, 3, 'range', 1);
     expect([...range.keys()].filter(i => range[i])).toEqual([5, 7, 9]);
     expect(one[5]).toBe(1);   // inputs are not changed
+  });
+
+  it('windows the columns in view, past the cell_ID column', () => {
+    // 110 px columns after a 150 px cell_ID column, two either side
+    expect(colWindowFor(0, 150 + 3 * 110, 100)).toEqual({ first: 0, count: 5 });
+    expect(colWindowFor(10 * 110, 150 + 3 * 110, 100)).toEqual({ first: 8, count: 7 });
+    expect(colWindowFor(0, 1000, 3)).toEqual({ first: 0, count: 3 });
+    expect(colWindowFor(0, 100, 0).count).toBe(0);
   });
 });

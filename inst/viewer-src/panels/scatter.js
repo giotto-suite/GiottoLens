@@ -5,7 +5,7 @@ import { state } from '../core/state.js';
 import { store } from '../core/store.ts';
 import { lassoScatter, strokeOp } from '../selection/selection.ts';
 import { cellColorBuffer, columnScale } from '../render/colors.ts';
-import { needColumns } from '../data/meta.ts';
+import { needColumns, pinColumns } from '../data/meta.ts';
 import { clientToWorld, worldToClient, fitZoom, dragPan, spaceHeld } from '../ui/dom.js';
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
 import { Deck, OrthographicView, ScatterplotLayer } from 'deck.gl';
@@ -37,6 +37,7 @@ export function createScatterPanel(body, ctx) {
   ]);
   const area = chartArea(body);
   area.classList.add('lens-dark');   // dark in both themes, like the spatial view (ui/theme.ts)
+  ctrls.tools.classList.add('lens-dark');
 
   function setMode(m) {
     mode = m;
@@ -177,6 +178,7 @@ export function createScatterPanel(body, ctx) {
   ctrls.color.addEventListener('change', recolor, { signal: listeners.signal });
   // Hidden behind another tab, it catches up when shown
   const sel = whenVisible(ctx, reselect), col = whenVisible(ctx, recolor), hue = whenVisible(ctx, render);
+  unsub.push(pinColumns(() => [ctrls.x.value, ctrls.y.value, ctrls.color.value].filter(Boolean)));
   unsub.push(store.subscribe(s => s.selection.version, sel.update));
   unsub.push(store.subscribe(s => s.selectionColor, hue.update));
   unsub.push(store.subscribe(s => s.metaVersion, () => { if (!ctrls.color.value) col.update(); }));

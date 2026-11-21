@@ -37,7 +37,8 @@ R/
   export.R     export_manifest(): manifest.json + cells.parquet from tile stores or spatial locations
   marks.R      cell marks for cells without polygons: user mark, bin grid fit, neighbour spacing
   projects.R   opening projects: path check, snapshot list, default keys, recent projects,
-               the IDE folder dialog (adr/0019)
+               the IDE folder dialog (adr/0019); what a snapshot is and holds from its
+               sidecars (.object_info())
   metadata.R   prep_meta(), .write_metadata()
   bundle.R     saves (adr/0026): the working bundle's layout, listing saves (.lens_saves()),
                finding one by name (.find_save()), copying one (.copy_bundle())
@@ -46,8 +47,9 @@ R/
                (.item_key(), .parse_item_key(), adr/0024)
   jobs.R       jobs: the viewer's mirai daemon holding the object shown, its helpers
                (.jw_object(), .jw_run(), .lens_progress()), adr/0025
-  regions.R    region names, the comparison job (.region_de()), its expression source
-               (.de_source()) and volcano spec (.de_volcano()), adr/0020
+  selections.R saved selections' names, the comparison job (.selection_de()), its
+               expression source (.de_source()) and volcano spec (.de_volcano()),
+               adr/0029, adr/0020
   analysis.R   LensAnalysis (step keys rooted at the snapshot, the poll loop over jobs through
                .AnalysisWorker, results to the viewer), the daemon side (.aw_*), adr/0021
   analysis-*.R the analysis steps and catalog: parameters, menu choices, run/result (adr/0022)
@@ -74,20 +76,28 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
   spatial/    view.ts (the spatial view panel: its DOM, Deck and camera), current.ts
               (spatialView(): the open view, or null)
   ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
-              rules.js, selbar.js (selection bar), release.js, dom.js, registration.ts
+              rules.js (rule labels), selbar.js (selection bar), release.js, dom.js, registration.ts
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
               jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
+              info.ts (the tools bar's info button: the snapshot shown, from its sidecars),
               preferences.ts (the tools bar's Preferences dialog)
-  panels/     dock.ts (dockview: panel types, slots, placement, layout), tools.ts (tools bar),
+  panels/     dock.ts (dockview: view types, placement, layout), tray.ts (the controls' tray:
+              CONTROLS, rail, sections), tools.ts (the tools rail), selection.ts (the selection
+              panel: AND/OR, invert, clear, the rule cards, saved selections),
               scatter.js, histogram.js,
-              density.ts (2D bins as one image), table.ts (the cell table), spec.js (pushed
+              density.ts (2D bins as one image), table.ts (the cell table; filter.ts its
+              filter button, the `meta` rule), spec.js (pushed
               Vega-Lite), controls.js (chart
-              control bar); controls: cells.ts (colour by, legend), transcripts.ts (genes),
+              control bar and tool stack); controls: layers.ts (a section per layer: visibility,
+              opacity and the layer's settings, from cells.ts (colour by, legend,
+              outlines), transcripts.ts (genes), images.ts, and the annotations' names
+              and outlines), selection.ts,
               data.ts (the Data panel: what to pull from the object, through askR()),
-              regions.ts (the Regions panel; regions-model.ts its helpers),
+              saved.ts (saved selections, the selection panel's lower section;
+              saved-model.ts its helpers),
               analysis.js + analysis-model.ts (the Analysis panel),
-              picker.ts (the popover a field picks a column or an item with), images.ts,
-              register.ts, annotations.ts, layers.ts (layer visibility, opacity)
+              picker.ts (the popover a field picks a column or an item with),
+              register.ts, annotations.ts (the annotations' list)
   test/       vitest (+ fixtures/)
 inst/viewer/  built bundle, served at runtime: committed by CI after merge, never in PRs
 inst/viewer-dev/  local build (npm run build:dev), untracked and not in the package build
@@ -190,7 +200,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Untiled geometry stores are one tile (`.store_tiles()`); `.check_tile_store()` caps them
   (`.lens_untiled_max`, measured; update the comment when re-measuring).
 - `set_object()` refuses to drop work not saved (`unsaved_work()`: `lens_work()` — rules,
-  annotations, regions, pushed panels, added images, registration, an analysis; settings alone
+  annotations, saved selections, pushed panels, added images, registration, an analysis; settings alone
   are not counted — when `work_sig()` differs from the last save or opening) without
   `discard = TRUE`, and checks before changing anything. A switch from the page goes through
   the same argument after the page's own confirmation (`open`, `open_save` asks, code
@@ -205,6 +215,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - `write_state()` writes `state.json` (`state_list()`), `config.json` and `bundle.json` when
   they changed; `autosave()` calls it every second (`GiottoLens.autosave_interval`). New work
   that should survive a save goes into `state_list()` and back in `restore_state()`.
+- Saved selections (adr/0029) are rule sets with their combine mode (`private$saved_sel`),
+  never cell IDs: their cells are evaluated when asked, and `restore_selection()` sends the
+  rules back under their own sources through `apply_rule_set()`. On `open_save()` their
+  rules go through the same checks as the selection's (`keep_rules()`).
 - `save()` copies the working bundle (`.copy_bundle()`: only the files `state.json` points
   to) to `lens/<name>.<id>/` and sets `keep = TRUE` on the snapshot. `open_save()` shows the
   save's snapshot (`open_snapshot()`), then restores its work; cell-ordered parts (metadata,
@@ -271,6 +285,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   Code that needs a column's values asks for it (`needColumns()`, `metaColumn()` in
   `data/meta.ts`) and works once it has loaded; lists of columns (menus, kinds) read
   `state.metaInfo`. Rules wait for their columns before evaluating (`recompute()`).
+- Over the budget (`META_CACHE_BYTES`) loaded columns are dropped least recently used first.
+  Code that keeps reading a column from `state.meta` pins it with `pinColumns()` (colour-by,
+  rules, chart axes, the table's columns in view) and unpins when it stops showing it.
 
 ### Data model (adr/0003)
 
@@ -378,7 +395,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
   the 7-color `blue-white-red` as `RdBu`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 8)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 9)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
@@ -388,8 +405,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (adr/0019), and `open_save` (adr/0026); the Data panel's `catalog`, `pull`, the item cache's
   `item` and the tools bar's `save`, answered only to a page showing the current load
   (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
-  earlier load). The Regions panel's `region` (save, remove, select, compare; a compare
-  answered when its job ends) is too. An ask is never queued while disconnected.
+  earlier load). The saved selections' `selection` (save, remove, restore; compare, answered
+  when its job ends, has no page control at present) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
 - `ready` carries the load the page's manifest came from (`setHello()`). R tells a tab with an
@@ -490,33 +507,43 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
   pair, Escape the open one.
 
-### Panels (adr/0009, adr/0016, adr/0023)
+### Panels (adr/0009, adr/0016, adr/0023, adr/0027)
 
-- Everything but the selection bar docks (`panels/dock.ts`, dockview-core 4.13.1, pinned).
-  Built-in kinds are listed once in `TYPES`: charts (`meta`) need metadata and can repeat;
+- Views dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the controls are in the tray
+  (`panels/tray.ts`), and the selection bar is outside both. Docked kinds are listed once in
+  `TYPES` and are what the `+` menus offer: charts (`meta`) need metadata and can repeat;
   `single` panels are one per viewer with their kind as id and are left closed after a reload
-  once closed (`closedPanels`); controls are single panels with a `slot`, placed in a column at
-  the dock's right edge (at most two tabs each: more do not fit). `spatial` is single and
-  closable; `tools` is `fixed` (no close, not in the `+` menus). `placeFixed()` adds either to
-  a layout without them. Keep `.lens_builtin_panels` in R in step. A pushed panel without
-  `ref` goes next to the charts, never beside a single panel.
-- The tools bar is one or two columns wide (`TOOLS_WIDTH`, `TOOLS_MAX`, the icon grid in
-  `index.html`) and keeps its width (`holdTools()`): dockview shares a removed group's width
-  evenly along its row and splits a group with a new neighbour. Nothing docks into its
-  group, and the bar never becomes a tab of another (refused in `onWillShowOverlay` and
-  `onWillDrop`, since a group lock still shows drop targets). Its group has low layout
-  priority through dockview's private `_priority`; recheck these when bumping dockview.
-- The selection bar (`ui/selbar.js`, `ui/rules.js`, static markup with ids in `index.html`,
-  outside the dock) shows R's connection with the stop button (`close`; also on the start
-  page, `initRStatus()`), the page's selection (the rules toggle, the count
-  with a fixed minimum width, the rule chips) and the status line. Keep buttons out of it
-  after the count, since they would move as the count changes. The actions on the selection (combine mode, select by
-  metadata, invert, clear) are the tools bar's (`panels/tools.ts`). Tools that act in a view
-  stay in the view.
+  once closed (`closedPanels`). `spatial` and `analysis` are single and closable.
+  `placeFixed()` adds the view to a layout without it. Keep `.lens_builtin_panels` in R in step with `TYPES` and `CONTROLS`. A
+  pushed panel without `ref` goes next to the charts, never beside a single panel.
+- The tray is a fixed-width column (`TRAY_WIDTH`) beside the dock, with a rail of icons at
+  the page's edge. Controls are listed once in `CONTROLS`, in rail order; never let one be
+  docked or dragged. The tray shows one control, the last picked (`trayActive`, else the
+  first this launch has: `activeControl()`); one built keeps its DOM when another is picked
+  and catches up in `show()`. A click on the active one, or the rail's arrow, folds the tray
+  (`trayCollapsed`). A layer's settings go in its section of the layers panel (`SECTIONS` in
+  `panels/layers.ts`), not a control of their own; collapsed sections keep their DOM, and
+  which are open is `layerSections`. `remove_panel()` of the control shown folds the tray
+  (`hideControl()`); R's asks to bring one forward go through `showControl()`. `panels()`
+  lists the control shown, with group `"tray"`, while the tray is open.
+- The tools rail (`panels/tools.ts`, `#tools-rail`, 36 px) is the page's own actions, fixed at
+  the left edge outside the dock, as the tray's rail is at the right; it keeps
+  `data-panel="tools"` for the tests, and is not listed by `panels()`. A saved layout with the
+  old tools panel loses it on restore (`dropUnavailable()`).
+- The selection bar (`ui/selbar.js`, static markup with ids in `index.html`, outside the
+  dock) shows R's connection with the stop button (`close`; also on the start page,
+  `initRStatus()`), the page's selection count (a fixed minimum width) and the status line.
+  Keep buttons out of it after the count, since they would move as the count changes. The
+  actions on the selection (combine mode, invert, clear), its rules as cards and the saved
+  selections are the selection panel's, a control in the tray (`panels/selection.ts`,
+  adr/0027). The metadata filter is the table's filter button (`panels/filter.ts`): the
+  `meta` rule, apart from the table's picks, shared by every table; "add" intersects a
+  condition with it. Tools that act in a view stay in the view.
 - A control builds its own DOM and keeps references to it: no `getElementById`, no ids, no
-  markup in `index.html`, styles by class; e2e tests select `[data-panel=<id>] .class`. A tab's
-  content is mounted when first shown (`dock_tab()` in the tests) and leaves the document when
-  closed, so nothing may look it up from outside.
+  markup in `index.html`, styles by class; e2e tests select `[data-panel=<id>] .class`. A
+  control is mounted when first shown (`tray_show()` in the tests), a docked panel
+  when its tab is first shown (`dock_tab()`), and either leaves the document when closed, so
+  nothing may look it up from outside.
 - A panel's id names its slot, its selection source (`scatter` or
   `scatter:<id>`, `density` or `density:<id>`, `panel:<id>`) and its data file; never derive anything from its DOM position.
 - A panel is `create(body, ctx) → { destroy, show?, view? }`. Hidden tabs keep their DOM; skip
@@ -538,12 +565,12 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
+`set_layer()`, `set_mark()`, `set_outline()`, `set_annotation_style()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
 `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save()`, `saves()`, `open_save()`,
-`delete_save()`, `save_region()`, `regions()`,
-`select_region()`, `remove_region()`, `compare_regions()`, `de_results()`,
+`delete_save()`, `save_selection()`, `selections()`,
+`restore_selection()`, `remove_selection()`, `compare_selections()`, `de_results()`,
 `panels()`, `push_polygons()`,
 `analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,

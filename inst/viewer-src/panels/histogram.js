@@ -9,7 +9,7 @@
 // scrubbed; a rule changed elsewhere redraws the chart to match. A drag of
 // the brush is live (adr/0013): the rule is set on release.
 import { state } from '../core/state.js';
-import { needColumns } from '../data/meta.ts';
+import { needColumns, pinColumns } from '../data/meta.ts';
 import { store, actions } from '../core/store.ts';
 import { maskExcept, setRangeRule } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
@@ -200,6 +200,7 @@ export function createHistogramPanel(body, ctx) {
     show: sel => { const rows = view && counts(sel); if (rows) view.data('bins', rows).runAsync(); },
   }));
   const counted = whenVisible(ctx, refresh);
+  unsub.push(pinColumns(() => [ctrls.col.value]));
   unsub.push(store.subscribe(s => s.selection.version, counted.update));
   unsub.push(store.subscribe(s => s.combine, counted.update));
   draw();

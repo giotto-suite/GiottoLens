@@ -7,6 +7,7 @@ import { setViewState } from '../data/schedule.js';
 import { fitZoom, viewportSize, withZoom } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
+import { listControls } from '../panels/tray.ts';
 import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { isItemKey, parseItemKey, needItems, primeItem, scaleKey, itemColumn } from '../data/items.ts';
@@ -34,7 +35,7 @@ function viewInfo(vs) {
 export function initRemote() {
   onMessage('get_state', () => ({
     config: { ...getConfig(), annotations: undefined, layout: undefined },
-    panels: listPanels(),
+    panels: [...listPanels(), ...listControls()],
     view: spatialView()?.viewState ? viewInfo(spatialView().viewState) : null,
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,
@@ -145,7 +146,8 @@ export function initRemote() {
     return { column: name };
   });
 
-  onMessage('set_outline', ({ color, width, alpha }) => {
+  // An outline's color, width and opacity from R, the ones given
+  const outlinePatch = ({ color, width, alpha }) => {
     if (color != null && !(Array.isArray(color) && color.length === 3 &&
         color.every(v => Number.isInteger(v) && v >= 0 && v <= 255)))
       throw new Error('color must be three integers 0-255');
@@ -153,8 +155,13 @@ export function initRemote() {
       throw new Error('width must be a number in [0.01, 20]');
     if (alpha != null && !(typeof alpha === 'number' && alpha >= 0 && alpha <= 1))
       throw new Error('alpha must be a number in [0, 1]');
-    actions.setOutline({ ...(color != null && { color }), ...(width != null && { width }),
-      ...(alpha != null && { alpha }) });
+    return { ...(color != null && { color }), ...(width != null && { width }), ...(alpha != null && { alpha }) };
+  };
+  onMessage('set_outline', d => { actions.setOutline(outlinePatch(d)); });
+  onMessage('set_annotation_style', ({ names, ...d }) => {
+    if (names != null && typeof names !== 'boolean') throw new Error('names must be TRUE or FALSE');
+    actions.setAnnotOutline(outlinePatch(d));
+    if (names != null) actions.setAnnotNames(names);
   });
 
   onMessage('set_selection_color', ({ color, reset }) => {

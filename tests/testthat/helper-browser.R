@@ -56,3 +56,17 @@ dock_tab <- function(br, title) {
         br$session$Input$dispatchMouseEvent(type = type, x = at[[1]], y = at[[2]], button = "left",
             buttons = if (type == "mousePressed") 1L else 0L, clickCount = 1L)
 }
+
+# Show a control in the tray (panels/tray.ts) by its rail button, unless it
+# is the one shown, and wait for it. `section`: a section of the layers panel
+# (cells, transcripts, images, annotations) to open as well.
+tray_show <- function(br, kind, section = NULL) {
+    br$js(sprintf("(() => { const b = document.querySelector('.tray-rail [data-tray=%s]');
+      if (b && !(b.classList.contains('active') && document.getElementById('tray').classList.contains('open'))) b.click(); })()", kind))
+    if (!browser_wait(br, sprintf("!!document.querySelector('.tray-body[data-panel=%s]')?.offsetParent", kind), 10))
+        stop("no tray section '", kind, "'", call. = FALSE)
+    if (is.null(section)) return(invisible())
+    br$js(sprintf("(() => { const s = document.querySelector('[data-section=%s]'); if (s?.classList.contains('collapsed')) s.querySelector('.layer-toggle').click(); })()", section))
+    if (!browser_wait(br, sprintf("!!document.querySelector('[data-section=%s]:not(.collapsed)')", section), 10))
+        stop("no layer section '", section, "'", call. = FALSE)
+}

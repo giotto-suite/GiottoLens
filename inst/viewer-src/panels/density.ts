@@ -17,7 +17,7 @@ import { store, actions } from '../core/store.ts';
 import { maskExcept } from '../selection/selection.ts';
 import { addLiveConsumer, beginLive, endLive, liveSource, moveLive, prepareLive } from '../selection/live.ts';
 import type { Rule } from '../selection/rules.ts';
-import { needColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
+import { needColumns, pinColumns, type MetaColumn, type MetaInfo } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 // @ts-ignore: plain JS module
 import { buildControlBar, chartArea, whenVisible } from './controls.js';
@@ -201,6 +201,10 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     const w = view.width(), h = view.height(), dpr = window.devicePixelRatio || 1;
     Object.assign(tex.style, { left: `${r.left - a.left + ox}px`, top: `${r.top - a.top + oy}px`,
       width: `${w}px`, height: `${h}px` });
+    // The tools inside the plot's lower right, clear of the axes
+    const b = body.getBoundingClientRect();
+    Object.assign(ctrls.tools.style, { right: `${b.right - (r.left + ox + w) + 6}px`,
+      bottom: `${b.bottom - (r.top + oy + h) + 6}px` });
     const pw = Math.max(1, Math.round(w * dpr)), ph = Math.max(1, Math.round(h * dpr));
     if (tex.width !== pw || tex.height !== ph) { tex.width = pw; tex.height = ph; }
     paint();
@@ -369,6 +373,7 @@ export function createDensityPanel(body: HTMLElement, ctx: PanelCtx): PanelHandl
     show: sel => paint(sel),
   }));
   const counted = whenVisible(ctx, refresh);
+  unsub.push(pinColumns(() => [ctrls.x.value, ctrls.y.value]));
   unsub.push(store.subscribe(s => s.selection.version, counted.update));
   unsub.push(store.subscribe(s => s.combine, counted.update));
   draw();

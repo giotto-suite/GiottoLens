@@ -1,12 +1,19 @@
-// Shared pieces of the stats panels: control bar, chart area, hidden-panel updates
+// Shared pieces of the stats panels: control bar, tool stack, chart area,
+// hidden-panel updates
 import { createIcons, icons } from 'lucide';
 
 // fields: [{ key, label, options: [value | { value, label }], value }]
 // buttons: [{ icon, title, onClick, toggle?: group name, active? }]
+// The fields go in the bar along the top. The buttons are view tools and go in
+// a vertical stack over the chart's lower right (`els.tools`), so a narrow pane's
+// bar does not wrap onto a second row. The stack is the body's, not the chart
+// area's: panels replace the area's children.
 export function buildControlBar(body, fields, buttons = []) {
   body.querySelector('.stats-controls')?.remove();
+  body.querySelector('.chart-tools')?.remove();
   const bar = document.createElement('div');
   bar.className = 'stats-controls';
+  /** @type {Record<string, HTMLElement>} */
   const els = {};
   for (const { key, label, options, value } of fields) {
     const wrap = document.createElement('label');
@@ -25,11 +32,8 @@ export function buildControlBar(body, fields, buttons = []) {
     bar.appendChild(wrap);
     els[key] = sel;
   }
-  if (buttons.length) {
-    const sep = document.createElement('span');
-    sep.className = 'stats-ctrl-sep';
-    bar.appendChild(sep);
-  }
+  const tools = document.createElement('div');
+  tools.className = 'chart-tools';
   for (const b of buttons) {
     const btn = document.createElement('button');
     btn.className = 'tool-btn' + (b.active ? ' active' : '');
@@ -39,14 +43,18 @@ export function buildControlBar(body, fields, buttons = []) {
     i.setAttribute('data-lucide', b.icon);
     btn.appendChild(i);
     btn.addEventListener('click', () => {
-      if (b.toggle) bar.querySelectorAll(`[data-toggle="${b.toggle}"]`).forEach(x => x.classList.toggle('active', x === btn));
+      if (b.toggle) tools.querySelectorAll(`[data-toggle="${b.toggle}"]`).forEach(x => x.classList.toggle('active', x === btn));
       b.onClick(btn);
     });
-    bar.appendChild(btn);
+    tools.appendChild(btn);
     els[`btn:${b.title}`] = btn;
   }
   body.insertBefore(bar, body.firstChild);
-  createIcons({ icons, nodes: bar.querySelectorAll('[data-lucide]') });
+  if (buttons.length) {
+    body.appendChild(tools);
+    els.tools = tools;
+    createIcons({ icons, nodes: tools.querySelectorAll('[data-lucide]') });
+  }
   return els;
 }
 

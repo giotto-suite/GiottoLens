@@ -41,16 +41,6 @@
     .hud-item { color: var(--fg-3); font-size: 11px; }
     .hud-item:not(:empty) ~ .hud-item:not(:empty) { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); }
     .cursor-coords { font-family: monospace; }
-    #rule-strip { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow: hidden; margin-left: 6px; }
-    .rule-chip {
-      pointer-events: auto; display: inline-flex; align-items: center; gap: 4px;
-      background: rgba(17,24,39,0.85); border: 1px solid rgba(255,220,50,0.45); border-radius: 10px;
-      color: #fde68a; font-size: 11px; padding: 1px 4px 1px 8px; max-width: 320px;
-    }
-    .rule-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .rule-chip.rule-mode { border-color: rgba(156,163,175,0.5); color: var(--fg-2); padding-right: 8px; }
-    .rule-chip-x { background: none; border: none; color: var(--fg-2); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
-    .rule-chip-x:hover { color: #f87171; }
     .ruler-label {
       position: absolute; display: none; pointer-events: none;
       background: rgba(17,24,39,0.85); border: 1px solid var(--bg-3); border-radius: 4px;
@@ -73,7 +63,7 @@
     .cell-tooltip .ctt-sep { height: 1px; background: var(--bg-2); margin: 3px 0; }
     .cell-tooltip .ctt-overflow { color: var(--fg-4); font-size: 10px; margin-top: 2px; }
 
-    /* Select by metadata, beside the tools bar's button (panels/tools.ts) */
+    /* The tools bar's save form, beside its button (panels/tools.ts) */
     .meta-sel-panel {
       position: fixed;
       background: rgba(17,24,39,0.92); border: 1px solid var(--bg-2); border-radius: 6px;
@@ -157,7 +147,12 @@
     }
     .ctl-actions button:hover { background: var(--bg-3); color: var(--fg-0); }
     .ctl-actions button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-fg); }
-    .stats-ctrl-sep { width: 1px; height: 14px; background: var(--bg-3); margin: 0 4px; flex-shrink: 0; align-self: center; }
+    /* A chart's view tools (panels/controls.js): a column over the chart's lower right */
+    .chart-tools {
+      position: absolute; right: 8px; bottom: 8px; z-index: 5;
+      display: flex; flex-direction: column; gap: 2px; padding: 3px;
+      background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 6px; opacity: 0.92;
+    }
     .gene-count { color: var(--fg-3); font-size: 11px; margin-left: 6px; align-self: center; }
 
     .gene-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; font-size: 12px; }
@@ -366,11 +361,10 @@
     .pref-foot { padding: 8px 10px; }
     .pref-note { color: var(--fg-3); font-size: 11px; margin-top: 6px; }
     .pref-code { margin: 6px 0 0; font-size: 11px; white-space: pre-wrap; background: var(--bg-0); border: 1px solid var(--bg-3); border-radius: 3px; padding: 6px; color: var(--fg-1); }
-    /* Regions panel */
-    .rg { padding: 8px 10px; font-size: 11px; color: var(--fg-1); overflow-y: auto; height: 100%; box-sizing: border-box; }
-    .rg-hd { font-size: 11px; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.05em; margin: 6px 0 4px; }
+    /* Saved selections, in the selection panel (panels/regions.ts) */
+    .rg { font-size: 11px; color: var(--fg-1); overflow-y: auto; }
     .rg-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-    .rg-name, .rg-sel {
+    .rg-name {
       flex: 1; min-width: 0; padding: 3px 6px; background: var(--bg-2); border: 1px solid var(--bg-3);
       border-radius: 4px; color: var(--fg-0); font-size: 11px; font-family: monospace; outline: none;
     }
@@ -380,22 +374,13 @@
     }
     .rg-btn:hover:not(:disabled) { background: var(--bg-3); color: var(--fg-0); }
     .rg-btn:disabled { opacity: 0.4; cursor: default; }
-    .rg-lbl { color: var(--fg-3); }
-    .rg-list { margin-bottom: 4px; }
-    .rg-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-    .rg-pick {
-      flex: 1; min-width: 0; text-align: left; background: none; border: none; color: var(--fg-0);
-      font-size: 11px; font-family: monospace; cursor: pointer; padding: 1px 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .rg-pick:hover { color: var(--accent-fg); }
-    .rg-n { color: var(--fg-3); font-family: monospace; }
-    .rg-del { background: none; border: none; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 0 2px; }
+    /* Rows as the annotations panel's (.annot-row); the list sits flush with the panel's edges */
+    .rg-list { margin: 0 -12px 4px; }
+    .rg-n { color: var(--fg-4); font: 10px monospace; white-space: nowrap; }
     .rg-del:hover { color: #f87171; }
-    .rg-empty, .rg-note { color: var(--fg-3); font-size: 10px; margin-bottom: 4px; }
-    .rg-note:empty, .rg-status:empty { display: none; }
+    .rg-empty { color: var(--fg-4); font-size: 10px; margin-bottom: 4px; }
+    .rg-status:empty { display: none; }
     .rg-status { font-size: 10px; color: var(--fg-2); overflow-wrap: anywhere; }
-    .rg-status.rg-running { color: var(--tag-amber-fg); }
     .rg-status.rg-error { color: #f87171; }
     .data-status.error { color: #fca5a5; }
     :root[data-theme="light"] .data-status.error { color: #b91c1c; }
@@ -420,6 +405,17 @@
       color: var(--fg-2); font-size: 11px; font-family: monospace; cursor: pointer; }
     .table-bar button:disabled { opacity: 0.4; cursor: default; }
     .table-count, .table-bar button { flex-shrink: 0; white-space: nowrap; }
+    .table-filter { display: inline-flex; align-items: center; gap: 4px; }
+    .table-filter svg { width: 12px; height: 12px; }
+    .table-bar .table-filter.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-fg); }
+    .table-filter-panel { min-width: 240px; }
+    .filter-now { color: var(--fg-1); font: 11px monospace; overflow-wrap: anywhere; }
+    .filter-now.none { color: var(--fg-4); }
+    .filter-clear { padding: 4px 8px; background: var(--bg-2); border: 1px solid var(--bg-3); border-radius: 4px;
+      color: var(--fg-2); font: 11px monospace; cursor: pointer; margin-left: auto; }
+    .filter-clear:disabled, .meta-sel-apply:disabled { opacity: 0.4; cursor: default; }
+    .filter-note { color: var(--fg-3); font: 10px monospace; }
+    .filter-note:empty { display: none; }
     .table-hint { margin-left: auto; color: var(--fg-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .table-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
     .table-inner { position: relative; min-width: 100%; }
@@ -500,11 +496,10 @@
     .cells-outline { border-top: 1px solid var(--bg-2); }
     .ctl-subhead { font-size: 11px; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
     .outline-color { width: 22px; height: 18px; padding: 0; border: 1px solid var(--bg-3); border-radius: 3px; background: none; flex-shrink: 0; cursor: pointer; }
-    .outline-hex, .outline-width-num {
+    .outline-width-num {
       background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 3px; color: var(--fg-0);
       font: inherit; font-size: 11px; padding: 1px 4px;
     }
-    .outline-hex { width: 64px; }
     .outline-width-num { width: 58px; }
     .outline-presets { display: flex; gap: 4px; }
     .outline-preset { width: 14px; height: 14px; border: 1px solid var(--fg-4); border-radius: 3px; cursor: pointer; padding: 0; }
@@ -597,8 +592,10 @@
     /* The spatial view (spatial/view.ts), always in the dark colours */
     .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--view-bg, var(--bg-1)); color: var(--fg-1); }
     .tx-connector { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9; }
+    /* The dock and the tray beside it */
+    #workarea { flex: 1; min-height: 0; display: flex; }
     /* The docked panels (panels/dock.ts): dockview's dark theme, in the colour tokens */
-    #dock { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--bg-0); }
+    #dock { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--bg-0); }
     .dockview-theme-dark.lens-dock {
       --dv-group-view-background-color: var(--bg-0);
       --dv-tabs-and-actions-container-background-color: var(--bg-1);
@@ -645,10 +642,11 @@
     }
     .stats-ctrl-sel:focus { border-color: var(--fg-4); }
     .stats-chart-area { flex: 1; overflow: hidden; min-height: 0; }
-    /* The tools bar (panels/tools.ts): a column of icons, more when widened */
-    .tools-bar { display: grid; grid-template-columns: repeat(auto-fill, 32px); justify-content: center; gap: 4px; padding: 6px 0; }
-    .tools-bar .tool-btn { width: 32px; height: 30px; }
-    .tools-sep { grid-column: 1 / -1; height: 1px; margin: 2px 6px; background: var(--bg-3); }
+    /* The tools rail (panels/tools.ts): the page's own actions, a column of
+       icons at the left edge, as the tray's rail is at the right */
+    #tools-rail { flex-shrink: 0; width: 36px; background: var(--bg-1); border-right: 1px solid var(--bg-2); }
+    .tools-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; }
+    .tools-bar .tool-btn { width: 30px; height: 30px; }
     /* The jobs button and its popover (ui/jobs.ts) */
     .jobs-btn { position: relative; }
     .jobs-badge { position: absolute; top: 1px; right: 1px; min-width: 12px; padding: 0 3px; border-radius: 6px;
@@ -673,12 +671,81 @@
     .job-what, .job-msg { margin-top: 2px; color: var(--fg-3); overflow-wrap: anywhere; }
     .job-row.state-error .job-msg { color: #fca5a5; }
     :root[data-theme="light"] .job-row.state-error .job-msg { color: #b91c1c; }
-    .lens-tools-group .dock-actions { display: none; }
-    .lens-tools-group .dv-tabs-container, .lens-tools-group .dv-tab { flex: 1; padding: 0; }
-    .lens-tools-group .dv-void-container { display: none; }
-    .dock-grip { display: flex; align-items: center; justify-content: center; height: 100%; min-width: 24px;
-      color: var(--fg-4); font-size: 13px; cursor: grab; user-select: none; }
-    .dock-grip:hover { color: var(--fg-2); }
+    /* The info button's popover (ui/info.ts) */
+    .info-popover { width: 320px; max-height: 75vh; }
+    .info-title { display: flex; align-items: center; gap: 6px; color: var(--fg-0); font-size: 12px; margin: 2px 0 4px; overflow-wrap: anywhere; }
+    .info-desc { color: var(--fg-1); margin: 2px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .info-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0 4px; }
+    .info-tag { padding: 0 6px; border-radius: 8px; background: var(--accent-bg); color: var(--accent-fg); font-size: 10px; }
+    .info-tag.info-temp { background: var(--tag-amber-bg); color: var(--tag-amber-fg); }
+    .info-row { display: flex; gap: 8px; line-height: 1.6; }
+    .info-key { flex: 0 0 auto; min-width: 72px; color: var(--fg-3); }
+    .info-val { flex: 1; min-width: 0; color: var(--fg-1); overflow-wrap: anywhere; }
+    .info-val.info-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .info-val.info-path { color: var(--fg-2); font-size: 10px; }
+    .info-head { color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; margin: 8px 0 2px;
+      padding-top: 6px; border-top: 1px solid var(--bg-2); }
+    .info-none { color: var(--fg-3); margin-top: 8px; }
+    .info-slot { border-top: 1px solid var(--bg-2); }
+    .info-slot:first-of-type { margin-top: 8px; }
+    .info-slot summary { display: flex; justify-content: space-between; padding: 4px 0; cursor: pointer; color: var(--fg-1); }
+    .info-slot summary:hover { color: var(--fg-0); }
+    .info-count { color: var(--fg-3); }
+    .info-group { padding: 0 0 6px 8px; }
+    .info-on { color: var(--fg-3); font-size: 10px; margin-bottom: 2px; }
+    .info-items { display: flex; flex-wrap: wrap; gap: 3px; }
+    .info-item { padding: 0 5px; border-radius: 3px; background: var(--bg-2); color: var(--fg-1); }
+    .info-detail { margin-left: 4px; color: var(--fg-3); font-size: 10px; }
+
+    /* The tray (panels/tray.ts): the controls' sections, a fixed width, and
+       the rail that shows and hides them at the page's edge */
+    #tray { flex-shrink: 0; display: flex; background: var(--bg-0); border-left: 1px solid var(--bg-2); }
+    .tray-sections { display: none; width: var(--tray-width); flex-direction: column; overflow-y: auto; }
+    #tray.open .tray-sections { display: flex; }
+    .tray-rail { width: 36px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0;
+      background: var(--bg-1); border-left: 1px solid var(--bg-2); }
+    .tray-rail .tool-btn { width: 30px; height: 30px; }
+    .tray-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .tray-head { flex-shrink: 0; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px;
+      background: var(--bg-1); color: var(--fg-2); font: 11px monospace; }
+    .tray-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tray-rail-sep { width: 20px; height: 1px; margin: 2px 0; background: var(--bg-3); }
+    /* The layers panel (panels/layers.ts): a collapsible section per layer */
+    /* A section's header is a band, set off from its body and the next header */
+    .layer-section { border-bottom: 1px solid var(--bg-3); }
+    .layer-head { margin: 0; padding: 6px 12px 6px 6px; background: var(--bg-2); }
+    .layer-section:not(.collapsed) .layer-head { border-bottom: 1px solid var(--bg-3); }
+    .layer-head:hover { background: var(--bg-3); }
+    .layer-name { font-weight: 600; color: var(--fg-0); }
+    .layer-body { padding-bottom: 6px; }
+    .layer-toggle { display: flex; align-items: center; gap: 4px; width: 104px; flex-shrink: 0; padding: 0;
+      background: none; border: none; color: var(--fg-1); font: 11px monospace; text-align: left; cursor: pointer; }
+    .layer-toggle svg { width: 12px; height: 12px; flex-shrink: 0; transition: transform 0.12s; }
+    .layer-section.collapsed .layer-toggle svg { transform: rotate(-90deg); }
+    .layer-section.collapsed .layer-body { display: none; }
+    .layer-body > .ctl-body { padding-top: 2px; }
+    .layer-body .gene-list { max-height: 240px; }
+    /* The selection panel (panels/selection.ts): combine, the rules as cards
+       in a list that scrolls, the saved selections */
+    .selection-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px 6px; font-size: 12px; }
+    .selection-panel .ctl-actions { margin-top: 0; margin-bottom: 6px; }
+    .sel-top { flex-shrink: 0; }
+    .sel-head { flex-shrink: 0; margin-top: 4px; }
+    .sel-rules { flex: 1; min-height: 72px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+      padding: 2px 0 6px; }
+    .rule-card { flex-shrink: 0; padding: 4px 4px 4px 8px; background: var(--bg-1); border: 1px solid var(--bg-2);
+      border-left: 2px solid #fde68a; border-radius: 4px; font: 11px monospace; }
+    :root[data-theme="light"] .rule-card { border-left-color: #b45309; }
+    .rule-head { display: flex; align-items: flex-start; gap: 4px; }
+    .rule-label { flex: 1; min-width: 0; color: var(--fg-0); overflow-wrap: anywhere; }
+    .rule-x { background: none; border: none; color: var(--fg-3); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; }
+    .rule-x:hover { color: #f87171; }
+    .rule-meta { display: flex; gap: 8px; margin-top: 2px; color: var(--fg-3); font-size: 10px; }
+    .rule-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rule-n { margin-left: auto; white-space: nowrap; }
+    .rule-empty { color: var(--fg-4); font-size: 10px; padding: 4px 0; }
+    .selection-panel .rg { flex-shrink: 0; max-height: 40%; }
+    .tray-body { position: relative; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; color: var(--fg-1); }
 
     /* The selection bar (ui/selbar.js) */
     #selection-bar {
@@ -688,6 +755,12 @@
     .selbar-sel { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
     /* Wide enough for any count, so the chips after it stay put */
     #sel-count { color: #fde68a; margin: 0 6px; min-width: 18ch; white-space: nowrap; }
+    /* How many rules make the selection; opens the selection panel */
+    #sel-rules { margin-left: 4px; padding: 1px 8px; background: none; border: 1px solid var(--bg-3); border-radius: 10px;
+      color: var(--fg-2); font: 11px monospace; white-space: nowrap; cursor: pointer; }
+    #sel-rules:hover { color: var(--fg-0); border-color: var(--fg-4); }
+    #sel-rules.empty { color: #fbbf24; border-color: rgba(251,191,36,0.6); }
+    :root[data-theme="light"] #sel-rules.empty { color: #b45309; border-color: #d97706; }
     #sel-count.none { color: var(--fg-3); }
     :root[data-theme="light"] #sel-count:not(.none) { color: #b45309; }
     #selection-bar .tool-btn { padding: 3px 5px; }
@@ -771,7 +844,7 @@
 
     /* No object loaded (launch_lens() without one): the start page in place
        of the panels */
-    body.empty #dock, body.empty .selbar-sel { display: none; }
+    body.empty #workarea, body.empty .selbar-sel { display: none; }
     body.empty #status { margin-left: auto; }
     .start-host { position: relative; flex: 1; inset: auto; }
 
@@ -840,17 +913,22 @@
 </head>
 <body>
   <div id="main-layout">
-    <!-- The panels, the spatial view and the tools bar among them (panels/dock.ts) -->
-    <div id="dock"></div>
+    <div id="workarea">
+      <!-- The page's own actions (panels/tools.ts) -->
+      <div id="tools-rail" data-panel="tools"></div>
+      <!-- The panels, the spatial view among them (panels/dock.ts) -->
+      <div id="dock"></div>
+      <!-- The controls (panels/tray.ts) -->
+      <div id="tray"></div>
+    </div>
 
-    <!-- The page's selection (ui/selbar.js, ui/rules.js) and the status line -->
+    <!-- The page's selection count (ui/selbar.js) and the status line -->
     <div id="selection-bar">
       <span class="r-status" id="r-status" title="R: connecting"></span>
       <button class="tool-btn" id="btn-close" title="stop the viewer (viewer$close())" disabled><i data-lucide="power"></i></button>
       <div class="selbar-sel">
-        <button class="tool-btn" id="btn-rules" title="show the selection rules"><i data-lucide="list-filter"></i></button>
+        <button id="sel-rules" style="display:none"></button>
         <span id="sel-count"></span>
-        <div id="rule-strip" style="display:none"></div>
       </div>
       <div id="status">initializing…</div>
     </div>

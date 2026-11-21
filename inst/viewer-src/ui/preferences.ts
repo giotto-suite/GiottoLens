@@ -5,7 +5,7 @@
 // built-in default. Changes go to R, which saves them and sends them back to
 // every viewer (core/prefs.ts).
 import { loadCatalog } from '../data/catalog.ts';
-import { expressionValues } from '../panels/regions-model.ts';
+import { expressionValues } from '../panels/saved-model.ts';
 import { sendToR } from '../core/comms.js';
 import { prefs, prefDefaults, prefIsSet, onPrefs, type PrefName } from '../core/prefs.ts';
 import { SCALE_PRESETS } from '../render/colors.ts';
@@ -45,7 +45,7 @@ const SECTIONS: { title: string; groups: Group[] }[] = [
   ] }] },
   { title: 'Expression', groups: [{ title: null, items: [
     { id: 'expr_values', label: 'picker opens on', kind: 'values' },
-    { id: 'de_values', label: 'region compare values', kind: 'values' },
+    { id: 'de_values', label: 'comparison values', kind: 'values' },
     { id: 'color_by', label: 'color by at launch', kind: 'text', placeholder: 'e.g. cell_type, leiden_clus',
       title: 'the first of these metadata columns present colors the cells when a viewer starts' },
   ] }] },

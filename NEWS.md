@@ -1,5 +1,43 @@
 # GiottoLens (development version)
 
+* The tools bar's info button shows the snapshot on view: its description, labels, owner,
+  who saved it and from which snapshot, and what the object holds (cells and features per
+  spatial unit and feature type, expression, polygons, points, metadata columns, dim
+  reductions, networks, images). It reads the files saved beside the snapshot, so nothing
+  is loaded. `viewer$object_info()` returns the same. An owner shows when it is set in
+  `extra` with `GiottoDisk::snapshotMetadata()`.
+
+* The cell table loads metadata columns as they scroll into view, and loaded columns stay
+  within 256 MB: above it, the least recently used are dropped, never one that colours the
+  cells, a rule uses or a chart shows. Before, opening the table loaded every column.
+
+* The scatter and density panels' view tools (pan, lasso or select, zoom to fit) are a
+  column over the chart's lower right; the bar along the top holds only the fields.
+
+* An image's default contrast and slider range come from a few full-resolution tiles where
+  there is tissue, not from the smallest overview, whose averaging dimmed the bright end to
+  under half; images opened saturated. Opening an image reads 8 more tiles.
+
+* The controls are in a tray at the right edge instead of the dock, one at a time: a rail of
+  icons picks which, a click on the one shown or the arrow folds the tray to its rail, and
+  the dock's `+` menu offers views only. `panels()` lists the control shown with group
+  `"tray"`. See adr/0027.
+* The tools bar is a fixed rail at the left edge, like the tray's, instead of a dock panel
+  that could be moved and widened; `panels()` no longer lists it.
+* One layers panel holds how cells, transcripts, images and annotations are drawn, a
+  collapsible section each, with the layer's visibility and opacity in its header. It
+  replaces the cells, transcripts, images and layers panels.
+* Annotations can show their names on the view, and their outline color, width and opacity
+  can be set, from the layers panel or with `viewer$set_annotation_style()`.
+* The actions on the selection (and/or, invert, clear) moved from the tools bar to a
+  selection panel in the tray, which also lists the selection's rules as cards (no longer
+  in the bottom bar) and the saved selections. Comparing saved selections is
+  `viewer$compare_selections()` only for now.
+* Select by metadata is the cell table's filter button: "replace" filters by one condition,
+  "add" adds a condition that cells must also meet. The filter is a rule of its own, apart
+  from rows picked in the table.
+* In the spatial view the cursor is a hand only for the pan tool, and a crosshair for every
+  other tool. The draw tools' button has the annotations panel's icon.
 * Requires GiottoClass 0.8.0, which stores image affines in the standard
   column-vector convention that the viewer already uses.
 * One browser window shows the viewer at a time. The window `launch_lens()` opens gets it.
@@ -34,7 +72,7 @@
   subtracts).
 * Annotations come back on the page after a reload and when a save is opened; before, R
   kept them but the page showed none, and the next one drawn replaced them.
-* Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, regions,
+* Saves: `viewer$save(name)` keeps the work done in the viewer (rules, annotations, saved selections,
   pushed panels and metadata, column types, added images, an image registration, comparisons
   and the viewer's settings) with the snapshot shown, in the project's `lens/` folder.
   `saves()` lists them, `open_save()` opens one, `delete_save()` deletes one. The tools bar's
@@ -65,12 +103,13 @@
   queued, all at once, adding them to the metadata. `viewer$catalog()` and `viewer$pull()`
   do the same from R. Pulls run as jobs, which the panel can cancel, and add columns to the
   viewer, not the object; `pull(wait = FALSE)` returns at once with the job's id.
-* Regions: `viewer$save_region()`, `regions()`, `select_region()` and `remove_region()` keep
-  named sets of cells for the object shown. `viewer$compare_regions(a, b)` tests two regions,
-  or one and every other cell, with `Giotto::findScranMarkers()` as a job, and docks the
-  result as a volcano plot (`de_results()` returns the tables). Clicking a gene in it colors
-  the cells by that gene. The Regions panel, a tab next to the Data panel, does the same.
-  Saved regions count as Lens work for `set_object()`. See adr/0020.
+* Saved selections: `viewer$save_selection()` keeps the selection's rules and their and/or
+  mode under a name, and `restore_selection()` brings the same rules back, editable as
+  before; `selections()` lists them and `remove_selection()` removes one. The selection
+  panel does the same. `viewer$compare_selections(a, b)` tests the cells of two, or one and
+  every other cell, with `Giotto::findScranMarkers()` as a job, and docks the result as a
+  volcano plot (`de_results()` returns the tables). Clicking a gene in it colors the cells
+  by that gene. They count as Lens work for `set_object()`. See adr/0029, adr/0020.
 * Color cells by one gene, enrichment or dim reduction axis without adding it to the
   metadata: the button next to "color by" opens a searchable picker, and picked items stay
   in the menu's "recent" group. `viewer$color_by()` takes a row of `catalog()` or its `key`.
@@ -94,7 +133,7 @@
 * Preferences: `lens_preferences()` and the viewer's Preferences dialog (the gear in the tools bar)
   set defaults for every viewer: sequential and divergent palettes, the scale style and the
   expression scale's style, category and transcript palettes, the background, cell outlines and fill, the
-  expression values the picker opens on and region comparisons read, the column cells are
+  expression values the picker opens on and selection comparisons read, the column cells are
   colored by at launch, and an analysis's threads, history length and network folder. Only
   preferences that are set are saved, so the others follow the installed defaults; launch
   arguments, R options and changes made in a viewer take precedence.

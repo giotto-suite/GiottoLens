@@ -9,7 +9,7 @@ import { viewportSize } from '../ui/dom.js';
 import { showCellTooltip, hideCellTooltip } from '../ui/tooltip.js';
 import { cellMarkLayer, drawnMark } from './marks.ts';
 import { liveView } from '../selection/live.ts';
-import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer } from 'deck.gl';
+import { SolidPolygonLayer, ScatterplotLayer, PathLayer, PolygonLayer, TextLayer } from 'deck.gl';
 import { imageLayer } from './image-layer.ts';
 import { Matrix4 } from '@math.gl/core';
 import { currentTransform, matrix4 } from '../data/registration.ts';
@@ -30,6 +30,16 @@ function once(key, make) {
 }
 
 // The image being registered draws with the registration's transform
+// Where an annotation's name goes: the mean of its ring's vertices, the
+// closing one left out
+function annotCenter(ring) {
+  const n = ring.length > 1 && ring[0][0] === ring.at(-1)[0] && ring[0][1] === ring.at(-1)[1]
+    ? ring.length - 1 : ring.length;
+  let x = 0, y = 0;
+  for (let i = 0; i < n; i++) { x += ring[i][0]; y += ring[i][1]; }
+  return [x / n, y / n];
+}
+
 function modelMatrixOf(name, img, reg) {
   if (!reg || reg.image !== name) return img.modelMatrix;
   return once(reg, () => new Matrix4(matrix4(currentTransform(reg))));
@@ -190,21 +200,37 @@ export function renderLayers(view) {
   // and drawn with the ring being dragged
   if (s.layers.annotations.show && s.layers.annotations.alpha > 0 && s.annotations.length > 0) {
     const selId = s.selectedAnnotId;
+    const { color, width, alpha } = s.annotOutline;
     const drag  = state.annotDrag;
+    const shown = drag ? s.annotations.map(a => a.id === drag.id ? { ...a, coords: closeRing(drag.ring) } : a) : s.annotations;
     layers.push(new PolygonLayer({
       id: 'annotations',
-      data: drag ? s.annotations.map(a => a.id === drag.id ? { ...a, coords: closeRing(drag.ring) } : a) : s.annotations,
+      data: shown,
       getPolygon: d => d.coords,
       filled: true,
-      getFillColor: d => d.id === selId ? [255, 200, 50, 50] : [100, 200, 255, 25],
+      getFillColor: d => d.id === selId ? [255, 200, 50, 50] : [...color, 25],
       stroked: true,
-      getLineColor: d => d.id === selId ? [255, 200, 50, 255] : [100, 200, 255, 220],
-      getLineWidth: 2,
-      lineWidthUnits: 'pixels', lineWidthMinPixels: 1,
+      getLineColor: d => d.id === selId ? [255, 200, 50, 255] : [...color, Math.round(alpha * 255)],
+      getLineWidth: d => d.id === selId ? Math.max(width, 2) : width,
+      lineWidthUnits: 'pixels', lineWidthMinPixels: 0.01,
       opacity: s.layers.annotations.alpha,
       pickable: true,
       onClick: ({ object }) => actions.selectAnnotation(object?.id === selId ? null : object?.id ?? null),
-      updateTriggers: { getFillColor: selId, getLineColor: selId },
+      updateTriggers: { getFillColor: [selId, color], getLineColor: [selId, color, alpha],
+        getLineWidth: [selId, width] },
+    }));
+    // Names at each shape's vertex mean, in the outline's color
+    if (s.annotNames) layers.push(new TextLayer({
+      id: 'annotation-names',
+      data: shown,
+      getPosition: d => annotCenter(d.coords),
+      getText: d => d.name,
+      getColor: d => d.id === selId ? [255, 200, 50, 255] : [...color, 255],
+      getSize: 12, sizeUnits: 'pixels',
+      fontFamily: 'monospace', characterSet: 'auto',
+      background: true, getBackgroundColor: [0, 0, 0, 160], backgroundPadding: [3, 1],
+      opacity: s.layers.annotations.alpha,
+      updateTriggers: { getColor: [selId, color] },
     }));
     const edited = editedAnnotation();
     if (edited) {

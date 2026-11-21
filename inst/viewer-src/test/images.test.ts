@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { initJ2K, decodeJ2K } from '../data/j2k.ts';
-import { defaultContrast, imageKind, layoutProblem, fillPerSample } from '../data/images.ts';
+import { defaultContrast, sampleTiles, imageKind, layoutProblem, fillPerSample } from '../data/images.ts';
 
 const require = createRequire(import.meta.url);
 initJ2K({ wasmBinary: readFileSync(require.resolve('@cornerstonejs/codec-openjpeg/decodewasm')) });
@@ -39,6 +39,27 @@ describe('default contrast', () => {
 
   it('handles an empty image', () => {
     expect(defaultContrast(new Uint8Array(16), 'Uint8').contrast).toEqual([0, 1]);
+  });
+});
+
+describe('full-resolution tiles sampled for contrast', () => {
+  // A 4 x 4 overview of a 4096 x 4096 image in 1024 tiles: one overview
+  // pixel per tile. Left half empty slide, right half tissue, brighter below
+  const small = new Uint16Array([0, 0, 50, 60, 0, 0, 70, 80, 0, 0, 90, 100, 0, 0, 110, 120]);
+
+  it('picks tissue tiles at or above the median, spread in reading order', () => {
+    expect(sampleTiles(small, 4, 4, 4096, 4096, 1024, 2)).toEqual([[3, 2], [3, 3]]);
+    expect(sampleTiles(small, 4, 4, 4096, 4096, 1024, 8)).toEqual([[2, 2], [3, 2], [2, 3], [3, 3]]);
+  });
+
+  it('maps tile centres onto a coarser overview, including a partial last tile', () => {
+    // 2 x 2 overview of a 3000 x 3000 image: tile 2 (pixels 2048-2999) centres
+    // past the middle, on the second overview column and row
+    expect(sampleTiles(new Uint16Array([0, 0, 0, 9]), 2, 2, 3000, 3000, 1024, 8)).toEqual([[1, 1], [2, 1], [1, 2], [2, 2]]);
+  });
+
+  it('gives no tiles for an empty overview', () => {
+    expect(sampleTiles(new Uint16Array(16), 4, 4, 4096, 4096, 1024, 8)).toEqual([]);
   });
 });
 

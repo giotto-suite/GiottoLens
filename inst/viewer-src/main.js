@@ -7,7 +7,7 @@ import { initRemote } from './core/remote.js';
 import { invalidateTx } from './data/tiles.js';
 import { loadCells } from './data/cells.ts';
 import { setTransfer } from './data/parquet.ts';
-import { setMetaInfo, prefetchColumns } from './data/meta.ts';
+import { setMetaInfo, prefetchColumns, pinColumns } from './data/meta.ts';
 import { fieldColumn, fieldExists, needFields, isItemKey, scaleKey, setItemPins } from './data/items.ts';
 import { openImage } from './data/images.ts';
 import { ImagePool } from './data/img-pool.ts';
@@ -18,14 +18,15 @@ import { cellColorBuffer, columnScale } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId, nextAnnotName } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
-import { initRuleStrip } from './ui/rules.js';
 import { initSelectionBar, initRStatus } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
-import { initDock, placeControls, refreshBuiltins, refreshCharts, refreshControls, pushPanel, removePanel, panelHandle,
+import { initDock, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
   showBuiltin } from './panels/dock.ts';
-import { initRegions, regionList } from './panels/regions.ts';
+import { initTray, placeControls, refreshControls, showControl, hideControl } from './panels/tray.ts';
+import { initToolsRail } from './panels/tools.ts';
+import { initSaved, savedList } from './panels/saved.ts';
 import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { spatialView } from './spatial/current.ts';
 import { saveView } from './spatial/view.ts';
@@ -106,7 +107,7 @@ async function addImage(entry) {
   setImageDefaults(img, true);
   initRegistration();
   placeControls();
-  refreshControls(['images', 'register']);
+  refreshControls(['layers', 'register']);
   return { name: img.entry.name, rgb: img.rgb };
 }
 
@@ -160,9 +161,10 @@ async function main() {
   onLive(requestRender);
   initSelection();
   store.subscribe(s => s.colorBy, recolorCells);
-  // The item colouring the cells stays loaded, and goes to the front of the
-  // colour-by menu's recent group
+  // The item or column colouring the cells stays loaded; an item goes to the
+  // front of the colour-by menu's recent group
   setItemPins(() => [store.getState().colorBy].filter(isItemKey));
+  pinColumns(() => [store.getState().colorBy].filter(c => c && !isItemKey(c)));
   store.subscribe(s => s.colorBy, c => { if (isItemKey(c)) actions.noteItem(c); });
   store.subscribe(s => s.categoryStyles, recolorCells);
   store.subscribe(s => s.colorScales, recolorCells);
@@ -174,13 +176,16 @@ async function main() {
 
   initAnnotations();
   initReleaseGuard();
-  initRuleStrip();
   initSelectionBar();
   initJobs();
-  initRegions(() => showBuiltin('regions'));
+  initSaved(() => showControl('selection'));
+  // The tray beside the dock, so the dock lays out at its own width
+  initTray(document.getElementById('tray'));
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
+  // After the dock: its panels toggle follows the layout (its width is CSS's)
+  initToolsRail(document.getElementById('tools-rail'));
 
   // ── R → viewer messages ───────────────────────────────────────────────────
   let metaCount = 0;
@@ -207,7 +212,7 @@ async function main() {
   onMessage('add_image', ({ entry }) => addImage(entry));
 
   onMessage('push_panel', pushPanel);
-  onMessage('remove_panel', ({ id }) => { removePanel(id); });
+  onMessage('remove_panel', ({ id }) => { removePanel(id) || hideControl(id); });
 
   // R refuses taken names; one taken here since R last heard gets a default
   onMessage('push_polygons', ({ polygons }) => {
@@ -221,8 +226,8 @@ async function main() {
 
   // Before R can ask about images
   await imagesLoaded;
-  placeControls();   // the images and register panels, now that images are open
-  refreshControls(['images']);
+  placeControls();   // the images' section and the register panel, now that images are open
+  refreshControls(['layers']);
   initRegistration();
 
   initRemote();
@@ -270,7 +275,7 @@ function showEmpty(project) {
 }
 
 // Handles for tests and debugging from the browser console
-window.__giottolens = { state, store, actions, dataUrl, panel: panelHandle, regions: regionList,
+window.__giottolens = { state, store, actions, dataUrl, panel: panelHandle, saved: savedList,
   analysis: analysisModel, get spatial() { return spatialView(); } };
 
 main().catch(err => {

@@ -70,7 +70,7 @@ describe('metadata columns load on demand', () => {
     expect(meta.prefetchState()).toBe('done');
     expect(state.meta.size).toBe(2);
 
-    state.cells = { n: meta.PREFETCH_BYTES };                    // 8 bytes a cell for score alone
+    state.cells = { n: meta.META_CACHE_BYTES };                    // 8 bytes a cell for score alone
     meta.setMetaInfo([score, { ...lab, url: 'session/metadata/score-c.parquet' }]);
     fetched.length = 0;
     await meta.prefetchColumns();
@@ -85,6 +85,44 @@ describe('metadata columns load on demand', () => {
     await meta.needColumns(['score']);
     off();
     expect(seen).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('loaded columns over the budget', () => {
+  const other = { ...score, name: 'other', url: 'session/metadata/score-c.parquet' };
+  beforeEach(async () => {
+    state.cells = { n: 4 };
+    state.meta = null; state.metaInfo = null;
+    meta.setMetaInfo([]);
+    meta.setMetaInfo([score, lab, other]);
+    await meta.needColumns(['score']);
+    await meta.needColumns(['lab']);
+    await meta.needColumns(['other']);
+  });
+
+  it('drops the least recently used until the rest fit', () => {
+    meta.metaColumn('score');                                    // used last: kept
+    meta.evictColumns(40);                                       // 32 + 16 + 32 bytes loaded
+    expect([...state.meta.keys()]).toEqual(['score']);
+    expect(meta.metaColumn('lab')).toBeUndefined();              // loads again when asked
+  });
+
+  it('never drops a pinned column or the one just loaded', () => {
+    const unpin = meta.pinColumns(() => ['lab']);
+    meta.evictColumns(0, 'other');
+    expect([...state.meta.keys()].sort()).toEqual(['lab', 'other']);
+    unpin();
+    meta.evictColumns(0);
+    expect(state.meta.size).toBe(0);
+  });
+
+  it('reads pins at each eviction', () => {
+    let shown = 'score';
+    const unpin = meta.pinColumns(() => [shown]);
+    shown = 'other';
+    meta.evictColumns(0);
+    unpin();
+    expect([...state.meta.keys()]).toEqual(['other']);
   });
 });
 
