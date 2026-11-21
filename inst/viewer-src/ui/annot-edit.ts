@@ -1,5 +1,7 @@
-// Editing the selected annotation's ring in pan mode: drag a vertex to move
-// it, drag a midpoint to add one there, double-click a vertex to remove it.
+// Editing the selected annotation's ring in pan mode or a drawing tool (so
+// shapes can be drawn and fixed without changing tools): drag a vertex to
+// move it, drag a midpoint to add one there, double-click a vertex to remove
+// it. A press on a handle edits; anywhere else the tool draws as usual.
 // Arming and dropping are the landmark drag's (ui/registration.ts); the ring
 // being dragged is runtime state (state.annotDrag) and reaches the store, and
 // so R, once, on mouseup.
@@ -54,10 +56,15 @@ export function handles(ring: XY[], zoom: number) {
 }
 
 // ── The edited annotation ─────────────────────────────────────────────────────
-// The selected one, in pan mode, while annotations are drawn
+// The tools a selected annotation can be edited in
+export const EDIT_MODES = ['pan', 'poly', 'rect', 'freehand'];
+
+// The selected one, in pan mode or a drawing tool, while annotations are
+// drawn; not while a polygon is being drawn, whose clicks are its own
 export function editedAnnotation(): Annotation | null {
   const s = store.getState();
-  if (s.mode !== 'pan' || !s.selectedAnnotId) return null;
+  if (!EDIT_MODES.includes(s.mode) || !s.selectedAnnotId) return null;
+  if (s.mode === 'poly' && state.drawRing?.length) return null;
   if (!s.layers.annotations.show || s.layers.annotations.alpha <= 0) return null;
   return s.annotations.find(a => a.id === s.selectedAnnotId) ?? null;
 }

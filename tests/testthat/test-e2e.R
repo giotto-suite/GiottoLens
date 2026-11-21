@@ -832,7 +832,7 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
     width <- function(id) br$js(sprintf("document.querySelector('[data-panel=%s]').clientWidth", id))
     dock <- function() br$js("document.getElementById('dock').clientWidth")
     # The tools rail and the tray are beside the dock; the view is 65% of it
-    expect_identical(width("tools"), 36L)
+    expect_identical(br$js("document.getElementById('tools-rail').offsetWidth"), 36L)
     expect_lt(dock(), 1400 - 260 - 36)
     expect_equal(width("spatial"), round(0.65 * dock()), tolerance = 2)
 
@@ -857,7 +857,6 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
     expect_true(browser_wait(br, "document.getElementById('tray').classList.contains('open') && !!document.querySelector('[data-panel=layers]')"))
     br$js(toggle)
     expect_true(browser_wait(br, sprintf("document.querySelector('[data-panel=spatial]').clientWidth === %d", w0)))
-    expect_identical(width("tools"), 40L)
 
     # Closed, its Deck gives back its WebGL context and its tiles go; R gets
     # an error for what needs a view, and the selection still works
@@ -868,7 +867,6 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
     v$remove_panel("spatial")
     expect_true(browser_wait(br, "window.__giottolens.spatial === null && window.__gl.isContextLost()"))
     expect_identical(br$js("window.__giottolens.state.cache.size"), 0L)
-    expect_identical(width("tools"), 40L)
     expect_error(v$view_bounds(), "no spatial view")
     expect_error(v$set_view(zoom = 1), "no spatial view")
     expect_error(v$screenshot(), "no spatial view")

@@ -8,7 +8,7 @@ import { requestRender } from '../render/schedule.js';
 import { fetchTranscriptTile, GENE_UNKNOWN } from '../data/tiles.js';
 import { lassoSpatial, brushStart, brushMove, brushEnd, strokeOp } from '../selection/selection.ts';
 import { generateAnnotId, nextAnnotName } from './annotations.js';
-import { annotDragStart, annotDragMove, annotDragEnd, cancelAnnotDrag, annotVertexRemove } from './annot-edit.ts';
+import { annotDragStart, annotDragMove, annotDragEnd, cancelAnnotDrag, annotVertexRemove, EDIT_MODES } from './annot-edit.ts';
 import { applyController, overHandle, releaseHandle } from './controller.ts';
 import { clientToWorld, worldToClient, pointInPolygon, escapeHtml, spaceHeld, setSpaceHeld } from './dom.js';
 import { hideCellTooltip } from './tooltip.js';
@@ -16,6 +16,7 @@ import { landmarkClick, landmarkDragStart, landmarkDragMove, landmarkDragEnd, co
   removeLastLandmark, cancelPendingLandmark, refreshPaneCursor } from './registration.ts';
 
 let _lastClickAddedVertex = false; // so a double-click only removes its own vertex
+let _pressOnHandle = false;        // the press began on an annotation handle: its click draws nothing
 let _downPx = null;                // where the button went down: a click after a pan is no click
 // Space held: a drag pans whatever the tool (dragPan in ui/dom.js), and the
 // tool is back on release. The store's mode is left alone, so it is not saved
@@ -90,7 +91,7 @@ function applyMode(mode) {
   view.deck.setProps({
     // A handle of the annotation being edited moves; otherwise the hand is
     // for panning and every other tool points with a crosshair
-    getCursor: ({ isDragging }) => mode === 'pan' && !spaceHeld() && overHandle() ? 'move'
+    getCursor: ({ isDragging }) => EDIT_MODES.includes(mode) && !spaceHeld() && overHandle() ? 'move'
       : isDragging ? 'grabbing' : m === 'pan' ? 'grab' : 'crosshair',
   });
   refreshPaneCursor();
@@ -256,6 +257,8 @@ export function attachInput(view) {
       return;
     }
     if (mode !== 'poly') return;
+    // A press on a handle edited the selected annotation
+    if (_pressOnHandle) { _pressOnHandle = false; return; }
     // The second click of a double-click finishes the ring; it adds no vertex
     if (e.detail > 1) return;
     _lastClickAddedVertex = false;
@@ -268,7 +271,12 @@ export function attachInput(view) {
   });
 
   canvas.addEventListener('dblclick', e => {
-    if (toolMode() === 'pan' && annotVertexRemove(e, canvas)) { requestRender(); return; }
+    // On a vertex of the selected annotation, with no polygon being drawn
+    if (EDIT_MODES.includes(toolMode()) && annotVertexRemove(e, canvas)) {
+      _lastClickAddedVertex = false;
+      requestRender();
+      return;
+    }
     if (toolMode() !== 'poly') return;
     if (_lastClickAddedVertex) state.drawRing.pop();
     _lastClickAddedVertex = false;
@@ -288,8 +296,11 @@ export function attachInput(view) {
     if (e.button !== 0 || !view.viewState) return;
     _downPx = [e.clientX, e.clientY];
     const mode = toolMode();
-    if (mode === 'pan') {
-      if (annotDragStart(e, canvas)) requestRender();
+    // A handle of the selected annotation takes the press from any tool that
+    // edits; anywhere else the tool goes on
+    _pressOnHandle = EDIT_MODES.includes(mode) && annotDragStart(e, canvas);
+    if (_pressOnHandle) {
+      requestRender();
     } else if (mode === 'landmark') {
       if (landmarkDragStart('fixed', e, canvas)) requestRender();
     } else if (mode === 'brush') {
@@ -319,7 +330,7 @@ export function attachInput(view) {
     el.coords.textContent = `${coords[0].toFixed(1)}, ${coords[1].toFixed(1)}`;
     const mode = toolMode();
 
-    if (mode === 'pan' && annotDragMove(coords, e)) requestRender();
+    if (EDIT_MODES.includes(mode) && annotDragMove(coords, e)) requestRender();
     if (mode === 'landmark' && landmarkDragMove('fixed', coords, e)) requestRender();
 
     if (mode === 'brush') {

@@ -66,8 +66,10 @@
   empty or taken name reverts. `viewer$annotations` is a list of GeoJSON strings named by
   them (it was a list of id, name, type and geojson), and `push_polygons()` refuses taken
   names. The panel no longer tags shapes as polygon, rectangle or freehand.
-* The selected annotation's vertices can be edited in pan mode: drag one to move it, drag a
-  side's midpoint to add one, double-click one to remove it (Escape cancels a drag).
+* The selected annotation's vertices can be edited in pan mode or a drawing tool, so shapes
+  can be drawn and fixed without changing tools: drag one to move it, drag a side's midpoint
+  to add one, double-click one to remove it (Escape cancels a drag). A press anywhere else
+  draws as usual; while a polygon is being drawn, its clicks are its own.
 * An annotation's select button selects the cells inside it (Shift adds, Alt or Ctrl/Cmd
   subtracts).
 * Annotations come back on the page after a reload and when a save is opened; before, R
