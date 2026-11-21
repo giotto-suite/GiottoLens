@@ -395,7 +395,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
   the 7-color `blue-white-red` as `RdBu`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 8)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 9)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.

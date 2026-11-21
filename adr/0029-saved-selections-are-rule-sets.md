@@ -37,7 +37,7 @@ uses for the cells it runs on.
 - The page gets each set's rules (`selections` message), so `ids` rules travel as bitmasks;
   acceptable at these counts, revisit if saved selections grow to dozens of `ids` rules on
   millions of cells.
-- Protocol 8: `regions`/`region` became `selections`/`selection`. Bundles from before keep
+- Protocol 9: `regions`/`region` became `selections`/`selection`. Bundles from before keep
   their regions in `regions.parquet`, which is no longer read.
 
 ## Alternatives considered
