@@ -1112,8 +1112,8 @@ test_that("both tile transfer modes load the same transcripts", {
         # requests the page's resource timing does not list)
         urls <- unlist(br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => /\\/(data|files)\\/polygons\\//.test(u))"))
         expect_gt(length(urls), 0L)
-        if (mode == "whole") expect_true(all(grepl("/lens/[^/]+/files/polygons/", urls)))
-        else expect_true(all(grepl("/lens/[^/]+/data/polygons/", urls)))
+        if (mode == "whole") expect_true(all(grepl("/lens/[^/]+/d/[^/]+/files/polygons/", urls)))
+        else expect_true(all(grepl("/lens/[^/]+/d/[^/]+/data/polygons/", urls)))
         expect_identical(br$errors(), character())
         br$close(); v$close()
     }
@@ -1783,7 +1783,7 @@ test_that("an object in memory is written into a project and drawn from untiled 
     on.exit(unlink(td, recursive = TRUE), add = TRUE)
     v <- launch_lens(g, open = FALSE, project = td)
     on.exit(v$close(), add = TRUE)
-    m <- jsonlite::fromJSON(rawToChar(http_get(paste0(v$url, "session/manifest.json"))$content),
+    m <- jsonlite::fromJSON(rawToChar(http_get(lens_data_url(v, "session/manifest.json"))$content),
         simplifyVector = FALSE)
     expect_length(m$layers$cells$tiles, 1L)
     expect_length(m$layers$transcripts$tiles, 1L)
@@ -1898,7 +1898,7 @@ test_that("the add image button adds a file R picks, ready to register", {
 
     # A reload opens the added images again
     added <- jsonlite::fromJSON(rawToChar(
-        http_get(paste0(v$url, "session/images_added.json"))$content), simplifyVector = FALSE)
+        http_get(lens_data_url(v, "session/images_added.json"))$content), simplifyVector = FALSE)
     expect_identical(vapply(added, `[[`, "", "name"), c(nm, "stain", "ch0000_dapi"))
     br$js("location.reload()")
     Sys.sleep(0.3)
@@ -1907,7 +1907,7 @@ test_that("the add image button adds a file R picks, ready to register", {
         paste(unlist(tryCatch(br$js("[...(window.__giottolens?.state.images?.keys() ?? [])]"),
             error = function(e) conditionMessage(e))), collapse = ", "),
         "\nimages_added.json in the page: ", tryCatch(br$js(
-            "fetch('session/images_added.json', { cache: 'no-store' }).then(r => r.status + ' ' + r.statusText).catch(e => String(e))"),
+            "fetch(window.__giottolens.dataUrl('session/images_added.json'), { cache: 'no-store' }).then(r => r.status + ' ' + r.statusText).catch(e => String(e))"),
             error = function(e) conditionMessage(e)),
         "\nbrowser errors: ", paste(br$errors(), collapse = " | "),
         "\nlog: ", paste(utils::capture.output(print(v$log(10))), collapse = "\n"))

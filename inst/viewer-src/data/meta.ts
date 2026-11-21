@@ -10,6 +10,7 @@
 // recently used first until they fit, except those pinned: what something
 // shows (colour-by, rules, chart axes, the table's columns in view), each
 // consumer naming its own with pinColumns().
+import { dataUrl } from '../core/base.ts';
 import { state } from '../core/state.js';
 import { readColumns } from './parquet.ts';
 
@@ -161,7 +162,7 @@ function load(m: MetaInfo): Promise<void> {
 // One column file, whole: the files are small and served without R. Item
 // files (data/items.ts) are read the same way.
 export async function readColumn(m: Pick<MetaInfo, 'kind' | 'url'>): Promise<Pick<MetaColumn, 'values' | 'min' | 'max'>> {
-  const r = await fetch(new URL(m.url, document.baseURI).href);
+  const r = await fetch(dataUrl(m.url));
   if (!r.ok) throw new Error(`${m.url}: HTTP ${r.status}`);
   const raw = (await readColumns(await r.arrayBuffer(), ['value'])).value ?? [];
   const cat = m.kind === 'categorical';

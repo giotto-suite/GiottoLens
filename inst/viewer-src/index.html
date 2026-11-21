@@ -795,6 +795,27 @@
       vertical-align: middle; background: var(--fg-4);
     }
     .r-status.connected    { background: #34d399; }
+    .gate { position: fixed; inset: 0; z-index: 3000; display: none; align-items: center; justify-content: center;
+      background: var(--bg-0); color: var(--fg-0); }
+    .gate.visible { display: flex; }
+    .gate-box { max-width: 420px; padding: 24px; text-align: center; }
+    .gate-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+    .gate-code { font-family: monospace; font-size: 34px; letter-spacing: 6px; margin-bottom: 12px; }
+    .gate-code:empty { display: none; }
+    .gate-text { font-size: 12px; color: var(--fg-2); line-height: 1.5; }
+    .gate-text:empty { display: none; }
+    .gate-btn { margin-top: 12px; padding: 5px 12px; font-size: 12px; cursor: pointer; border-radius: 4px;
+      border: 1px solid var(--bg-3); background: var(--bg-2); color: var(--fg-0); }
+    .gate-btn:hover { border-color: var(--accent); }
+    .claim-bar { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2900;
+      display: none; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; border-radius: 6px;
+      background: var(--bg-1); color: var(--fg-0); border: 1px solid var(--accent); }
+    .claim-bar.visible { display: flex; }
+    .claim-bar .gate-btn { margin-top: 0; }
+    .claim-code { width: 5em; padding: 4px 6px; font-family: monospace; font-size: 13px; letter-spacing: 2px;
+      border-radius: 4px; border: 1px solid var(--bg-3); background: var(--bg-0); color: var(--fg-0); }
+    .claim-note { color: #f87171; }
+    .claim-note:empty { display: none; }
     .r-status.disconnected { background: #f87171; }
     /* Stop: one click arms it, a second within CLOSE_ARM_MS stops the viewer */
     #btn-close:disabled { opacity: 0.35; cursor: default; background: none; }
