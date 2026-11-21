@@ -3,7 +3,7 @@
 .RData
 .Ruserdata
 *.Rproj
-node_modules/
+node_modules
 # local viewer builds (npm run build:dev); inst/viewer/ is CI's
 inst/viewer-dev/
 .DS_Store
