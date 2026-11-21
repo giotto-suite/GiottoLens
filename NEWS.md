@@ -1,5 +1,9 @@
 # GiottoLens (development version)
 
+* Each panel group's tab bar has buttons that split it to the right or below. The new pane
+  lists the views it can show; picking one already open, such as the spatial view, moves it
+  there.
+
 * The tools bar's info button shows the snapshot on view: its description, labels, owner,
   who saved it and from which snapshot, and what the object holds (cells and features per
   spatial unit and feature type, expression, polygons, points, metadata columns, dim

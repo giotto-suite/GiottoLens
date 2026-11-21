@@ -516,6 +516,10 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   once closed (`closedPanels`). `spatial` and `analysis` are single and closable.
   `placeFixed()` adds the view to a layout without it. Keep `.lens_builtin_panels` in R in step with `TYPES` and `CONTROLS`. A
   pushed panel without `ref` goes next to the charts, never beside a single panel.
+- A group's tab bar splits it (`splitGroup()`): the new pane is a group with no panels, kept
+  in the saved layout, whose watermark (`Empty`) lists the `+` menu's kinds and closes it.
+  Picked there, a single panel open elsewhere moves in (`showIn()`). A group emptied by a
+  close or a drag is removed, as dockview does.
 - The tray is a fixed-width column (`TRAY_WIDTH`) beside the dock, with a rail of icons at
   the page's edge. Controls are listed once in `CONTROLS`, in rail order; never let one be
   docked or dragged. The tray shows one control, the last picked (`trayActive`, else the

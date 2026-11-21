@@ -11,16 +11,19 @@
 // The spatial view and the Analysis panel are one per viewer, with their kind
 // as id, and can be closed and opened again from a "+" menu. The controls
 // (cells, layers, ...) are not docked: they are the tray's (panels/tray.ts,
-// adr/0027).
+// adr/0027). A group's tab bar splits it, leaving an empty pane beside it
+// that lists what can be shown there; a pane emptied by closing or moving its
+// last panel goes, as dockview does by default.
 // Why dockview-core 4, and why R holds the saved config: adr/0009.
 import {
   createDockview, themeDark,
   type DockviewApi, type IContentRenderer, type GroupPanelPartInitParameters,
   type IHeaderActionsRenderer, type IGroupHeaderProps, type IWatermarkRenderer,
   type AddPanelOptions, type SerializedDockview, type IDockviewPanel,
-  type DockviewGroupPanel,
+  type DockviewGroupPanel, type IDockviewGroupPanel, type WatermarkRendererInitParameters,
 } from 'dockview-core';
 import 'dockview-core/dist/styles/dockview.css';
+import { createIcons, icons } from 'lucide';
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { heldPanels } from '../core/persist.ts';
@@ -166,11 +169,22 @@ class PanelView implements IContentRenderer {
   }
 }
 
-// "+" in each group's tab bar: add a built-in panel there
+// "+" in each group's tab bar: add a built-in panel there. Beside it, the
+// buttons that split the group to the right or below.
 class AddMenu implements IHeaderActionsRenderer {
   readonly element = el('div', 'dock-actions');
   private off = new AbortController();
   init({ group }: IGroupHeaderProps): void {
+    const split = (direction: 'right' | 'below', icon: string, title: string) => {
+      const b = el('button', 'dock-split') as HTMLButtonElement;
+      b.title = title;
+      b.dataset.split = direction;
+      const i = document.createElement('i');
+      i.dataset.lucide = icon;
+      b.append(i);
+      b.addEventListener('click', () => splitGroup(group, direction));
+      return b;
+    };
     const btn = el('button', 'dock-add', '+') as HTMLButtonElement;
     btn.title = 'add a panel';
     const menu = el('div', 'dock-menu');
@@ -179,7 +193,7 @@ class AddMenu implements IHeaderActionsRenderer {
       const item = el('button', '', kind) as HTMLButtonElement;
       item.addEventListener('click', () => {
         menu.classList.remove('open');
-        addBuiltin(kind, { referenceGroup: group.id, direction: 'within' });
+        showIn(kind, group);
       });
       return item;
     }));
@@ -192,9 +206,25 @@ class AddMenu implements IHeaderActionsRenderer {
       if (opening) { fill(); menu.classList.add('open'); }
     });
     document.addEventListener('click', () => menu.classList.remove('open'), { signal: this.off.signal });
-    this.element.append(btn, menu);
+    this.element.append(split('right', 'columns-2', 'split right'), split('below', 'rows-2', 'split down'), btn, menu);
+    createIcons({ icons, root: this.element });
   }
   dispose(): void { this.off.abort(); this.element.remove(); }
+}
+
+// An empty pane beside a group, half its size
+function splitGroup(group: IDockviewGroupPanel, direction: 'right' | 'below'): void {
+  dock?.addGroup({ referenceGroup: group.id, direction });
+}
+
+// A built-in panel shown in a group. One per viewer that is open elsewhere
+// moves into an empty pane, which it was picked to fill; into a pane with
+// panels, the "+" menu's rule holds: it is brought forward where it is.
+function showIn(kind: BuiltinKind, group: IDockviewGroupPanel): void {
+  const open = isSingle(kind) ? dock?.getPanel(kind) : undefined;
+  const to = dock?.groups.find(g => g.id === group.id);
+  if (open && to && group.panels.length === 0) open.api.moveTo({ group: to, position: 'center' });
+  else addBuiltin(kind, { referenceGroup: group.id, direction: 'within' });
 }
 
 // The tools rail's "+": the same menu, the panel added at the dock's left
@@ -218,15 +248,21 @@ export function openAddMenu(anchor: HTMLElement): void {
   setTimeout(() => doc.addEventListener('click', close));   // not the click that opened it
 }
 
-// With every panel closed
+// The empty space: with every panel closed, or a pane a split left empty
+// (`group`), which offers the "+" menu's panels in place and can be closed
 class Empty implements IWatermarkRenderer {
   readonly element = el('div', 'dock-empty');
-  init(): void {
-    this.element.append(el('div', '', 'No panels. Add one:'));
+  init({ group: g }: WatermarkRendererInitParameters): void {
+    this.element.append(el('div', '', g ? 'Show here:' : 'No panels. Add one:'));
     for (const kind of builtins()) {
       const b = el('button', '', kind);
-      b.addEventListener('click', () => addBuiltin(kind));
+      b.addEventListener('click', () => g ? showIn(kind, g) : addBuiltin(kind));
       this.element.append(b);
+    }
+    if (g) {
+      const close = el('button', 'dock-empty-close', 'close pane');
+      close.addEventListener('click', () => dock?.removeGroup(g));
+      this.element.append(close);
     }
   }
 }
@@ -262,8 +298,10 @@ function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): 
   if (kind === 'analysis' && !position) { placeAnalysis(); return; }
   const p = dock.addPanel({ id: isSingle(kind) ? kind : newId(kind), component: kind, title: kind,
     ...(position && { position }) });
-  // A view opened again in a group of its own gets its usual width
-  if (kind === 'spatial' && p.group.panels.length === 1 && viewWidth() > 0)
+  // A view opened again in a group of its own gets its usual width; in a pane
+  // it fills, the pane's
+  const into = !!position && 'direction' in position && position.direction === 'within';
+  if (kind === 'spatial' && !into && p.group.panels.length === 1 && viewWidth() > 0)
     queueMicrotask(() => p.group.api.setSize({ width: viewWidth() }));
 }
 

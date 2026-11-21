@@ -622,6 +622,9 @@
     .dock-actions { position: relative; height: 100%; display: flex; align-items: center; padding: 0 6px; }
     .dock-add { background: none; border: none; color: var(--fg-3); font: 14px monospace; cursor: pointer; padding: 0 4px; }
     .dock-add:hover { color: var(--fg-1); }
+    .dock-split { background: none; border: none; color: var(--fg-4); cursor: pointer; padding: 0 3px; display: flex; align-items: center; }
+    .dock-split:hover { color: var(--fg-1); }
+    .dock-split svg { width: 12px; height: 12px; stroke-width: 1.75; pointer-events: none; }
     .dock-menu {
       display: none; position: absolute; top: 100%; right: 4px; z-index: 1000; flex-direction: column;
       background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 4px; padding: 3px 0; min-width: 100px;
@@ -633,7 +636,8 @@
       padding: 4px 10px; cursor: pointer;
     }
     .dock-menu button:hover, .dock-empty button:hover { background: var(--bg-2); color: var(--fg-0); }
-    .dock-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--fg-4); font-size: 11px; }
+    .dock-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: safe center; gap: 4px; overflow: auto; color: var(--fg-4); font-size: 11px; }
+    .dock-empty .dock-empty-close { margin-top: 8px; color: var(--fg-4); }
     .stats-controls { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 8px; border-bottom: 1px solid var(--bg-2); }
     .stats-ctrl-wrap { display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--fg-4); text-transform: uppercase; letter-spacing: 0.04em; }
     .stats-ctrl-sel {
