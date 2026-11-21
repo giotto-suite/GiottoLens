@@ -295,6 +295,9 @@ export const actions = {
   renameAnnotation(id: string, name: string) {
     set(s => ({ annotations: s.annotations.map(a => a.id === id ? { ...a, name } : a) }));
   },
+  setAnnotationCoords(id: string, coords: [number, number][]) {
+    set(s => ({ annotations: s.annotations.map(a => a.id === id ? { ...a, coords } : a) }));
+  },
   selectAnnotation(id: string | null) { set({ selectedAnnotId: id }); },
 
   setMode(m: Mode) { set({ mode: m }); },

@@ -14,6 +14,8 @@ import { imageLayer } from './image-layer.ts';
 import { Matrix4 } from '@math.gl/core';
 import { currentTransform, matrix4 } from '../data/registration.ts';
 import { landmarkLayers } from './landmarks.ts';
+import { editedAnnotation, editedRing, handles, closeRing, annotHandleHover,
+  VERTEX_LAYER, MIDPOINT_LAYER } from '../ui/annot-edit.ts';
 import { landmarkHover, renderRegPane, registering } from '../ui/registration.ts';
 import { DataFilterExtension } from '@deck.gl/extensions';
 
@@ -194,13 +196,16 @@ export function renderLayers(view) {
     txSampleEl.textContent = '';
   }
 
-  // Annotations
+  // Annotations; the one being edited (ui/annot-edit.ts) with its handles,
+  // and drawn with the ring being dragged
   if (s.layers.annotations.show && s.layers.annotations.alpha > 0 && s.annotations.length > 0) {
     const selId = s.selectedAnnotId;
     const { color, width, alpha } = s.annotOutline;
+    const drag  = state.annotDrag;
+    const shown = drag ? s.annotations.map(a => a.id === drag.id ? { ...a, coords: closeRing(drag.ring) } : a) : s.annotations;
     layers.push(new PolygonLayer({
       id: 'annotations',
-      data: s.annotations,
+      data: shown,
       getPolygon: d => d.coords,
       filled: true,
       getFillColor: d => d.id === selId ? [255, 200, 50, 50] : [...color, 25],
@@ -217,7 +222,7 @@ export function renderLayers(view) {
     // Names at each shape's vertex mean, in the outline's color
     if (s.annotNames) layers.push(new TextLayer({
       id: 'annotation-names',
-      data: s.annotations,
+      data: shown,
       getPosition: d => annotCenter(d.coords),
       getText: d => d.name,
       getColor: d => d.id === selId ? [255, 200, 50, 255] : [...color, 255],
@@ -227,6 +232,17 @@ export function renderLayers(view) {
       opacity: s.layers.annotations.alpha,
       updateTriggers: { getColor: [selId, color] },
     }));
+    const edited = editedAnnotation();
+    if (edited) {
+      const { vertices, midpoints } = handles(editedRing(edited), viewState.zoom);
+      const handle = (id, data, fill, radius) => new ScatterplotLayer({
+        id, data, getPosition: d => d.pos, getFillColor: fill, getLineColor: [255, 200, 50, 255],
+        stroked: true, getLineWidth: 1.5, lineWidthUnits: 'pixels', getRadius: radius, radiusUnits: 'pixels',
+        pickable: true, onHover: annotHandleHover,
+      });
+      layers.push(handle(MIDPOINT_LAYER, midpoints, [255, 200, 50, 60], 3.5),
+                  handle(VERTEX_LAYER, vertices, [255, 255, 255, 255], 5));
+    }
   }
 
   // Landmarks of the image being registered, on the reference
