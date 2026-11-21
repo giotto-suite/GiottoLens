@@ -150,6 +150,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   answered in `.lens_probe_wait` seconds, the newcomer is given the viewer. The window
   released gets the viewer back with its old key while no window shows it, until the new
   one's `ready` (`previous_key`). Past `.lens_knocks_max` other windows the oldest is closed.
+    A waiting window whose socket closes shows no code until R sends one again (gate state
+  `reconnecting`). `ready` from a window that never said `hello` warns once, naming its
+  protocol when it is one number and `?` otherwise.
   `launch_lens(open = FALSE)` needs `viewer$allow()` before the URL is
   opened; the test helpers `ws_client()` and `lens_browser()` call it.
 - httpuv `staticPath` ignores Range. Headers include `Content-Encoding: identity`
