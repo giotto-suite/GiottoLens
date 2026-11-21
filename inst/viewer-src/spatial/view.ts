@@ -41,7 +41,7 @@ const TEMPLATE = `
     </div>
     <div class="tool-sep"></div>
     <div class="tool-group" data-group="draw">
-      <button class="tool-btn tool-group-btn" title="draw"><i data-lucide="pencil"></i></button>
+      <button class="tool-btn tool-group-btn" title="draw"><i data-lucide="pen-tool"></i></button>
       <div class="tool-submenu">
         <button class="tool-btn" data-mode="poly" title="polygon"><i data-lucide="pentagon"></i></button>
         <button class="tool-btn" data-mode="rect" title="rectangle"><i data-lucide="square"></i></button>
@@ -160,6 +160,9 @@ export function createSpatialPanel(body: HTMLElement, _ctx: PanelCtx): PanelHand
 
   return {
     destroy() {
+      // A camera not saved yet goes with its view: a restore removes the view
+      // the page started with, and its fitted camera would land on the restored one
+      clearTimeout(viewTimer);
       off.abort();
       ro.disconnect();
       detachReg();

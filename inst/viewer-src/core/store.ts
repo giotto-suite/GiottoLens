@@ -49,6 +49,8 @@ export interface SavedView { target: [number, number]; zoom: number }
 export interface Config {
   layers: Record<LayerName, LayerVis>;
   outline: OutlineStyle;
+  annotOutline: OutlineStyle;   // annotation outlines (their fill takes the color, faintly)
+  annotNames: boolean;          // annotation names drawn on the view
   selectionColor: [number, number, number];   // selected cells, in the spatial view and scatters
   images: Record<string, ImageVis>;   // by image name, in manifest order
   txPalette: number;
@@ -65,9 +67,11 @@ export interface Config {
   annotations: Annotation[];
   mode: Mode;
   brushRadius: number;          // screen pixels
-  showRules: boolean;           // the rules strip under the HUD
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
-  closedPanels: string[];       // control panels closed by hand: a restore leaves them out
+  closedPanels: string[];       // single dock panels closed by hand: a restore leaves them out
+  trayActive: string | null;    // the control the tray shows, picked last (panels/tray.ts); null: the first
+  trayCollapsed: boolean;       // the tray folded to its rail (its arrow)
+  layerSections: Record<string, boolean>;   // the layers panel's sections opened or closed by hand (panels/layers.ts)
   registration: Registration | null;  // an image being registered (data/registration.ts)
   view: SavedView | null;       // the camera; null: fitted to the data
   theme: Theme;                 // the page's colours (ui/theme.ts)
@@ -98,6 +102,8 @@ export const initialConfig = (): Config => ({
     img:         { show: true,  alpha: 1 },
   },
   outline: prefOutline(prefs()),
+  annotOutline: { color: [100, 200, 255], width: 2, alpha: 0.85 },
+  annotNames: false,
   selectionColor: prefSelection(prefs()),
   images: {},
   txPalette: prefTxPalette(prefs()),
@@ -113,9 +119,11 @@ export const initialConfig = (): Config => ({
   annotations: [],
   mode: 'pan',
   brushRadius: 30,
-  showRules: true,
   layout: null,
   closedPanels: [],
+  trayActive: null,
+  trayCollapsed: false,
+  layerSections: {},
   registration: null,
   view: null,
   theme: 'dark',
@@ -125,7 +133,7 @@ export const initialConfig = (): Config => ({
 // the combine mode are left out: R restores those itself, since it evaluates
 // them. Bump CONFIG_VERSION and add a step to `migrate` when a saved field
 // changes meaning.
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
 const UNSAVED: (keyof Config)[] = ['rules', 'combine'];
 type Saved = Partial<Config>;
 
@@ -162,7 +170,10 @@ export function mergeConfig(saved: unknown, current: LensState): LensState {
 // A config saved by an older bundle. 2: genes by name (were indices into the
 // manifest's gene list, which differ between objects). 3: scales have a
 // style; one saved before keeps its look: sequential, blue-red when it named
-// no preset, and the 7-color blue-white-red as RdBu.
+// no preset, and the 7-color blue-white-red as RdBu. 4: the controls left
+// the dock for the tray (adr/0027), which shows one at a time; their closed
+// state goes.
+const DOCKED_CONTROLS = ['cells', 'transcripts', 'data', 'regions', 'images', 'register', 'annotations', 'layers'];
 export function migrateConfig(saved: unknown, version: number): Saved {
   const s = { ...((saved ?? {}) as Saved) };
   if (version < 2) s.genes = [];
@@ -174,6 +185,8 @@ export function migrateConfig(saved: unknown, version: number): Saved {
     }
     s.colorScales = out;
   }
+  if (version < 4 && s.closedPanels)
+    s.closedPanels = s.closedPanels.filter(id => !DOCKED_CONTROLS.includes(id));
   return s;
 }
 
@@ -203,6 +216,11 @@ export const actions = {
     set(s => ({ outline: { ...s.outline, ...patch } }));
   },
   resetOutline() { set({ outline: initialConfig().outline }); },
+  setAnnotOutline(patch: Partial<OutlineStyle>) {
+    set(s => ({ annotOutline: { ...s.annotOutline, ...patch } }));
+  },
+  resetAnnotOutline() { set({ annotOutline: initialConfig().annotOutline }); },
+  setAnnotNames(on: boolean) { set({ annotNames: on }); },
   // null: back to the preference
   setSelectionColor(color: [number, number, number] | null) {
     set({ selectionColor: color ?? prefSelection(prefs()) });
@@ -280,12 +298,16 @@ export const actions = {
   selectAnnotation(id: string | null) { set({ selectedAnnotId: id }); },
 
   setMode(m: Mode) { set({ mode: m }); },
-  setShowRules(on: boolean) { set({ showRules: on }); },
   setBrushRadius(px: number) { set({ brushRadius: Math.min(300, Math.max(8, px)) }); },
   setLayout(layout: object | null) { set({ layout }); },
   setPanelClosed(id: string, closed: boolean) {
     const ids = get().closedPanels.filter(x => x !== id);
     set({ closedPanels: closed ? [...ids, id] : ids });
+  },
+  setTrayActive(kind: string) { set({ trayActive: kind }); },
+  setTrayCollapsed(on: boolean) { set({ trayCollapsed: on }); },
+  setLayerSection(id: string, open: boolean) {
+    if (get().layerSections[id] !== open) set(s => ({ layerSections: { ...s.layerSections, [id]: open } }));
   },
 
   setRegistration(reg: Registration | null) { set({ registration: reg }); },

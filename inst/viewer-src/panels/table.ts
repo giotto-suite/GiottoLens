@@ -18,6 +18,7 @@ import { maskExcept, ctx as selCtx } from '../selection/selection.ts';
 import { evaluate, encodeMask, primeMask, countMask, type Rule } from '../selection/rules.ts';
 import { metaColumn, metaValue, onColumnsLoaded, pinColumns } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
+import { filterButton } from './filter.ts';
 
 export const ROW_H = 20;            // px
 const MAX_H = 8_000_000;            // px: browsers cap an element's height near 2^25
@@ -104,7 +105,9 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
   const clear = el('button', { className: 'table-clear', textContent: 'clear picks' });
   const hint  = el('span', { className: 'table-hint', textContent: 'click a row; ⌘/ctrl toggles, shift adds a range' });
   const bar = el('div', { className: 'table-bar' });
-  bar.append(count, clear, hint);
+  // The metadata filter: a rule of its own, which narrows the rows (panels/filter.ts)
+  const filter = filterButton();
+  bar.append(filter.button, count, clear, hint);
   const scroll = el('div', { className: 'table-scroll' });
   const inner  = el('div', { className: 'table-inner' });
   const head   = el('div', { className: 'table-row table-header' });
@@ -224,7 +227,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
   render();
 
   return {
-    destroy: () => { unsub.forEach(f => f()); resize.disconnect(); clearTimeout(idTimer); },
+    destroy: () => { unsub.forEach(f => f()); resize.disconnect(); clearTimeout(idTimer); filter.destroy(); },
     show: refresh,
   };
 }

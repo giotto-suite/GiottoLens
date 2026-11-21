@@ -123,7 +123,7 @@
 #'
 #' Reads or sets defaults that every viewer starts from: continuous color
 #' scales, category and transcript colors, the background, cell outlines and
-#' fill, the expression values the picker opens on and region comparisons
+#' fill, the expression values the picker opens on and selection comparisons
 #' read, the column cells are colored by at launch, and settings of an
 #' analysis. The Preferences dialog, opened by the gear in the viewer's tools
 #' bar, sets the same. Only preferences that are set are saved;
@@ -153,8 +153,8 @@
 #' * `fill_opacity`: polygon fill opacity of a colored cell.
 #' * `expr_values`: the expression values the picker opens on, when the
 #'   object has them.
-#' * `de_values`: the expression values `compare_regions()` and the Regions
-#'   panel read, when the object has them.
+#' * `de_values`: the expression values `compare_selections()` reads, when
+#'   the object has them.
 #' * `color_by`: comma-separated metadata columns; cells are colored by the
 #'   first one present when a viewer starts without saved settings.
 #' * `threads`, `history`, `network_dir`: defaults of

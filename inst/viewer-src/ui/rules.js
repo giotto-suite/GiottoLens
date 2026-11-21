@@ -1,10 +1,5 @@
-// The rules behind the selection, as chips under the HUD: what each source
-// selects and how many cells it matches on its own, with × to drop one.
-// Hidden with the toolbar's rules button when it gets in the way.
-import { state } from '../core/state.js';
-import { store, actions } from '../core/store.ts';
-import { evaluate, countMask } from '../selection/rules.ts';
-import { ctx } from '../selection/selection.ts';
+// A rule's short label: the selection panel's rule cards (panels/selection.ts)
+// and the table filter's summary (panels/filter.ts).
 
 const fmt = x => Number.isInteger(x) ? x.toLocaleString() : Number(x.toPrecision(3)).toLocaleString();
 
@@ -35,49 +30,4 @@ export function ruleLabel(rule) {
     default: s = rule.kind;
   }
   return rule.negate ? `not ${s}` : s;
-}
-
-function render(el) {
-  const s = store.getState();
-  const entries = Object.entries(s.rules);
-  el.replaceChildren();
-  el.style.display = s.showRules && entries.length ? '' : 'none';
-  if (!s.showRules || !entries.length) return;
-  const c = ctx();
-  for (const [source, rule] of entries) {
-    const chip = document.createElement('span');
-    chip.className = 'rule-chip';
-    chip.dataset.source = source;
-    let n = '';
-    try { if (c) n = ` · ${countMask(evaluate(rule, c)).toLocaleString()}`; } catch (_) { n = ' · ?'; }
-    const label = document.createElement('span');
-    label.textContent = ruleLabel(rule) + n;
-    label.title = `${source}: ${JSON.stringify(rule.params).slice(0, 300)}`;
-    const x = document.createElement('button');
-    x.className = 'rule-chip-x';
-    x.textContent = '×';
-    x.title = `drop the ${source} rule`;
-    x.addEventListener('click', e => { e.stopPropagation(); actions.setRule(source, null); });
-    chip.append(label, x);
-    el.appendChild(chip);
-  }
-  if (entries.length > 1) {
-    const mode = document.createElement('span');
-    mode.className = 'rule-chip rule-mode';
-    mode.textContent = s.combine === 'and' ? 'AND' : 'OR';
-    mode.title = s.combine === 'and' ? 'cells matching every rule (cross-filter)' : 'cells matching any rule';
-    el.appendChild(mode);
-  }
-}
-
-export function initRuleStrip() {
-  const el = document.getElementById('rule-strip');
-  const btn = document.getElementById('btn-rules');
-  if (!el) return;
-  const update = () => render(el);
-  store.subscribe(s => s.selection.version, update);
-  store.subscribe(s => s.showRules, on => { btn?.classList.toggle('active', on); update(); }, { fireImmediately: true });
-  store.subscribe(s => s.combine, update);
-  btn?.addEventListener('click', () => actions.setShowRules(!store.getState().showRules));
-  update();
 }

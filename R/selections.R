@@ -1,11 +1,13 @@
-# ── Regions and region differential expression (adr/0020) ──────────────────
+# ── Saved selections and their comparison (adr/0029, adr/0020) ─────────────
 #
-# Regions are named sets of cell IDs that R holds for the object shown. A
-# comparison between two of them, or one and every other cell, runs as a job
-# (adr/0025) over the object the jobs' daemon holds, and is docked as a volcano
-# plot whose genes colour the cells by item key (adr/0024).
+# A saved selection is a named set of rules and how they combine, as the
+# selection had them: restored, the rules come back under their own sources,
+# editable as before. R holds them for the object shown. A comparison between
+# two of them (their cells now), or one and every other cell, runs as a job
+# (adr/0025) over the object the jobs' daemon holds, and is docked as a
+# volcano plot whose genes colour the cells by item key (adr/0024).
 
-.check_region_name <- function(name, where) {
+.check_selection_name <- function(name, where) {
     if (!is.character(name) || length(name) != 1L || is.na(name) || !nzchar(trimws(name)))
         stop("[", where, "] `name` must be one non-empty string", call. = FALSE)
     trimws(name)
@@ -14,7 +16,7 @@
 # A job's `fun` (R/jobs.R): Giotto::findScranMarkers() between two sets of
 # cells; `b = NULL` is every other cell. Cells in both sets are left out of
 # both. Its metadata column is added to the job's copy of the object only.
-.region_de <- function(g, a, b, values, spat_unit, feat_type) {
+.selection_de <- function(g, a, b, values, spat_unit, feat_type) {
     ids <- as.character(GiottoClass::spatIDs(g, spat_unit = spat_unit))
     in_a <- ids %in% a
     in_b <- if (is.null(b)) !in_a else ids %in% b

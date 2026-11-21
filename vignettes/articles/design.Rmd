@@ -140,7 +140,7 @@ histogram, the metadata filter, pushed panels and R. Rule kinds: `polygon`, `str
 Sources combine with AND in cross-filter mode (the default), where each panel shows the
 other sources only, or with OR. Within a view, a lasso or brush stroke replaces the view's rule, Shift adds to
 it (a union) and Alt or Ctrl/Cmd subtracts from it (an intersection with the negated stroke),
-the same in both modes; the × on a rule in the rules strip drops one view's rule.
+the same in both modes; the × on a rule's card in the selection panel drops one view's rule.
 
 Rules, not cell lists, are the state (adr/0001):
 
@@ -272,13 +272,15 @@ start page only: list projects and their snapshots, and open one (adr/0019).
 
 ## Panels
 
-The panels dock as tabs and splits (dockview-core, adr/0009): the spatial view, the charts,
-and the viewer's controls, one of each, in a column of their own (adr/0016). The spatial
+The views dock as tabs and splits (dockview-core, adr/0009): the spatial view, the charts and
+pushed panels. The viewer's controls, one of each, are not docked but in a tray of fixed
+width at the right edge, shown and hidden from a rail of icons, in a fixed order (adr/0016,
+adr/0027). The spatial
 view is a panel since adr/0023. It owns its canvas, tools and overlays and has a deck.gl
 Deck of its own. It can be closed, which gives back its WebGL context and its tiles, and
-added back from a `+` menu. The page's own controls, the actions on the selection among
-them, are in a tools bar, a narrow panel at the left edge. The selection is one for the
-page, and its count and rules are in a bar along the bottom, outside the dock. The built-in panels are a scatter of any two metadata
+added back from a `+` menu. The page's own controls are in a tools bar, a narrow panel at
+the left edge; the actions on the selection and its rules are a control in the tray. The
+selection is one for the page, and its count is in a bar along the bottom, outside the dock. The built-in panels are a scatter of any two metadata
 columns, a histogram or bar chart, and a density panel that bins two columns into a 256 x 256
 image, coloured by cells per bin, with a rectangle brush (adr/0012), all drawn from the typed arrays and linked by the
 selection rules; the `+` menu adds more. The density rectangle is two range rules
@@ -298,7 +300,7 @@ the spatial view is the remaining limit (about 210 ms a frame): Gaia stacks hund
 on a pixel, and blended dots on one pixel are drawn in turn; 5M points spread evenly draw in
 24–33 ms.
 
-Each panel has a stable id that names its slot, its selection source and its data file, so
+Each panel has a stable id that names its dock slot, its selection source and its data file, so
 moving a panel changes nothing else. R keeps every pushed chart until it is closed and sends
 it again to a new page. A panel behind another tab skips selection updates and catches up
 when it comes into view. A panel draws its brush from its own rule, wherever the rule came

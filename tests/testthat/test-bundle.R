@@ -19,7 +19,7 @@ add_work <- function(r) {
     v$set_column_type("score", "categorical")
     v$select(lens_categories("half", "left"))
     v$select(lens_cells(ids[1:3]), source = "picked", replace = FALSE)
-    v$save_region("top", ids[1:20])
+    v$save_selection("top", lens_cells(ids[1:20]))
     big <- data.frame(cell_ID = ids, x = seq_along(ids), y = 1)
     big <- big[rep(seq_len(nrow(big)), 6L), ]
     suppressMessages(v$push_panel(list(mark = "point",
@@ -55,7 +55,7 @@ test_that("work goes to the working bundle in the project and is served under wo
     expect_true(r$priv$write_state(force = TRUE))
     st <- jsonlite::fromJSON(file.path(w, "state.json"), simplifyVector = FALSE)
     expect_setequal(names(st$rules), c("r", "picked"))
-    expect_identical(unlist(st$region_names), "top")
+    expect_identical(names(st$selections), "top")
     b <- jsonlite::fromJSON(file.path(w, "bundle.json"))
     expect_identical(b$kind, "session")
     expect_identical(b$snapshot, r$priv$snapshot)
@@ -71,7 +71,7 @@ test_that("a save copies the work, keeps its snapshot and counts as saved", {
     add_work(r)
     snap <- GiottoDisk::snapshotInfo(r$priv$project)
     GiottoDisk::snapshotMetadata(r$priv$project, snap$name[[1L]], keep = FALSE)
-    expect_match(r$priv$unsaved_work(), "2 rules, 1 region, 2 pushed panels")
+    expect_match(r$priv$unsaved_work(), "2 rules, 1 saved selection, 2 pushed panels")
     tag <- suppressMessages(r$v$save("first", description = "for the paper", labels = c("x", "y")))
     expect_match(tag, "^first\\.[a-z0-9]{8}$")
     dir <- file.path(r$td, "lens", tag)
@@ -91,8 +91,8 @@ test_that("a save copies the work, keeps its snapshot and counts as saved", {
     expect_identical(s$description, "for the paper")
     expect_identical(s$labels, "x, y")
     expect_error(r$v$save("first"), "exists; pass `overwrite = TRUE`")
-    r$v$save_region("bottom", r$priv$cell_ids[880:900])
-    expect_match(r$priv$unsaved_work(), "2 regions")
+    r$v$save_selection("bottom", lens_cells(r$priv$cell_ids[880:900]))
+    expect_match(r$priv$unsaved_work(), "2 saved selections")
     expect_error(r$v$set_object(r$bx$mem, spat_unit = "bin", feat_type = NULL, project = tempfile()),
         "work not saved: .*save it with save\\(name\\)")
     tag2 <- suppressMessages(r$v$save("first", overwrite = TRUE))
@@ -119,7 +119,7 @@ test_that("a save opens with its snapshot and its work", {
     expect_identical(p2$spat_unit, "bin")
     expect_setequal(names(p2$rule_set), c("r", "picked"))
     expect_setequal(v2$selection, sel)
-    expect_identical(v2$regions(), data.frame(name = "top", cells = 20L))
+    expect_identical(v2$selections(), data.frame(name = "top", rules = 1L, cells = 20L))
     expect_identical(p2$meta_names(), c("half", "score"))
     expect_identical(p2$meta_entry("score")$kind, "categorical")
     expect_identical(p2$col_types$score, "categorical")
@@ -149,9 +149,9 @@ test_that("work not saved stays in the project when the viewer closes, and opens
     expect_identical(nrow(v2$saves()), 0L)
     suppressMessages(v2$open_save(basename(w)))
     expect_false(dir.exists(w))
-    expect_identical(v2$regions()$name, "top")
+    expect_identical(v2$selections()$name, "top")
     # Taken over, and still not saved
-    expect_match(get("private", v2$.__enclos_env__)$unsaved_work(), "1 region")
+    expect_match(get("private", v2$.__enclos_env__)$unsaved_work(), "1 saved selection")
 })
 
 test_that("close(discard = TRUE) deletes work not saved", {
@@ -188,8 +188,10 @@ test_that("rules naming cells by position are left out when the cells differ", {
     b$cells$md5 <- "0"
     writeLines(.bundle_json(b), f)
     expect_warning(suppressMessages(r$v$open_save("first", discard = TRUE)),
-        "left out: metadata, rules naming cells by position, rules on columns left out, panels linked to cells")
+        paste("left out: metadata, rules naming cells by position, rules on columns left out,",
+            "saved selections naming cells by position, panels linked to cells"))
     expect_identical(length(r$priv$rule_set), 0L)
+    expect_identical(nrow(r$v$selections()), 0L)
     expect_identical(names(r$priv$pushed), "small")
     expect_null(r$priv$cached_meta)
 })
@@ -227,7 +229,7 @@ test_that("the page saves, lists saves and opens one", {
         overwrite = TRUE))$data$save,
         "^first\\.")
     expect_error(ask(r$v, op = "save", name = "../x"), "letters, digits")
-    r$v$save_region("bottom", r$priv$cell_ids[880:900])
+    r$v$save_selection("bottom", lens_cells(r$priv$cell_ids[880:900]))
     snaps <- ask(r$v, op = "snapshots", path = r$td)$data
     s <- snaps$saves[[1L]]
     expect_identical(s[c("name", "kind", "description")], list(name = "first", kind = "save",
@@ -238,10 +240,10 @@ test_that("the page saves, lists saves and opens one", {
     expect_length(snaps$saves, 1L)
     res <- ask(r$v, op = "open_save", path = r$td, name = "first")
     expect_identical(res$code, "work")
-    expect_match(res$error, "2 regions")
+    expect_match(res$error, "2 saved selections")
     res <- suppressMessages(ask(r$v, op = "open_save", path = r$td, name = "first", discard = TRUE))
     expect_match(res$data$save, "^first\\.")
-    expect_identical(r$v$regions()$name, "top")
+    expect_identical(r$v$selections()$name, "top")
 })
 
 test_that("a link in a save does not bring a file from elsewhere into the project", {
@@ -275,9 +277,8 @@ test_that("the working bundle is written as the work changes", {
     r <- bundle_viewer()
     on.exit(r$done(), add = TRUE)
     state <- function() .read_bundle_json(file.path(r$priv$work, "state.json"))
-    r$v$save_region("top", r$priv$cell_ids[1:5])
-    expect_true(pump_until(function() identical(unlist(state()$region_names), "top")))
-    r$v$remove_region("top")
-    expect_true(pump_until(function() !length(state()$region_names)))
-    expect_false(file.exists(file.path(r$priv$work, "regions.parquet")))
+    r$v$save_selection("top", lens_cells(r$priv$cell_ids[1:5]))
+    expect_true(pump_until(function() identical(names(state()$selections), "top")))
+    r$v$remove_selection("top")
+    expect_true(pump_until(function() !length(state()$selections)))
 })

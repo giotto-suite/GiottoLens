@@ -20,7 +20,7 @@ attribute \code{set}; invisibly when preferences were changed.
 \description{
 Reads or sets defaults that every viewer starts from: continuous color
 scales, category and transcript colors, the background, cell outlines and
-fill, the expression values the picker opens on and region comparisons
+fill, the expression values the picker opens on and selection comparisons
 read, the column cells are colored by at launch, and settings of an
 analysis. The Preferences dialog, opened by the gear in the viewer's tools
 bar, sets the same. Only preferences that are set are saved;
@@ -52,8 +52,8 @@ item, adr/0024); \code{"default"} takes \code{scale_style}.
 \item \code{fill_opacity}: polygon fill opacity of a colored cell.
 \item \code{expr_values}: the expression values the picker opens on, when the
 object has them.
-\item \code{de_values}: the expression values \code{compare_regions()} and the Regions
-panel read, when the object has them.
+\item \code{de_values}: the expression values \code{compare_selections()} reads, when
+the object has them.
 \item \code{color_by}: comma-separated metadata columns; cells are colored by the
 first one present when a viewer starts without saved settings.
 \item \code{threads}, \code{history}, \code{network_dir}: defaults of

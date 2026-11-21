@@ -64,6 +64,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_color_scale}{\code{LensViewer$set_color_scale()}}
     \item \href{#method-LensViewer-style_categories}{\code{LensViewer$style_categories()}}
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
+    \item \href{#method-LensViewer-set_annotation_style}{\code{LensViewer$set_annotation_style()}}
     \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
     \item \href{#method-LensViewer-add_image}{\code{LensViewer$add_image()}}
@@ -81,11 +82,11 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-subset}{\code{LensViewer$subset()}}
     \item \href{#method-LensViewer-view_bounds}{\code{LensViewer$view_bounds()}}
     \item \href{#method-LensViewer-zoom_to}{\code{LensViewer$zoom_to()}}
-    \item \href{#method-LensViewer-save_region}{\code{LensViewer$save_region()}}
-    \item \href{#method-LensViewer-regions}{\code{LensViewer$regions()}}
-    \item \href{#method-LensViewer-remove_region}{\code{LensViewer$remove_region()}}
-    \item \href{#method-LensViewer-select_region}{\code{LensViewer$select_region()}}
-    \item \href{#method-LensViewer-compare_regions}{\code{LensViewer$compare_regions()}}
+    \item \href{#method-LensViewer-save_selection}{\code{LensViewer$save_selection()}}
+    \item \href{#method-LensViewer-selections}{\code{LensViewer$selections()}}
+    \item \href{#method-LensViewer-remove_selection}{\code{LensViewer$remove_selection()}}
+    \item \href{#method-LensViewer-restore_selection}{\code{LensViewer$restore_selection()}}
+    \item \href{#method-LensViewer-compare_selections}{\code{LensViewer$compare_selections()}}
     \item \href{#method-LensViewer-de_results}{\code{LensViewer$de_results()}}
     \item \href{#method-LensViewer-analysis}{\code{LensViewer$analysis()}}
     \item \href{#method-LensViewer-push_panel}{\code{LensViewer$push_panel()}}
@@ -170,7 +171,7 @@ with \code{keep = TRUE}.
     \describe{
       \item{\code{x, gpolygons, feat_type, spat_unit, images, image_files, mark, project}}{As in \code{\link[=launch_lens]{launch_lens()}}}
       \item{\code{discard}}{Whether to drop the current object's work not saved
-(rules, annotations, regions, pushed panels, added images, an image
+(rules, annotations, saved selections, pushed panels, added images, an image
 registration, an analysis). With any and \code{discard = FALSE}
 (default), nothing changes and an error names them; save them
 first with \code{save()}.}
@@ -254,7 +255,7 @@ drops the object shown; with \code{name}, it shows that snapshot, as
 \if{latex}{\out{\hypertarget{method-LensViewer-save}{}}}
 \subsection{\code{LensViewer$save()}}{
   Save the work done in the viewer on the object shown:
-rules, annotations, regions, pushed panels and metadata, column
+rules, annotations, saved selections, pushed panels and metadata, column
 types, added images, an image registration, comparisons and the
 viewer's settings, with the snapshot shown, which is kept
 (\code{keep = TRUE}). Written to \verb{lens/<name>.<id>/} in the project
@@ -822,6 +823,37 @@ sets the same values.
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_annotation_style"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_annotation_style}{}}}
+\subsection{\code{LensViewer$set_annotation_style()}}{
+  Set how annotations are drawn: their outline color,
+width and opacity (the fill takes the color, faintly), and whether
+their names show on the view. \code{NULL} arguments leave a setting as
+is. The selected annotation draws in yellow. The "annotations"
+section of the layers panel sets the same values; \code{set_layer( "annotations")} shows or hides them all.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_annotation_style(
+  color = NULL,
+  width = NULL,
+  alpha = NULL,
+  names = NULL
+)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{color}}{Colour, as a name or hex string (\code{"#64c8ff"})}
+      \item{\code{width}}{Width in screen pixels, in [0.01, 20]}
+      \item{\code{alpha}}{Opacity of the outline, in [0, 1]}
+      \item{\code{names}}{\code{TRUE} to draw each annotation's name at its center}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_selection_color"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_selection_color}{}}}
 \subsection{\code{LensViewer$set_selection_color()}}{
@@ -1232,113 +1264,123 @@ viewer shows)}
 }
 
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-save_region"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-save_region}{}}}
-\subsection{\code{LensViewer$save_region()}}{
-  Save cells as a named region, for \code{compare_regions()}
-and the viewer's Regions panel, whose "save selection" button
-does the same. Regions belong to the object shown and count as
-Lens work for \code{set_object()}.
+\if{html}{\out{<a id="method-LensViewer-save_selection"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-save_selection}{}}}
+\subsection{\code{LensViewer$save_selection()}}{
+  Save the selection's rules, and how they combine, under
+a name (adr/0029). \code{restore_selection()} brings the same rules
+back, editable as before; \code{compare_selections()} tests the cells
+they select. The "save" button of the viewer's selection panel
+does the same. Saved selections belong to the object shown and
+count as Lens work for \code{set_object()}.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$save_region(name, ids = self$selection)}
+    \preformatted{LensViewer$save_selection(name, rule = NULL)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{Region name; a region of that name is replaced}
-      \item{\code{ids}}{Cell IDs (default: the selection)}
+      \item{\code{name}}{A name; a saved selection of that name is replaced}
+      \item{\code{rule}}{A rule to save instead of the selection's (a \verb{lens_*()}
+rule, such as \code{lens_cells(ids)}), under source \code{"r"}}
     }
     \if{html}{\out{</div>}}
   }
   \subsection{Returns}{
-    The region's cell IDs, invisibly
+    The cell IDs it selects, invisibly
   }
 }
 
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-regions"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-regions}{}}}
-\subsection{\code{LensViewer$regions()}}{
-  The saved regions
+\if{html}{\out{<a id="method-LensViewer-selections"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-selections}{}}}
+\subsection{\code{LensViewer$selections()}}{
+  The saved selections
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$regions(name = NULL)}
+    \preformatted{LensViewer$selections(name = NULL)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{A region name: return its cell IDs instead}
+      \item{\code{name}}{A saved selection's name: return the cell IDs its rules
+select now instead}
     }
     \if{html}{\out{</div>}}
   }
   \subsection{Returns}{
-    A data.frame of region names and cell counts, or the cell
-IDs of region \code{name}
+    A data.frame of names, rule counts and the cells each
+selects now; or the cell IDs of \code{name}
   }
 }
 
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-remove_region"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-remove_region}{}}}
-\subsection{\code{LensViewer$remove_region()}}{
-  Remove a saved region
+\if{html}{\out{<a id="method-LensViewer-remove_selection"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-remove_selection}{}}}
+\subsection{\code{LensViewer$remove_selection()}}{
+  Remove a saved selection
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$remove_region(name)}
+    \preformatted{LensViewer$remove_selection(name)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{Region name}
+      \item{\code{name}}{Its name}
     }
     \if{html}{\out{</div>}}
   }
 }
 
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-select_region"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-select_region}{}}}
-\subsection{\code{LensViewer$select_region()}}{
-  Select the cells of a saved region (selection source
-\code{"r"})
+\if{html}{\out{<a id="method-LensViewer-restore_selection"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-restore_selection}{}}}
+\subsection{\code{LensViewer$restore_selection()}}{
+  Bring back a saved selection: its rules replace the
+selection's, each under its own source (a lasso as the spatial
+view's, a histogram range as that histogram's), with its combine
+mode
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$select_region(name)}
+    \preformatted{LensViewer$restore_selection(name)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{Region name}
+      \item{\code{name}}{Its name}
     }
     \if{html}{\out{</div>}}
+  }
+  \subsection{Returns}{
+    The cell IDs selected, invisibly
   }
 }
 
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-LensViewer-compare_regions"></a>}}
-\if{latex}{\out{\hypertarget{method-LensViewer-compare_regions}{}}}
-\subsection{\code{LensViewer$compare_regions()}}{
-  Differential expression between two saved regions, or
-a region and every other cell, with \code{\link[Giotto:findScranMarkers]{Giotto::findScranMarkers()}}.
-Cells in both regions are left out. Runs as a job (see \code{jobs()})
+\if{html}{\out{<a id="method-LensViewer-compare_selections"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-compare_selections}{}}}
+\subsection{\code{LensViewer$compare_selections()}}{
+  Differential expression between the cells of two saved
+selections, or one and every other cell, with
+\code{\link[Giotto:findScranMarkers]{Giotto::findScranMarkers()}}. Their rules are evaluated now; cells
+in both are left out. Runs as a job (see \code{jobs()})
 over the object the jobs' process holds. The result is docked as
 a volcano plot (\verb{DE: a vs b}); a click on a gene colours the cells
-by it. The viewer's Regions panel runs the same comparison.
+by it.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$compare_regions(a, b = NULL, values = NULL, wait = TRUE)}
+    \preformatted{LensViewer$compare_selections(a, b = NULL, values = NULL, wait = TRUE)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{a}}{Region name}
-      \item{\code{b}}{Region name; \code{NULL} for every cell not in \code{a}}
+      \item{\code{a}}{A saved selection's name}
+      \item{\code{b}}{A saved selection's name; \code{NULL} for every cell not in \code{a}}
       \item{\code{values}}{Expression values (a name of the object's
 expression); default \code{"normalized"}}
       \item{\code{wait}}{Whether to wait for the result. \code{FALSE} returns the
@@ -1357,7 +1399,7 @@ job's id, invisibly
 \if{html}{\out{<a id="method-LensViewer-de_results"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-de_results}{}}}
 \subsection{\code{LensViewer$de_results()}}{
-  Results of \code{compare_regions()}
+  Results of \code{compare_selections()}
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$de_results(id = NULL)}
@@ -1470,9 +1512,9 @@ replaced where it is; \code{NULL} makes a new one (\code{"panel-1"}, ...).}
       \item{\code{title}}{Tab title (default: the spec's title, else the id)}
       \item{\code{where}}{Where a new panel goes: \code{"tab"} (a tab next to \code{ref}),
 or \code{"right"} / \code{"below"} (a split beside \code{ref})}
-      \item{\code{ref}}{Id of the panel to place it next to (see \code{panels()});
-\code{NULL} for the active chart, so that it joins the charts rather
-than the controls}
+      \item{\code{ref}}{Id of the docked panel to place it next to (see
+\code{panels()}; not a control in the tray); \code{NULL} for the active
+chart}
     }
     \if{html}{\out{</div>}}
   }
@@ -1485,10 +1527,11 @@ than the controls}
 \if{html}{\out{<a id="method-LensViewer-remove_panel"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-remove_panel}{}}}
 \subsection{\code{LensViewer$remove_panel()}}{
-  Close a docked panel: one pushed with \code{push_panel()}
-or a built-in one (\code{"scatter"}, \code{"histogram"}, \code{"cells"}, ...).
-The viewer's \code{+} menu adds built-in panels back; a closed control
-(\code{"cells"}, \code{"layers"}, ...) stays closed after a page reload.
+  Close a docked panel, one pushed with \code{push_panel()}
+or a built-in one (\code{"scatter"}, \code{"histogram"}, ...), or hide a
+control in the tray (\code{"layers"}, \code{"selection"}, ...). The viewer's \code{+}
+menu adds built-in panels back, the tray's rail a control; a
+hidden control stays hidden after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$remove_panel(id)}
@@ -1507,12 +1550,16 @@ The viewer's \code{+} menu adds built-in panels back; a closed control
 \if{html}{\out{<a id="method-LensViewer-panels"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-panels}{}}}
 \subsection{\code{LensViewer$panels()}}{
-  The docked panels: id, kind (a chart: \code{"scatter"},
-\code{"histogram"}, \code{"density"}, or \code{"spec"} for a pushed one; a
-control: \code{"cells"}, \code{"transcripts"}, \code{"images"}, \code{"register"},
-\code{"annotations"}, \code{"layers"}), tab title, the group
-of tabs it is in, and whether it is in view (not behind another
-tab). With no browser connected, only the pushed panels R holds.
+  The panels: id, kind (a chart: \code{"scatter"},
+\code{"histogram"}, \code{"density"}, \code{"table"}, or \code{"spec"} for a pushed
+one; \code{"spatial"}, \code{"analysis"}; a control shown in the
+tray: \code{"layers"}, \code{"selection"}, \code{"data"}, \code{"register"},
+\code{"annotations"}), title,
+the group of tabs it is in (\code{"tray"} for a control), and whether
+it is in view (not behind another tab, nor hidden by the panels
+toggle). Docked panels come first, in layout order, then the
+controls. With no browser connected, only the pushed panels R
+holds.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$panels()}

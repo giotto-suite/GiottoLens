@@ -196,10 +196,16 @@ export function invertSelection(): void {
   actions.setRules({ spatial: rule });
 }
 
-export function filterMeta(column: string, op: CompareOp, value: string): void {
-  const rule: Rule = { source: 'meta', kind: 'compare', space: column, params: { op, value } };
-  if (store.getState().combine === 'and') actions.setRule('meta', rule);
-  else actions.setRules({ meta: rule });
+// The metadata filter (the table's filter button): one rule, source `meta`,
+// apart from the table's picked rows. `replace` sets it to this condition;
+// `add` intersects it with the conditions it has. A rule like any other: in OR
+// mode it adds to the selection rather than narrowing it.
+export function filterMeta(column: string, op: CompareOp, value: string, mode: 'replace' | 'add' = 'replace'): void {
+  const cond: Rule = { source: 'meta', kind: 'compare', space: column, params: { op, value } };
+  const old = store.getState().rules.meta;
+  if (mode === 'replace' || !old) { actions.setRule('meta', cond); return; }
+  const parts = old.kind === 'intersect' && !old.negate ? old.params.parts : [old];
+  actions.setRule('meta', { source: 'meta', kind: 'intersect', params: { parts: [...parts, cond] } });
 }
 
 export function setRangeRule(source: string, column: string, range: [number, number] | null): void {

@@ -86,7 +86,8 @@ function applyMode(mode) {
   const m = spaceHeld() ? 'pan' : mode;   // what the toolbar shows
   view.deck.setProps({
     controller: DRAG_MODES.includes(mode) ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false },
-    getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'landmark' ? 'crosshair' : 'grab',
+    // The hand is for panning; every other tool points with a crosshair
+    getCursor: ({ isDragging }) => isDragging ? 'grabbing' : m === 'pan' ? 'grab' : 'crosshair',
   });
   refreshPaneCursor();
   view.root.querySelectorAll('.tool-btn[data-mode]').forEach(b =>

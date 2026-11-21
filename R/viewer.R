@@ -437,7 +437,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param x,gpolygons,feat_type,spat_unit,images,image_files,mark,project
         #'   As in [launch_lens()]
         #' @param discard Whether to drop the current object's work not saved
-        #'   (rules, annotations, regions, pushed panels, added images, an image
+        #'   (rules, annotations, saved selections, pushed panels, added images, an image
         #'   registration, an analysis). With any and `discard = FALSE`
         #'   (default), nothing changes and an error names them; save them
         #'   first with `save()`.
@@ -502,7 +502,7 @@ LensViewer <- R6::R6Class("LensViewer",
         },
 
         #' @description Save the work done in the viewer on the object shown:
-        #'   rules, annotations, regions, pushed panels and metadata, column
+        #'   rules, annotations, saved selections, pushed panels and metadata, column
         #'   types, added images, an image registration, comparisons and the
         #'   viewer's settings, with the snapshot shown, which is kept
         #'   (`keep = TRUE`). Written to `lens/<name>.<id>/` in the project
@@ -1001,22 +1001,27 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param width Width in screen pixels, in \[0.01, 20\]
         #' @param alpha Opacity, in \[0, 1\]
         set_outline = function(color = NULL, width = NULL, alpha = NULL) {
-            if (!is.null(color)) {
-                if (!is.character(color) || length(color) != 1L)
-                    stop("[LensViewer] `color` must be one color name or hex string",
-                        call. = FALSE)
-                color <- as.integer(grDevices::col2rgb(color)[, 1L])
-            }
-            if (!is.null(width) && (!is.numeric(width) || length(width) != 1L ||
-                    is.na(width) || width < 0.01 || width > 20))
-                stop("[LensViewer] `width` must be one number in [0.01, 20]", call. = FALSE)
-            if (!is.null(alpha) && (!is.numeric(alpha) || length(alpha) != 1L ||
-                    is.na(alpha) || alpha < 0 || alpha > 1))
-                stop("[LensViewer] `alpha` must be one number in [0, 1]", call. = FALSE)
-            private$request("set_outline", list(
-                color = if (!is.null(color)) as.list(color),
-                width = if (!is.null(width)) as.numeric(width),
-                alpha = if (!is.null(alpha)) as.numeric(alpha)))
+            # Checked before the request, which needs a viewer connected
+            args <- .outline_args(color, width, alpha)
+            private$request("set_outline", args)
+            invisible(self)
+        },
+
+        #' @description Set how annotations are drawn: their outline color,
+        #'   width and opacity (the fill takes the color, faintly), and whether
+        #'   their names show on the view. `NULL` arguments leave a setting as
+        #'   is. The selected annotation draws in yellow. The "annotations"
+        #'   section of the layers panel sets the same values; `set_layer(
+        #'   "annotations")` shows or hides them all.
+        #' @param color Colour, as a name or hex string (`"#64c8ff"`)
+        #' @param width Width in screen pixels, in \[0.01, 20\]
+        #' @param alpha Opacity of the outline, in \[0, 1\]
+        #' @param names `TRUE` to draw each annotation's name at its center
+        set_annotation_style = function(color = NULL, width = NULL, alpha = NULL, names = NULL) {
+            if (!is.null(names) && !(is.logical(names) && length(names) == 1L && !is.na(names)))
+                stop("[LensViewer] `names` must be TRUE or FALSE", call. = FALSE)
+            args <- c(.outline_args(color, width, alpha), list(names = names))
+            private$request("set_annotation_style", args)
             invisible(self)
         },
 
@@ -1379,68 +1384,81 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self$set_view(bounds = c(x[1L] - px, x[2L] + px, y[1L] - py, y[2L] + py)))
         },
 
-        #' @description Save cells as a named region, for `compare_regions()`
-        #'   and the viewer's Regions panel, whose "save selection" button
-        #'   does the same. Regions belong to the object shown and count as
-        #'   Lens work for `set_object()`.
-        #' @param name Region name; a region of that name is replaced
-        #' @param ids Cell IDs (default: the selection)
-        #' @returns The region's cell IDs, invisibly
-        save_region = function(name, ids = self$selection) {
-            site <- "LensViewer$save_region"
+        #' @description Save the selection's rules, and how they combine, under
+        #'   a name (adr/0029). `restore_selection()` brings the same rules
+        #'   back, editable as before; `compare_selections()` tests the cells
+        #'   they select. The "save" button of the viewer's selection panel
+        #'   does the same. Saved selections belong to the object shown and
+        #'   count as Lens work for `set_object()`.
+        #' @param name A name; a saved selection of that name is replaced
+        #' @param rule A rule to save instead of the selection's (a `lens_*()`
+        #'   rule, such as `lens_cells(ids)`), under source `"r"`
+        #' @returns The cell IDs it selects, invisibly
+        save_selection = function(name, rule = NULL) {
+            site <- "LensViewer$save_selection"
             private$need_object(site)
-            name <- .check_region_name(name, site)
-            ids <- unique(as.character(ids))
-            known <- ids %in% private$cell_ids
-            if (!all(known))
-                warning("[", site, "] ", sum(!known), " ID(s) are not cells in the viewer ",
-                    "and were left out", call. = FALSE)
-            ids <- ids[known]
-            if (!length(ids))
-                stop("[", site, "] no cells to save; select cells first", call. = FALSE)
-            private$region_sets[[name]] <- ids
-            private$region_md5[[name]] <- .strings_md5(ids)
-            private$add_log("region", list(name = name, cells = length(ids)))
-            private$send_regions(open = TRUE)
+            name <- .check_selection_name(name, site)
+            if (!is.null(rule)) {
+                rule <- .resolve_cells(rule, private$cell_ids)
+                rule$source <- "r"
+                .validate_rule(rule, site)
+                set <- list(rules = list(r = rule), combine = "and")
+            } else set <- list(rules = private$rule_set, combine = private$combine)
+            if (!length(set$rules))
+                stop("[", site, "] no rules to save; select cells first", call. = FALSE)
+            private$saved_sel[[name]] <- set
+            ids <- private$saved_ids(name, site)
+            private$add_log("save_selection", list(name = name, rules = length(set$rules),
+                cells = length(ids)))
+            private$send_saved(open = TRUE)
             invisible(ids)
         },
 
-        #' @description The saved regions
-        #' @param name A region name: return its cell IDs instead
-        #' @returns A data.frame of region names and cell counts, or the cell
-        #'   IDs of region `name`
-        regions = function(name = NULL) {
-            if (!is.null(name)) return(private$region_ids(name, "LensViewer$regions"))
-            r <- private$region_sets
-            data.frame(name = names(r) %||% character(), cells = vapply(r, length, 1L),
+        #' @description The saved selections
+        #' @param name A saved selection's name: return the cell IDs its rules
+        #'   select now instead
+        #' @returns A data.frame of names, rule counts and the cells each
+        #'   selects now; or the cell IDs of `name`
+        selections = function(name = NULL) {
+            if (!is.null(name)) return(private$saved_ids(name, "LensViewer$selections"))
+            nm <- names(private$saved_sel) %||% character()
+            data.frame(name = nm,
+                rules = vapply(nm, function(n) length(private$saved_sel[[n]]$rules), 1L),
+                cells = vapply(nm, function(n) length(private$saved_ids(n, "LensViewer$selections")), 1L),
                 row.names = NULL)
         },
 
-        #' @description Remove a saved region
-        #' @param name Region name
-        remove_region = function(name) {
-            private$region_ids(name, "LensViewer$remove_region")
-            private$region_sets[[name]] <- NULL
-            private$region_md5[[name]] <- NULL
-            private$send_regions()
+        #' @description Remove a saved selection
+        #' @param name Its name
+        remove_selection = function(name) {
+            private$saved_get(name, "LensViewer$remove_selection")
+            private$saved_sel[[name]] <- NULL
+            private$send_saved()
             invisible(self)
         },
 
-        #' @description Select the cells of a saved region (selection source
-        #'   `"r"`)
-        #' @param name Region name
-        select_region = function(name) {
-            self$select(lens_cells(private$region_ids(name, "LensViewer$select_region")))
+        #' @description Bring back a saved selection: its rules replace the
+        #'   selection's, each under its own source (a lasso as the spatial
+        #'   view's, a histogram range as that histogram's), with its combine
+        #'   mode
+        #' @param name Its name
+        #' @returns The cell IDs selected, invisibly
+        restore_selection = function(name) {
+            set <- private$saved_get(name, "LensViewer$restore_selection")
+            private$need_object("LensViewer$restore_selection")
+            private$apply_rule_set(set$rules, set$combine)
+            invisible(self$selection)
         },
 
-        #' @description Differential expression between two saved regions, or
-        #'   a region and every other cell, with [Giotto::findScranMarkers()].
-        #'   Cells in both regions are left out. Runs as a job (see `jobs()`)
+        #' @description Differential expression between the cells of two saved
+        #'   selections, or one and every other cell, with
+        #'   [Giotto::findScranMarkers()]. Their rules are evaluated now; cells
+        #'   in both are left out. Runs as a job (see `jobs()`)
         #'   over the object the jobs' process holds. The result is docked as
         #'   a volcano plot (`DE: a vs b`); a click on a gene colours the cells
-        #'   by it. The viewer's Regions panel runs the same comparison.
-        #' @param a Region name
-        #' @param b Region name; `NULL` for every cell not in `a`
+        #'   by it.
+        #' @param a A saved selection's name
+        #' @param b A saved selection's name; `NULL` for every cell not in `a`
         #' @param values Expression values (a name of the object's
         #'   expression); default `"normalized"`
         #' @param wait Whether to wait for the result. `FALSE` returns the
@@ -1448,8 +1466,8 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @returns A data.frame, one row per gene in order of FDR: `gene`,
         #'   `logFC` (`a` vs `b`), `p_value`, `FDR`; with `wait = FALSE`, the
         #'   job's id, invisibly
-        compare_regions = function(a, b = NULL, values = NULL, wait = TRUE) {
-            site <- "LensViewer$compare_regions"
+        compare_selections = function(a, b = NULL, values = NULL, wait = TRUE) {
+            site <- "LensViewer$compare_selections"
             out <- NULL
             id <- private$compare(a, b, values, site, function(r) out <<- r)
             if (!isTRUE(wait)) return(invisible(id))
@@ -1458,7 +1476,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$de[[out$result]]$table
         },
 
-        #' @description Results of `compare_regions()`
+        #' @description Results of `compare_selections()`
         #' @param id A result id (`"de-1"`, ...): return its table instead
         #' @returns A data.frame with one row per comparison: `id`, `a`, `b`,
         #'   cell counts, `values` and the number of genes at FDR < 0.05; or
@@ -1546,9 +1564,9 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @param title Tab title (default: the spec's title, else the id)
         #' @param where Where a new panel goes: `"tab"` (a tab next to `ref`),
         #'   or `"right"` / `"below"` (a split beside `ref`)
-        #' @param ref Id of the panel to place it next to (see `panels()`);
-        #'   `NULL` for the active chart, so that it joins the charts rather
-        #'   than the controls
+        #' @param ref Id of the docked panel to place it next to (see
+        #'   `panels()`; not a control in the tray); `NULL` for the active
+        #'   chart
         #' @return The panel id, invisibly.
         push_panel = function(spec, data = NULL, id = NULL, title = NULL,
                               where = c("tab", "right", "below"), ref = NULL) {
@@ -1593,10 +1611,11 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(id)
         },
 
-        #' @description Close a docked panel: one pushed with `push_panel()`
-        #'   or a built-in one (`"scatter"`, `"histogram"`, `"cells"`, ...).
-        #'   The viewer's `+` menu adds built-in panels back; a closed control
-        #'   (`"cells"`, `"layers"`, ...) stays closed after a page reload.
+        #' @description Close a docked panel, one pushed with `push_panel()`
+        #'   or a built-in one (`"scatter"`, `"histogram"`, ...), or hide a
+        #'   control in the tray (`"layers"`, `"selection"`, ...). The viewer's `+`
+        #'   menu adds built-in panels back, the tray's rail a control; a
+        #'   hidden control stays hidden after a page reload.
         #' @param id Panel id (see `panels()`)
         remove_panel = function(id) {
             .check_panel_id(id, builtin_ok = TRUE)
@@ -1606,12 +1625,16 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description The docked panels: id, kind (a chart: `"scatter"`,
-        #'   `"histogram"`, `"density"`, or `"spec"` for a pushed one; a
-        #'   control: `"cells"`, `"transcripts"`, `"images"`, `"register"`,
-        #'   `"annotations"`, `"layers"`), tab title, the group
-        #'   of tabs it is in, and whether it is in view (not behind another
-        #'   tab). With no browser connected, only the pushed panels R holds.
+        #' @description The panels: id, kind (a chart: `"scatter"`,
+        #'   `"histogram"`, `"density"`, `"table"`, or `"spec"` for a pushed
+        #'   one; `"spatial"`, `"analysis"`; a control shown in the
+        #'   tray: `"layers"`, `"selection"`, `"data"`, `"register"`,
+        #'   `"annotations"`), title,
+        #'   the group of tabs it is in (`"tray"` for a control), and whether
+        #'   it is in view (not behind another tab, nor hidden by the panels
+        #'   toggle). Docked panels come first, in layout order, then the
+        #'   controls. With no browser connected, only the pushed panels R
+        #'   holds.
         #' @return A data frame.
         panels = function() {
             if (self$connected()) {
@@ -1852,39 +1875,63 @@ LensViewer <- R6::R6Class("LensViewer",
                 if (!is.null(done)) done(r)
             })
         },
-        # ── Regions and their comparisons (R/regions.R) ──
-        region_sets = list(),   # region name -> cell IDs
-        de          = list(),   # compare_regions() results by id
+        # ── Saved selections and their comparisons (R/selections.R, adr/0029) ──
+        saved_sel   = list(),   # name -> list(rules = rules by source, combine)
+        de          = list(),   # compare_selections() results by id
         de_seq      = 0L,
 
-        region_ids = function(name, site) {
-            if (!is.character(name) || length(name) != 1L || is.null(private$region_sets[[name]]))
-                stop("[", site, "] no region '", paste(name, collapse = ", "), "'; regions: ",
-                    if (length(private$region_sets)) paste(names(private$region_sets),
-                        collapse = ", ") else "none (save one with save_region())",
+        saved_get = function(name, site) {
+            if (!is.character(name) || length(name) != 1L || is.null(private$saved_sel[[name]]))
+                stop("[", site, "] no saved selection '", paste(name, collapse = ", "), "'; saved: ",
+                    if (length(private$saved_sel)) paste(names(private$saved_sel),
+                        collapse = ", ") else "none (save one with save_selection())",
                     call. = FALSE)
-            private$region_sets[[name]]
+            private$saved_sel[[name]]
         },
-        regions_msg = function(open = FALSE) {
-            list(regions = unname(lapply(names(private$region_sets), function(n)
-                list(name = n, n = length(private$region_sets[[n]])))), open = open)
+        # The cells a saved selection's rules select now
+        saved_ids = function(name, site) {
+            set <- private$saved_get(name, site)
+            private$cell_ids[.combine_rules(set$rules, private$eval_ctx(), set$combine)]
         },
-        send_regions = function(open = FALSE) {
+        saved_msg = function(open = FALSE) {
+            list(selections = unname(lapply(names(private$saved_sel), function(n) {
+                set <- private$saved_sel[[n]]
+                list(name = n, n = length(private$saved_ids(n, "LensViewer")),
+                    combine = set$combine, rules = unname(set$rules))
+            })), open = open)
+        },
+        send_saved = function(open = FALSE) {
             if (self$connected())
-                private$broadcast(.encode_ws_message("regions", private$regions_msg(open)))
+                private$broadcast(.encode_ws_message("selections", private$saved_msg(open)))
+        },
+        # Replace the selection's rules with `rules` (by source) and `combine`:
+        # the first message replaces, the rest add, so the page ends with
+        # exactly these
+        apply_rule_set = function(rules, combine) {
+            private$rule_set <- rules
+            private$combine <- combine
+            hit <- .combine_rules(rules, private$eval_ctx(), combine)
+            self$selection <- private$cell_ids[hit]
+            self$selection_rules <- unname(rules)
+            if (!length(rules))
+                private$broadcast(private$rule_message(list(source = "r", rule = NULL,
+                    replace = TRUE, combine = combine)))
+            for (i in seq_along(rules))
+                private$broadcast(private$rule_message(list(source = names(rules)[i],
+                    rule = rules[[i]], replace = i == 1L, combine = combine)))
         },
         # Start a comparison job; `done` gets its end, with the result's id.
         # Returns the job's id.
         compare = function(a, b, values, site, done, ref = NULL) {
             if (!requireNamespace("Giotto", quietly = TRUE))
-                stop("[", site, "] comparing regions needs the Giotto package", call. = FALSE)
-            ids_a <- private$region_ids(a, site)
-            ids_b <- if (!is.null(b)) private$region_ids(b, site)
-            if (identical(a, b)) stop("[", site, "] `a` and `b` are the same region", call. = FALSE)
+                stop("[", site, "] comparing selections needs the Giotto package", call. = FALSE)
+            ids_a <- private$saved_ids(a, site)
+            ids_b <- if (!is.null(b)) private$saved_ids(b, site)
+            if (identical(a, b)) stop("[", site, "] `a` and `b` are the same saved selection", call. = FALSE)
             src <- .de_source(private$need_catalog(site), values, private$feat_type, site)
             b_label <- b %||% "rest"
             what <- sprintf("%s vs %s", a, b_label)
-            private$start_job(paste("DE", what), .region_de, list(a = ids_a, b = ids_b,
+            private$start_job(paste("DE", what), .selection_de, list(a = ids_a, b = ids_b,
                 values = src$name, spat_unit = private$catalog_data$spat_unit,
                 feat_type = src$feat_type), ref = ref, on_end = done,
                 apply = function(r) {
@@ -2393,14 +2440,16 @@ LensViewer <- R6::R6Class("LensViewer",
                         ref = str1(dat$ref))
                     NULL
                 },
-                # The Regions panel: save, remove, select, compare. A compare
-                # is answered when its job ends, with the result's id.
-                region = {
+                # Saved selections (the selection panel): save, remove,
+                # restore; and compare, which no page control sends at
+                # present. A compare is answered when its job ends, with the
+                # result's id.
+                selection = {
                     name <- str1(dat$name) %||% ""
                     switch(str1(dat$action) %||% "",
-                        save   = list(data = list(cells = length(self$save_region(name)))),
-                        remove = { self$remove_region(name); list(data = list()) },
-                        select = { self$select_region(name); list(data = list()) },
+                        save    = list(data = list(cells = length(self$save_selection(name)))),
+                        remove  = { self$remove_selection(name); list(data = list()) },
+                        restore = { self$restore_selection(name); list(data = list()) },
                         compare = {
                             b <- str1(dat$b)
                             private$compare(str1(dat$a) %||% "", if (nzchar(b %||% "")) b,
@@ -2408,7 +2457,7 @@ LensViewer <- R6::R6Class("LensViewer",
                                 function(r) reply(.job_answer(r, function(id) list(id = id))))
                             NULL
                         },
-                        list(error = "unknown region action"))
+                        list(error = "unknown selection action"))
                 },
                 # A job the page started (its `job` messages carry the id)
                 cancel_job = list(data = list(cancelled = is.numeric(dat$id) && length(dat$id) == 1L &&
@@ -2453,10 +2502,8 @@ LensViewer <- R6::R6Class("LensViewer",
         cells_fp     = NULL,     # .cells_fingerprint() of the cells shown
         saved_sig    = NULL,     # work_sig() as last saved or opened
         written_sig  = NULL,     # what the working bundle last got
-        written_regions = NULL,  # region_md5 as regions.parquet last got it
         saved_tag    = NULL,     # the save last made or opened
         added_args   = list(),   # add_image() arguments by image name, to add them again
-        region_md5   = list(),   # region name -> md5 of its cell IDs
         registration_msg = NULL, # the last registration_update, as the page sent it
 
         # The working bundle: lens/session-<session id>/ in the project of the
@@ -2470,7 +2517,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$work <- normalizePath(dir)
             private$routes$work <- private$work
             private$work_created <- as.numeric(Sys.time())
-            private$written_sig <- private$written_regions <- NULL
+            private$written_sig <- NULL
             private$object_uid <- if (!is.null(private$project) && !is.null(private$snapshot)) {
                 info <- GiottoDisk::snapshotInfo(private$project)
                 uid <- info$object[info$tag == private$snapshot]
@@ -2480,12 +2527,12 @@ LensViewer <- R6::R6Class("LensViewer",
             private$saved_sig <- private$work_sig()
         },
 
-        # The work, as state.json holds it. Regions are in regions.parquet,
-        # comparison tables in de/; here only what tells them apart.
+        # The work, as state.json holds it. Comparison tables are in de/;
+        # here only what tells them apart.
         state_list = function() list(
             rules = private$rule_set, combine = private$combine,
             annotations = .annotations_rows(self$annotations), registration = private$registration_msg,
-            regions = private$region_md5, pushed = private$pushed,
+            selections = private$saved_sel, pushed = private$pushed,
             meta = private$cached_meta, meta_values = private$meta_values,
             col_types = private$col_types, added = unname(private$added_args),
             de = lapply(names(private$de), function(id) c(list(id = id,
@@ -2510,18 +2557,6 @@ LensViewer <- R6::R6Class("LensViewer",
             sig <- .bundle_json(list(st, private$config_json))
             if (!force && identical(sig, private$written_sig)) return(invisible(FALSE))
             w <- private$work
-            regions <- file.path(w, "regions.parquet")
-            if (length(private$region_sets)) {
-                if (!identical(private$region_md5, private$written_regions)) {
-                    tmp <- tempfile(".tmp", tmpdir = w)
-                    arrow::write_parquet(data.frame(
-                        region = rep(names(private$region_sets), lengths(private$region_sets)),
-                        cell_ID = unlist(private$region_sets, use.names = FALSE)), tmp)
-                    file.rename(tmp, regions)
-                }
-            } else unlink(regions)
-            st$regions <- length(private$region_sets) > 0L
-            st$region_names <- as.list(names(private$region_sets))
             if (length(private$de)) dir.create(file.path(w, "de"), showWarnings = FALSE)
             for (d in st$de) {
                 f <- file.path(w, d$file)
@@ -2532,7 +2567,6 @@ LensViewer <- R6::R6Class("LensViewer",
                 .write_text_atomic(private$config_json, file.path(w, "config.json"))
             .write_json_atomic(private$bundle_info("session"), file.path(w, "bundle.json"))
             private$written_sig <- sig
-            private$written_regions <- private$region_md5
             invisible(TRUE)
         },
 
@@ -2634,19 +2668,25 @@ LensViewer <- R6::R6Class("LensViewer",
                 }
             } else if (length(st$meta$columns)) dropped <- c(dropped, "metadata")
             private$col_types <- lapply(st$col_types %||% list(), function(v) as.character(unlist(v)))
+            # Rules that name cells by position need the same cells; rules on
+            # metadata left out cannot be evaluated. `what` names them in
+            # what was dropped.
             ok_rule <- function(r) !inherits(tryCatch(.validate_rule(r, site), error = function(e) e), "error")
-            rules <- Filter(ok_rule, st$rules %||% list())
-            if (!same && any(vapply(rules, .rule_has_ids, NA))) {
-                rules <- Filter(Negate(.rule_has_ids), rules)
-                dropped <- c(dropped, "rules naming cells by position")
-            }
-            # Rules on metadata left out cannot be evaluated
             ctx <- private$eval_ctx()
             evaluates <- function(r) !inherits(tryCatch(.eval_rule(r, ctx), error = function(e) e), "error")
-            if (!all(vapply(rules, evaluates, NA))) {
-                rules <- Filter(evaluates, rules)
-                dropped <- c(dropped, "rules on columns left out")
+            keep_rules <- function(rules, what) {
+                rules <- Filter(ok_rule, rules %||% list())
+                if (!same && any(vapply(rules, .rule_has_ids, NA))) {
+                    rules <- Filter(Negate(.rule_has_ids), rules)
+                    dropped <<- c(dropped, paste(what, "naming cells by position"))
+                }
+                if (!all(vapply(rules, evaluates, NA))) {
+                    rules <- Filter(evaluates, rules)
+                    dropped <<- c(dropped, paste(what, "on columns left out"))
+                }
+                rules
             }
+            rules <- keep_rules(st$rules, "rules")
             private$rule_set <- rules
             if (isTRUE(st$combine %in% c("and", "or"))) private$combine <- st$combine
             if (length(rules)) {
@@ -2659,14 +2699,12 @@ LensViewer <- R6::R6Class("LensViewer",
                 private$registration_msg <- st$registration
                 self$registration <- .parse_registration(st$registration)
             }
-            if (isTRUE(st$regions) && file.exists(file.path(w, "regions.parquet"))) {
-                r <- arrow::read_parquet(file.path(w, "regions.parquet"))
-                r <- r[r$cell_ID %in% private$cell_ids, , drop = FALSE]
-                order <- intersect(as.character(unlist(st$region_names)), unique(r$region))
-                for (n in order) {
-                    private$region_sets[[n]] <- r$cell_ID[r$region == n]
-                    private$region_md5[[n]] <- .strings_md5(private$region_sets[[n]])
-                }
+            # A saved selection left with no rules is dropped with them
+            for (n in names(st$selections %||% list())) {
+                set <- st$selections[[n]]
+                kept <- keep_rules(set$rules, "saved selections")
+                if (length(kept)) private$saved_sel[[n]] <- list(rules = kept,
+                    combine = if (isTRUE(set$combine %in% c("and", "or"))) set$combine else "and")
             }
             # Rows linked to cells carry their index (`_idx`)
             linked <- function(p) if (!is.null(p$data_url))
@@ -2839,8 +2877,7 @@ LensViewer <- R6::R6Class("LensViewer",
             for (read in private$item_reads)
                 for (w in read$waits) w(list(error = "the object shown changed"))
             private$item_reads   <- list()
-            private$region_sets  <- list()
-            private$region_md5   <- list()
+            private$saved_sel    <- list()
             private$de           <- list()
             private$owned        <- list()
             private$config_json  <- NULL
@@ -2865,7 +2902,7 @@ LensViewer <- R6::R6Class("LensViewer",
         # without `discard = TRUE`. Settings are not counted.
         lens_work = function() {
             n <- c(rule = length(private$rule_set), annotation = length(self$annotations),
-                region = length(private$region_sets), `pushed panel` = length(private$pushed),
+                `saved selection` = length(private$saved_sel), `pushed panel` = length(private$pushed),
                 `added image` = length(private$added_images))
             parts <- sprintf("%d %s%s", n, names(n), ifelse(n == 1L, "", "s"))[n > 0L]
             if (!is.null(self$registration)) parts <- c(parts, "image registration")
@@ -2972,7 +3009,7 @@ LensViewer <- R6::R6Class("LensViewer",
                                 ws$send(.encode_ws_message("push_panel", c(p, list(restore = TRUE))))
                             # Jobs already running: a reload or a new tab lists them too
                             for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
-                            ws$send(.encode_ws_message("regions", priv$regions_msg()))
+                            ws$send(.encode_ws_message("selections", priv$saved_msg()))
                             if (!is.null(priv$lens_analysis)) priv$lens_analysis$on_ready(ws)
                         },
                         # A click on a point of a pushed chart's `pick` param:
@@ -3123,12 +3160,32 @@ print.lens_description <- function(x, ...) {
     invisible(x)
 }
 
+# An outline's color, width and opacity for the page, checked; NULL ones
+# are left out (set_outline(), set_annotation_style())
+.outline_args <- function(color, width, alpha) {
+    if (!is.null(color)) {
+        if (!is.character(color) || length(color) != 1L)
+            stop("[LensViewer] `color` must be one color name or hex string", call. = FALSE)
+        color <- as.integer(grDevices::col2rgb(color)[, 1L])
+    }
+    if (!is.null(width) && (!is.numeric(width) || length(width) != 1L ||
+            is.na(width) || width < 0.01 || width > 20))
+        stop("[LensViewer] `width` must be one number in [0.01, 20]", call. = FALSE)
+    if (!is.null(alpha) && (!is.numeric(alpha) || length(alpha) != 1L ||
+            is.na(alpha) || alpha < 0 || alpha > 1))
+        stop("[LensViewer] `alpha` must be one number in [0, 1]", call. = FALSE)
+    list(color = if (!is.null(color)) as.list(color),
+        width = if (!is.null(width)) as.numeric(width),
+        alpha = if (!is.null(alpha)) as.numeric(alpha))
+}
+
 # Panel ids name a dock slot, a selection source (`panel:<id>`) and a file:
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
-    "transcripts", "data", "regions", "analysis", "images", "register", "annotations", "layers")
+    "transcripts", "selection", "data", "analysis", "images", "register", "annotations",
+    "layers")
 
 .check_panel_id <- function(id, arg = "id", builtin_ok = FALSE) {
     if (!is.character(id) || length(id) != 1L || !grepl("^[A-Za-z0-9_.-]{1,64}$", id))
