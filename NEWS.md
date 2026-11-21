@@ -1,5 +1,7 @@
 # GiottoLens (development version)
 
+* Requires GiottoClass 0.8.0, which stores image affines in the standard
+  column-vector convention that the viewer already uses.
 * One browser window shows the viewer at a time. The window `launch_lens()` opens gets it.
   Any other window that opens the viewer URL shows a four-digit code and waits: type that
   code in the window that shows the viewer, or run `viewer$allow(code)`. The code is shown
