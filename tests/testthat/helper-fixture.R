@@ -152,8 +152,9 @@ lens_xenium_fixture <- local({
 })
 
 # The routes a viewer's app reads (see .lens_app())
-lens_routes <- function(mounts = list(), images = list()) {
+lens_routes <- function(mounts = list(), images = list(), secret = "sec") {
     e <- new.env(parent = emptyenv())
+    e$secret <- secret
     e$mounts <- lapply(mounts, normalizePath, mustWork = TRUE)
     e$images <- lapply(images, normalizePath, mustWork = TRUE)
     e
@@ -197,24 +198,53 @@ http_get <- function(url, headers = list(), timeout = 10) {
     res
 }
 
+# The viewer on the port of `url`
+lens_viewer_at <- function(url) {
+    port <- regmatches(url, regexec("^[a-z]+://[^/:]+:([0-9]+)/", url))[[1L]][2L]
+    .lens_registry[[port]]
+}
+
+# A window as the page behaves (adr/0028): `hello` on open, then `ready` once
+# R gives it the viewer. `state$msgs` holds what R sends after that;
+# `state$grant`, `state$wait` and `state$released` the handshake.
+# `allow`: let it in with viewer$allow(), as a window launch_lens() opened;
+#   FALSE for a window that asks and waits.
+# `key`: the key of an earlier grant, as a reload sends it.
 # `load`: the load the page says it shows (the manifest's), or NULL to say
-# nothing, as a page from before set_object() existed
-ws_client <- function(url, origin = NULL, load = NULL) {
+#   nothing, as a page from before set_object() existed
+ws_client <- function(url, origin = NULL, load = NULL, allow = TRUE, key = NULL) {
+    if (allow) {
+        viewer <- lens_viewer_at(sub("^ws", "http", url))
+        if (!is.null(viewer)) suppressMessages(viewer$allow())
+    }
     headers <- if (!is.null(origin)) list(Origin = origin)
     ws <- websocket::WebSocket$new(url, headers = headers, autoConnect = FALSE)
     state <- new.env()
     state$open <- FALSE; state$closed <- FALSE; state$msgs <- list()
     ws$onOpen(function(e) {
         state$open <- TRUE
-        # A real tab announces itself once its handlers are registered
-        ws$send(jsonlite::toJSON(list(type = "ready", data = c(list(protocol = .lens_protocol),
-            if (!is.null(load)) list(load = load))), auto_unbox = TRUE))
+        ws$send(jsonlite::toJSON(list(type = "hello", data = list(protocol = .lens_protocol,
+            key = key)), auto_unbox = TRUE, null = "null"))
     })
     ws$onClose(function(e) state$closed <- TRUE)
-    ws$onMessage(function(e) state$msgs[[length(state$msgs) + 1L]] <-
-        jsonlite::fromJSON(e$data, simplifyVector = FALSE))
+    ws$onMessage(function(e) {
+        m <- jsonlite::fromJSON(e$data, simplifyVector = FALSE)
+        if (m$type == "grant") {
+            state$grant <- m$data
+            # A real page announces itself once its handlers are registered
+            ws$send(jsonlite::toJSON(list(type = "ready", data = c(list(protocol = .lens_protocol),
+                if (!is.null(load)) list(load = load))), auto_unbox = TRUE))
+        } else if (m$type == "wait") state$wait <- m$data
+        else if (m$type == "released") state$released <- TRUE
+        else state$msgs[[length(state$msgs) + 1L]] <- m
+    })
     ws$connect()
     list(ws = ws, state = state)
+}
+
+# The URL of data path `rel` of `viewer`, under its current data secret
+lens_data_url <- function(viewer, rel = "") {
+    paste0(viewer$url, "d/", get("private", viewer$.__enclos_env__)$routes$secret, "/", rel)
 }
 
 ws_url <- function(viewer, token = NULL) {

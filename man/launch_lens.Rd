@@ -57,8 +57,8 @@ port forward.}
 
 \item{open}{Open the viewer (default \code{TRUE}): in the IDE's viewer pane
 in RStudio (Desktop, Server, Workbench) and Positron, otherwise in the
-browser. Set \code{options(GiottoLens.viewer = "browser")} to always use the
-browser.}
+browser. Set \code{options(GiottoLens.viewer = "browser")} (in \verb{~/.Rprofile}
+to keep it) to always use the system's default browser.}
 
 \item{transfer}{How the browser reads tiles: \code{"whole"} fetches each tile
 file in one request (fastest when the browser and R share a machine),

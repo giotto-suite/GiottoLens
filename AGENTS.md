@@ -126,15 +126,35 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   per launch; any other path is a 404) and the viewer uses page-relative URLs (resolve against
   `document.baseURI`; the Vite `base` is `./`), so path-prefixing proxies work:
   - `/lens/<token>/`: bundle, from the package;
-  - `.../session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, `items/`, job
+  - `.../ws`: the WebSocket;
+  - `.../d/<secret>/`: the data, below. The secret is sent only in `grant`, to the window
+    that shows the viewer (adr/0028); the page builds every data URL with `dataUrl()`
+    (`core/base.ts`), never from `document.baseURI` directly;
+  - `.../d/<secret>/session/`: per-viewer temp dir (manifest, `cells-<load>.parquet`, `items/`, job
     progress), removed by `close()`. A file whose name stays across loads (the manifest) is
     fetched with `cache: 'no-store'`;
   - `.../work/`: the working bundle (metadata, panel data), through `.data_response()`, which
     checks real paths on every request: it is in the project, where others may write;
   - `.../files/<layer>/`: store directories, whole files from httpuv's own thread (no R);
   - `.../data/<layer>/`: the same through `.data_response()`, Range-aware, on R's main thread;
-  - `.../image/<k>`: image file k only (never its folder), through `.data_response()`;
-  - `.../ws`: the WebSocket.
+  - `.../image/<k>`: image file k only (never its folder), through `.data_response()`.
+- One window shows the viewer (adr/0028). A page says `hello` (with the key of its last
+  grant) on every connect; R answers `grant` (data secret, key) or `wait` (code). R reads
+  only `hello` from a window that does not show the viewer, and sends to the one that does
+  from its `ready` on (`conns` holds that one socket; `pending` the one granted until its
+  `ready`; `knocks` the others). `viewer$allow(code)` or the `claim` ask from the window that shows
+  the viewer, both with the code the waiting window shows, moves it (the code goes to the
+  waiting window alone: never print it, log it or send it elsewhere); the old window gets `released`, and a new secret ends its data paths
+  (`new_secret()`). The key from a second connection while that window is connected gets it
+  a `probe` (a request, answered with `reply`): answered, the newcomer waits with a code; not
+  answered in `.lens_probe_wait` seconds, the newcomer is given the viewer. The window
+  released gets the viewer back with its old key while no window shows it, until the new
+  one's `ready` (`previous_key`). Past `.lens_knocks_max` other windows the oldest is closed.
+    A waiting window whose socket closes shows no code until R sends one again (gate state
+  `reconnecting`). `ready` from a window that never said `hello` warns once, naming its
+  protocol when it is one number and `?` otherwise.
+  `launch_lens(open = FALSE)` needs `viewer$allow()` before the URL is
+  opened; the test helpers `ws_client()` and `lens_browser()` call it.
 - httpuv `staticPath` ignores Range. Headers include `Content-Encoding: identity`
   (httpuv gzips otherwise, and fetch cannot opt out).
 - Binds `127.0.0.1` on a random port. The token path is the access check for files and the
@@ -147,7 +167,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Browser-supplied text printed in the console goes through `.console_text()`; strings in
   generated R code (`.rule_code()`) through `encodeString()`.
 - `launch_lens()` opens RStudio's viewer pane via `getOption("viewer")`, Positron's via
-  `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`).
+  `browseURL()`, otherwise the browser (`.ide()`, `.open_viewer()`). With
+  `options(GiottoLens.viewer = "browser")` it is the system's browser, through
+  `.open_system()` in Positron, whose `browseURL()` shows the pane.
 
 ### Objects in a session (adr/0017)
 
@@ -356,7 +378,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
   the 7-color `blue-white-red` as `RdBu`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 7)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 8)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.

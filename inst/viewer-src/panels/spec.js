@@ -10,6 +10,7 @@
 // not sent. An interval param named `range` sends its extent by field
 // (`panel_pick` with `value.range`) when the drag is released, or once it has
 // not changed for 600 ms; the same extent is sent once.
+import { dataUrl } from '../core/base.ts';
 import { state } from '../core/state.js';
 import { store, actions } from '../core/store.ts';
 import { rangeBuffer, readColumns, numRows } from '../data/parquet.ts';
@@ -35,7 +36,7 @@ function brushValue(spec, saved) {
 }
 
 async function readRows(url) {
-  const cols = await readColumns(await rangeBuffer(new URL(url, document.baseURI).href), null);
+  const cols = await readColumns(await rangeBuffer(dataUrl(url)), null);
   const names = Object.keys(cols), n = numRows(cols);
   const rows = new Array(n);
   for (let i = 0; i < n; i++) { const r = {}; for (const k of names) r[k] = cols[k][i]; rows[i] = r; }

@@ -17,6 +17,20 @@
     paste(chars[out[seq_len(n)] + 1L], collapse = "")
 }
 
+# The code a window waiting for the viewer shows (adr/0028): four digits. It
+# names the window; it is not a secret.
+.rand_code <- function() {
+    as.character(1000L + sum(utf8ToInt(.rand_id(4L)) * c(1L, 62L, 3844L, 238328L)) %% 9000L)
+}
+
+# Windows that may be connected without showing the viewer, and of those the
+# ones that may wait with a code. Past either, the oldest is closed.
+.lens_knocks_max  <- 16L
+.lens_waiting_max <- 8L
+
+# Seconds the window that shows the viewer has to answer that it is there
+.lens_probe_wait <- 2
+
 # Browser-supplied text for the console, without control characters (which
 # could carry terminal escape sequences); newlines and tabs are kept
 .console_text <- function(x) {
