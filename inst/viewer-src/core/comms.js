@@ -5,11 +5,13 @@
 // Reconnects every 2s until R's event loop processes the initial handshake.
 //
 // One window shows the viewer (adr/0028). On every connect the page says
-// 'hello' with the key of its last grant. R answers 'grant' (the data secret
-// and a key): the page then sends 'ready' and is live. Or it answers 'wait'
-// (a code): the page shows the code until it is given to R, in the console or
-// typed in the window that shows the viewer. 'released' says the viewer moved
-// to another window.
+// 'hello' with the key of its last grant and, in the window launch_lens()
+// opened by a command, the key from the URL's fragment. R answers 'grant'
+// (the data secret and a key): the page then sends 'ready' and is live. Or
+// it answers 'wait' (a code): the page shows the code until it is given to
+// R, in the console or typed in the window that shows the viewer. 'released'
+// says the viewer moved to another window. 'probe' asks the window that shows the viewer whether it
+// is there, when its key comes from another connection: it replies.
 // ui/gate.ts shows these states.
 //
 // Messages are { type, id?, data }. A message from R with an `id` is a
@@ -46,8 +48,10 @@ const KEY = `giottolens-window:${globalThis.location?.pathname ?? ''}`;
 const windowKey = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 
 // Whether this window shows the viewer: { state: 'connecting' | 'granted' |
-// 'waiting' | 'released' | 'closed', code? }. `fn` gets the current one at
-// once and each change; the returned function unsubscribes.
+// 'waiting' | 'reconnecting' | 'released' | 'closed', code? }. 'reconnecting':
+// a window that waited lost its socket, and shows no code until R sends one
+// again. `fn` gets the current one at once and each change; the returned
+// function unsubscribes.
 let gate = { state: 'connecting' };
 const gateFns = new Set();
 export function onGate(fn) {
@@ -60,8 +64,21 @@ function setGate(g) {
   gateFns.forEach(fn => fn(g));
 }
 
+// The key launch_lens() puts in the fragment of the URL it opens, for one
+// window (adr/0028). Taken out of the address bar, so it is not copied with
+// the URL or kept in the history.
+function takeLaunchKey() {
+  const m = /^#launch=([A-Za-z0-9]+)$/.exec(globalThis.location?.hash ?? '');
+  if (!m) return null;
+  try { history.replaceState(history.state, '', location.pathname + location.search); } catch { /* stays */ }
+  return m[1];
+}
+let launchKey = takeLaunchKey();
+
 function sayHello() {
-  ws.send(JSON.stringify({ type: 'hello', data: { protocol: PROTOCOL, key: windowKey() } }));
+  ws.send(JSON.stringify({ type: 'hello', data: {
+    protocol: PROTOCOL, key: windowKey(), ...(launchKey ? { launch: launchKey } : {}),
+  } }));
 }
 
 // Ask R for the viewer again, from a window it was moved away from
@@ -81,6 +98,7 @@ export function acquire() {
 }
 
 function onGrant({ data, key }) {
+  launchKey = null;
   try { sessionStorage.setItem(KEY, key); } catch { /* a reload asks again */ }
   // The page's URLs are those of an earlier grant: start over with this one
   if (dataRoot() && dataRoot() !== `d/${data}/`) { location.reload(); return; }
@@ -135,6 +153,12 @@ export function askR(op, args = {}) {
     asked.set(id, { resolve, reject });
     ws.send(JSON.stringify({ type: 'ask', id, data: { op, ...args } }));
   });
+}
+
+// Their answers come on this socket, to the window that shows the viewer
+function dropAsks(why) {
+  for (const p of asked.values()) p.reject(new Error(why));
+  asked.clear();
 }
 
 function onAnswer({ id, data, error, code }) {
@@ -213,11 +237,13 @@ function connect() {
       granted = live = false;
       quiet = true;
       setRStatus('disconnected');
+      dropAsks('the viewer moved to another window');
       setGate({ state: 'released' });
     }
     // viewer$close(): the server is going away, so stop trying to reach it
     else if (msg.type === 'closed') { stopped = true; setGate({ state: 'closed' }); }
     else if (!granted) return;
+    else if (msg.type === 'probe') ws.send(JSON.stringify({ type: 'reply', id: msg.id, data: {} }));
     else if (msg.type === 'answer') onAnswer(msg.data ?? {});
     else dispatch(msg);
   };
@@ -227,9 +253,8 @@ function connect() {
   ws.onclose = () => {
     granted = live = false;
     setRStatus(stopped ? 'closed' : 'disconnected');
-    // Their answers would come on this socket
-    for (const p of asked.values()) p.reject(new Error('R disconnected'));
-    asked.clear();
+    dropAsks('R disconnected');
+    if (gate.state === 'waiting') setGate({ state: 'reconnecting' });
     if (!stopped) reconnectTimer = setTimeout(connect, 2000);
   };
 }

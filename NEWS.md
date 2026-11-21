@@ -9,8 +9,17 @@
   (tiles, cell table, metadata, images) is served under a path sent only to that window, so
   the viewer URL alone reads none of it. `viewer$describe()` lists waiting windows. Protocol
   8. See adr/0028 and `SECURITY.md`.
+* When `launch_lens()` opens the browser with a command (from a terminal, or with
+  `options(GiottoLens.viewer = "browser")` in Positron), the command gets a page in R's
+  temporary folder instead of the viewer URL, and only the window that page opens gets the
+  viewer. A window opened from the viewer URL by hand shows a code: run `viewer$allow(code)`.
+* Past 8 windows waiting with a code, the one that waited longest is closed and the new one
+  waits.
 * `options(GiottoLens.viewer = "browser")` opens the viewer in the system's default browser
-  from Positron too, where it opened the Viewer pane.
+  from Positron too, where it opened the Viewer pane, when R runs on your machine.
+* On Windows, the viewer's token comes from a cryptographic random source, as on macOS and
+  Linux; before, it came from R's random numbers reseeded from the clock, which a local user
+  could narrow down. See `SECURITY.md`.
 * Opening a snapshot shows `cell` and `rna` by default when it has them, from the start page
   (its pickers list them first) and from `checkout()` / `open_project(name =)`.
 * Annotations have unique names: a new shape is named `annotation_<n>`, and a rename to an

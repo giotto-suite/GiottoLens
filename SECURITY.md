@@ -50,8 +50,8 @@ control.
   cannot reach it. `launch_lens(host = "0.0.0.0")` exposes it to your network; do that only on
   a network you trust, since there is no TLS.
 - **An unguessable URL.** Everything is served under `/lens/<token>/`, with a new random
-  24-character token each launch, drawn from the operating system's random source (not R's
-  random numbers, which `set.seed()` makes predictable). Without the token, the server answers
+  24-character token each launch, drawn from a cryptographic random source on every platform,
+  Windows included (not R's random numbers, which `set.seed()` makes predictable). Without the token, the server answers
   nothing but "not found", including to other users on the same machine.
 - **Only the stores you launched on.** Files are served from inside those stores; a symbolic
   link inside a store that leads elsewhere is not followed.
@@ -62,7 +62,7 @@ control.
   when you type the code it shows, in the window that shows the viewer or in R with
   `viewer$allow(code)`. The code is shown in the waiting window and nowhere else (not in R,
   not in the other window), so it can only come from a window you can see. The window that had the viewer can no longer read
-  the data. After `launch_lens(open = FALSE)`, open the URL and run `viewer$allow(code)`;
+  the data. A duplicated tab is another window: it shows a code too. After `launch_lens(open = FALSE)`, open the URL and run `viewer$allow(code)`;
   in a script, `viewer$allow()` before the URL is opened lets the next window in.
 
 ## What you should know
@@ -73,18 +73,23 @@ control.
   If a window you did not open is waiting (R prints "a window asks to show the viewer"), you
   cannot let it in by mistake: moving the viewer needs the code only that window shows. The URL is printed in the console and by `viewer$describe()`,
   and stops working after `viewer$close()` or a relaunch.
-- **The first window after `launch_lens()`.** `launch_lens()` lets in the first window that
-  connects after it opens the viewer. If your own window shows a code instead of the viewer,
-  another window connected first: close the viewer and launch again.
+- **The window `launch_lens()` opens.** When `launch_lens()` opens the browser with a command
+  (from a terminal, or with `options(GiottoLens.viewer = "browser")` in Positron), the
+  command gets a page in R's temporary folder that only you can read, not the viewer URL.
+  That page sends the browser to the viewer with a key that lets one window in, once. A
+  window opened from the viewer URL by hand then shows a code: run `viewer$allow(code)`.
+  In RStudio's and Positron's viewer panes no command runs: `launch_lens()` lets in the
+  first window that connects after it opens the viewer. If your own window shows a code
+  instead of the viewer, another window connected first: close the viewer and launch again.
 - **Code running in your own window.** A browser extension that can read pages, or a script
   injected into the page, can do what the page can. This is the case for any web page.
 - **Shared machines (HPC login nodes).** Other users can see that a port is open, but without
   the token they cannot read anything through it.
 - **Port forwarding.** Forwarding the port to your laptop (e.g. `ssh -L`) keeps the token
   requirement; anyone with access to your laptop's localhost and the URL could use it.
-- **Opening the browser from a terminal on Linux.** `launch_lens()` then runs `xdg-open` with
-  the URL, which other users can briefly see in the process list. On a shared machine, use
-  `launch_lens(open = FALSE)` and open `viewer$url` yourself, or use RStudio or Positron.
+- **Opening the browser from a terminal.** `launch_lens()` then runs a command (`xdg-open`,
+  `open`), whose arguments other users can briefly see in the process list. They see the
+  path of the page above, which they cannot read, and not the viewer URL.
 - **Code from `viewer$rules(code = TRUE)`.** Column names and labels in it are quoted and
   escaped, so running it only rebuilds the selection.
 

@@ -28,8 +28,9 @@
 .lens_object_ops <- c("catalog", "pull", "item", "cell_ids", "region", "save")
 
 # Parse and validate one WebSocket text frame.
-# Returns list(type, data), or NULL with a warning when the frame is invalid.
-.parse_ws_message <- function(msg) {
+# Returns list(type, data), or NULL when the frame is invalid, with a warning
+# if `warn`.
+.parse_ws_message <- function(msg, warn = TRUE) {
     parsed <- tryCatch(
         jsonlite::fromJSON(msg, simplifyVector = FALSE),
         error = function(e) NULL
@@ -37,7 +38,7 @@
     type <- if (is.list(parsed)) parsed[["type"]]
     if (!is.character(type) || length(type) != 1L ||
         !type %in% .lens_inbound_types) {
-        warning("[LensViewer] dropped an invalid message from the viewer",
+        if (warn) warning("[LensViewer] dropped an invalid message from the viewer",
             call. = FALSE)
         return(NULL)
     }

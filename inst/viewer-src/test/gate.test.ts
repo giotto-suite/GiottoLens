@@ -20,13 +20,17 @@ class FakeSocket {
 const store = new Map<string, string>();
 const reload = vi.fn();
 
-async function load() {
+const replaceState = vi.fn();
+
+async function load(hash = '') {
   vi.resetModules();
   store.clear();
   reload.mockClear();
+  replaceState.mockClear();
   vi.stubGlobal('WebSocket', FakeSocket);
   vi.stubGlobal('document', { baseURI: 'http://lens/lens/tok/' });
-  vi.stubGlobal('location', { protocol: 'http:', pathname: '/lens/tok/', reload });
+  vi.stubGlobal('location', { protocol: 'http:', pathname: '/lens/tok/', search: '', hash, reload });
+  vi.stubGlobal('history', { state: null, replaceState });
   vi.stubGlobal('window', { addEventListener: () => {} });
   vi.stubGlobal('sessionStorage', {
     getItem: (k: string) => store.get(k) ?? null,
@@ -136,6 +140,54 @@ describe('window handshake', () => {
     expect(b.types()).toEqual(['hello']);
   });
 
+  it('released: asks waiting for an answer are rejected', async () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('grant', { data: 'S1', key: 'K1' });
+    const ask = comms.askR('pull', {});
+    const id = a.sent.at(-1).id;
+    a.say('released');
+    await expect(ask).rejects.toThrow('the viewer moved to another window');
+    a.say('answer', { id, data: {} });
+  });
+
+  it('probe: the window that shows the viewer replies, another does not', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    const probe = (id: string) => a.onmessage?.({ data: JSON.stringify({ type: 'probe', id }) });
+    probe('probe-1');
+    expect(a.types()).toEqual(['hello']);
+    a.say('grant', { data: 'S1', key: 'K1' });
+    probe('probe-2');
+    expect(a.sent.at(-1)).toEqual({ type: 'reply', id: 'probe-2', data: {} });
+    a.say('released');
+    probe('probe-3');
+    expect(a.sent.at(-1)).toEqual({ type: 'reply', id: 'probe-2', data: {} });
+  });
+
+  it('a waiting window shows no code once its socket closes, until R sends one again', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('wait', { code: '4821' });
+    expect(gates.at(-1)).toEqual({ state: 'waiting', code: '4821' });
+    a.readyState = 3;
+    vi.useFakeTimers();
+    a.onclose?.();
+    expect(gates.at(-1)).toEqual({ state: 'reconnecting' });
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+    const b = FakeSocket.last;
+    expect(b).not.toBe(a);
+    b.open();
+    expect(b.sent).toEqual([{ type: 'hello', data: { protocol: comms.PROTOCOL, key: null } }]);
+    expect(gates.at(-1)).toEqual({ state: 'reconnecting' });
+    b.say('wait', { code: '1357' });
+    expect(gates.at(-1)).toEqual({ state: 'waiting', code: '1357' });
+  });
+
   it('closed: says so and does not reconnect', () => {
     comms.initComms();
     const a = FakeSocket.last;
@@ -148,5 +200,30 @@ describe('window handshake', () => {
     vi.advanceTimersByTime(5000);
     vi.useRealTimers();
     expect(FakeSocket.last).toBe(a);
+  });
+});
+
+describe('launch key', () => {
+  it('goes with hello until the grant, and leaves the address bar', async () => {
+    const { comms } = await load('#launch=abcDEF123');
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/lens/tok/');
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    expect(a.sent).toEqual([{ type: 'hello',
+      data: { protocol: comms.PROTOCOL, key: null, launch: 'abcDEF123' } }]);
+    a.say('grant', { data: 'S1', key: 'K1' });
+    a.say('released');
+    comms.requestViewer();
+    expect(a.sent.at(-1)).toEqual({ type: 'hello', data: { protocol: comms.PROTOCOL, key: 'K1' } });
+  });
+
+  it('another fragment is not a launch key', async () => {
+    const { comms } = await load('#launch=a/b');
+    expect(replaceState).not.toHaveBeenCalled();
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    expect(a.sent).toEqual([{ type: 'hello', data: { protocol: comms.PROTOCOL, key: null } }]);
   });
 });

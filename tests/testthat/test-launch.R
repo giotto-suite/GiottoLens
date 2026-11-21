@@ -331,10 +331,64 @@ test_that("the viewer opens in RStudio's pane, else the browser", {
     expect_identical(opened, "browser: u")
     # Positron's browseURL() shows its pane: the system's browser is opened instead
     sys <- function(url) opened <<- paste("system:", url)
-    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys), "system")
+    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys, local = TRUE), "system")
     expect_identical(opened, "system: u")
-    expect_identical(.open_viewer("u", ide = "none", pane = pane, system = sys), "browser")
+    expect_identical(.open_viewer("u", ide = "none", pane = pane, system = sys, local = TRUE), "browser")
     expect_identical(opened, "browser: u")
+    # R on another machine: the system's browser there is not the user's
+    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys, local = FALSE), "browser")
+    expect_identical(opened, "browser: u")
+})
+
+test_that("an open that runs a command gets the launch page, another the URL", {
+    opened <- NULL
+    pane <- function(url) opened <<- url
+    sys <- function(url) opened <<- url
+    launch <- function(command) if (command) "page" else "url"
+    old <- options(browser = function(url) opened <<- url, GiottoLens.viewer = NULL)
+    on.exit(options(old), add = TRUE)
+
+    .open_viewer("u", ide = "rstudio", pane = pane, launch = launch)
+    expect_identical(opened, "url")
+    .open_viewer("u", ide = "positron", pane = pane, launch = launch)
+    expect_identical(opened, "url")
+    .open_viewer("u", ide = "none", pane = pane, launch = launch)
+    expect_identical(opened, "url")
+    options(GiottoLens.viewer = "browser")
+    .open_viewer("u", ide = "positron", pane = pane, system = sys, local = TRUE, launch = launch)
+    expect_identical(opened, "page")
+
+    # `options(browser =)` a command: browseURL() runs it with what it opens
+    skip_on_os("windows")
+    out <- withr::local_tempfile()
+    script <- withr::local_tempfile(fileext = ".sh")
+    writeLines(c("#!/bin/sh", paste0("printf %s \"$1\" > ", shQuote(out))), script)
+    Sys.chmod(script, "0700")
+    options(browser = script, GiottoLens.viewer = NULL)
+    .open_viewer("u", ide = "none", pane = pane, launch = launch)
+    expect_true(pump_until(function() file.exists(out) && length(readLines(out, warn = FALSE))))
+    expect_identical(readLines(out, warn = FALSE), "page")
+})
+
+test_that(".local_session() is FALSE over SSH, in Positron Server and without a display", {
+    env <- function(...) {
+        set <- c(character(), ...)
+        function(x) {
+            out <- set[x]
+            out[is.na(out)] <- ""
+            unname(out)
+        }
+    }
+    yes <- function(cmd) TRUE
+    expect_true(.local_session(env(), "Darwin"))
+    expect_true(.local_session(env(), "Windows"))
+    expect_false(.local_session(env(SSH_CONNECTION = "10.0.0.1 50000 10.0.0.2 22"), "Darwin"))
+    expect_false(.local_session(env(SSH_TTY = "/dev/pts/0"), "Linux", yes))
+    expect_false(.local_session(env(POSITRON_MODE = "server"), "Darwin"))
+    expect_false(.local_session(env(), "Linux", yes))
+    expect_true(.local_session(env(DISPLAY = ":0"), "Linux", yes))
+    expect_true(.local_session(env(WAYLAND_DISPLAY = "wayland-0"), "Linux", yes))
+    expect_false(.local_session(env(DISPLAY = ":0"), "Linux", function(cmd) FALSE))
 })
 
 test_that(".ide reads the IDE from the environment", {

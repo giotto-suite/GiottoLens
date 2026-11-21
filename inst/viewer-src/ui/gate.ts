@@ -1,6 +1,6 @@
 // One window shows the viewer (adr/0028). This is what the others show: the
-// code to give R (viewer$allow(code)) while waiting, or that the viewer moved
-// away. In the window that shows the viewer, a bar takes the code of a
+// code to give R (viewer$allow(code)) while waiting, that the window is
+// reconnecting, or that the viewer moved away. In the window that shows the viewer, a bar takes the code of a
 // window that waits and moves the viewer to it.
 import { askR, onGate, onMessage, requestViewer } from '../core/comms.js';
 
@@ -35,6 +35,9 @@ export function initGate(): void {
       title.textContent = 'This window is waiting for the viewer';
       text.textContent = `In R, run viewer$allow(${g.code ?? ''}). ` +
         'Or type this code in the window that shows the viewer.';
+    } else if (g.state === 'reconnecting') {
+      title.textContent = 'Reconnecting to R';
+      text.textContent = '';
     } else if (g.state === 'released') {
       title.textContent = 'The viewer moved to another window';
       text.textContent = '';
