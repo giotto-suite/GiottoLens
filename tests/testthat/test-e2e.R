@@ -899,6 +899,62 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
     expect_identical(br$errors(), character())
 })
 
+test_that("a group splits into an empty pane that lists what it can show", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 1400, height = 800)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, tiles_loaded))
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    expect_true(pump_until(function() v$connected()))
+    groups <- function() { p <- v$panels(); setNames(p$group, p$id) }
+    n_groups <- function() br$js("document.querySelectorAll('.dv-groupview').length")
+    empty <- "document.querySelector('.dv-groupview .dock-empty')"
+    pick <- function(kind) br$js(sprintf(
+        "[...%s.querySelectorAll('button')].find(b => b.textContent === '%s').click()", empty, kind))
+    # By the tab: a panel's content is rendered outside its group's element
+    split <- function(of, dir) br$js(sprintf(paste0(
+        "[...document.querySelectorAll('.dv-tab')].find(t => t.textContent.trim() === '%s')",
+        ".closest('.dv-groupview').querySelector('.dock-split[data-split=%s]').click()"), of, dir))
+    n0 <- n_groups()
+    g0 <- groups()
+
+    # Split right of the spatial view: an empty pane with the "+" menu's
+    # panels in it; one picked opens there
+    split("spatial", "right")
+    expect_true(browser_wait(br, sprintf("document.querySelectorAll('.dv-groupview').length === %d && !!%s", n0 + 1, empty)))
+    expect_identical(groups(), g0)
+    pick("density")
+    expect_true(browser_wait(br, sprintf("!!document.querySelector('[data-panel=density]') && !%s", empty)))
+    g <- groups()
+    expect_false(g[["density"]] %in% g0)
+
+    # Split down: the spatial view, open elsewhere, moves into the empty pane
+    split("density", "below")
+    expect_true(browser_wait(br, paste0("!!", empty)))
+    pick("spatial")
+    expect_true(browser_wait(br, sprintf("!%s", empty)))
+    g <- groups()
+    expect_false(g[["spatial"]] %in% c(g0, g[["density"]]))
+    expect_identical(sum(v$panels()$id == "spatial"), 1L)
+    expect_true(browser_wait(br, "window.__giottolens.spatial?.viewState != null"))
+
+    # An empty pane survives a reload with the layout, and closes
+    split("scatter", "below")
+    expect_true(browser_wait(br, paste0("!!", empty)))
+    n1 <- n_groups()
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"views":[]', priv$config_json %||% "", fixed = TRUE)))
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, paste0("!!document.querySelector('.r-status.connected') && !!", empty)))
+    expect_identical(n_groups(), n1)
+    br$js(sprintf("%s.querySelector('.dock-empty-close').click()", empty))
+    expect_true(browser_wait(br, sprintf("document.querySelectorAll('.dv-groupview').length === %d && !%s", n1 - 1L, empty)))
+    expect_identical(br$errors(), character())
+})
+
 test_that("a reload brings back the layout, panels, settings and brushes", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
