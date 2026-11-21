@@ -147,17 +147,15 @@
 }
 
 # A giottoAffineImage (flipped, rotated, registered) keeps its file and
-# raster as they were and the transform in @affine, applied to coordinates in
-# the raster's extent as `xy %*% L + shift`. Returned as the rows of the
-# column-vector form, c(a, b, c, d, e, f) for x' = a x + b y + c and
-# y' = d x + e y + f; NULL for an untransformed image.
+# raster as they were and the transform in @affine, a column-vector matrix
+# applied to coordinates in the raster's extent. Returned as its first two
+# rows, c(a, b, c, d, e, f) for x' = a x + b y + c and y' = d x + e y + f;
+# NULL for an untransformed image.
 .image_affine <- function(img) {
     if (!methods::.hasSlot(img, "affine")) return(NULL)
     m <- img@affine[]
-    L <- m[1:2, 1:2]
-    s <- m[1:2, 3]
-    if (identical(unname(L), diag(2)) && all(s == 0)) return(NULL)
-    c(L[1L, 1L], L[2L, 1L], s[[1L]], L[1L, 2L], L[2L, 2L], s[[2L]])
+    if (identical(unname(m[1:2, 1:2]), diag(2)) && all(m[1:2, 3] == 0)) return(NULL)
+    .affine_vector(m)
 }
 
 .is_tiff <- function(path) {

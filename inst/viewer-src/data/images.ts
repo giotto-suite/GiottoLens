@@ -4,6 +4,7 @@
 // resolution IFDs after the first (COG overviews). The OME-XML is not read:
 // Xenium's per-channel files each describe all channels of the set (adr/0008).
 // Whether an image is RGB also comes from the file (imageKind()).
+import { dataUrl } from '../core/base.ts';
 import { fromUrl, GeoTIFFImage } from 'geotiff';
 import { TiffPixelSource } from '@vivjs/loaders';
 import { Matrix4 } from '@math.gl/core';
@@ -86,7 +87,7 @@ export function fillPerSample(fd: Record<string, any>) {
 }
 
 export async function openImage(entry: ImageEntry, pool: ImagePool, box?: Extent): Promise<LensImage> {
-  const url = new URL(entry.url, document.baseURI).href;
+  const url = dataUrl(entry.url);
   const tiff = await fromUrl(url);
   const base = await tiff.getImage(0);
   const levels = [base, ...(await reducedLevels(tiff, base))];

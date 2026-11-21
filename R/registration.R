@@ -157,7 +157,7 @@ write_registration <- function(reg, dir = ".", prefix = reg$image) {
 
 # The image in `file` placed by `transform` (pixels to data) as a
 # giottoAffineImage. GiottoClass applies an image's affine to its raster
-# extent coordinates as `xy %*% m[1:2, 1:2] + m[1:2, 3]`.
+# extent coordinates.
 .registered_image <- function(file, transform, name) {
     if (!requireNamespace("GiottoClass", quietly = TRUE))
         stop("[LensViewer] registered_image() needs GiottoClass", call. = FALSE)
@@ -168,5 +168,5 @@ write_registration <- function(reg, dir = ".", prefix = reg$image) {
                           0, -(e[[4L]] - e[[3L]]) / terra::nrow(r), e[[4L]],
                           0, 0, 1), 3L, byrow = TRUE)
     g <- transform %*% solve(to_extent)
-    GiottoClass::affine(img, rbind(cbind(t(g[1:2, 1:2]), g[1:2, 3L]), c(0, 0, 1)))
+    GiottoClass::affine(img, g)
 }

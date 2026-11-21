@@ -7,6 +7,7 @@
 // something needs it (metaColumn(), needColumns()); after a payload, the rest
 // load in the background while all columns fit PREFETCH_BYTES, so typical
 // datasets end up fully loaded and larger ones keep only what is used.
+import { dataUrl } from '../core/base.ts';
 import { state } from '../core/state.js';
 import { readColumns } from './parquet.ts';
 
@@ -124,7 +125,7 @@ function load(m: MetaInfo): Promise<void> {
 // One column file, whole: the files are small and served without R. Item
 // files (data/items.ts) are read the same way.
 export async function readColumn(m: Pick<MetaInfo, 'kind' | 'url'>): Promise<Pick<MetaColumn, 'values' | 'min' | 'max'>> {
-  const r = await fetch(new URL(m.url, document.baseURI).href);
+  const r = await fetch(dataUrl(m.url));
   if (!r.ok) throw new Error(`${m.url}: HTTP ${r.status}`);
   const raw = (await readColumns(await r.arrayBuffer(), ['value'])).value ?? [];
   const cat = m.kind === 'categorical';

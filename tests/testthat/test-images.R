@@ -39,7 +39,9 @@ test_that("image files are served by Range at image/<k> and nothing else is", {
         expect_identical(.data_response(req(p), list(), "/lens/tok", images)$status, 404L, info = p)
 
     app <- .lens_app(tempdir(), tempdir(), lens_routes(list(m = tempdir()), images), "tok", list())
-    expect_true(app$staticPaths[["/lens/tok/image"]]$options$exclude)
+    expect_true(app$staticPaths[["/lens/tok/d/sec"]]$options$exclude)
+    expect_identical(app$call(req("/lens/tok/d/sec/image/0", "bytes=0-3"))$status, 206L)
+    expect_identical(app$call(req("/lens/tok/image/0", "bytes=0-3"))$status, 404L)
 })
 
 test_that("a transformed image carries its affine; a plain one none", {
@@ -94,7 +96,7 @@ test_that("add_image() serves a file and lists it for tabs that open later", {
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
     added <- function() {
-        r <- http_get(paste0(v$url, "session/images_added.json"))
+        r <- http_get(lens_data_url(v, "session/images_added.json"))
         if (r$status_code == 404L) return(list())
         jsonlite::fromJSON(rawToChar(r$content), simplifyVector = FALSE)
     }
@@ -106,9 +108,9 @@ test_that("add_image() serves a file and lists it for tabs that open later", {
     expect_identical(e[[1L]]$name, "post")
     expect_identical(e[[1L]]$url, "image/0")
     expect_identical(e[[1L]]$place, "fit")
-    img <- http_get(paste0(v$url, "image/0"), list(Range = "bytes=0-3"))
+    img <- http_get(lens_data_url(v, "image/0"), list(Range = "bytes=0-3"))
     expect_identical(img$status_code, 206L)
-    expect_identical(http_get(paste0(v$url, "image/1"))$status_code, 404L)
+    expect_identical(http_get(lens_data_url(v, "image/1"))$status_code, 404L)
 
     v$add_image(fx$rgb_file)
     e <- added()

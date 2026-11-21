@@ -6,8 +6,8 @@
 \description{
 Owns the httpuv server for one viewer. WebSocket messages from the browser
 (selection, annotations) arrive on the main R thread and update the public
-fields. Several browser tabs may connect; messages to the viewer go to all
-of them.
+fields. One browser window shows the viewer at a time; \code{allow()} moves it
+to another.
 }
 \section{Public fields}{
   \if{html}{\out{<div class="r6-fields">}}
@@ -49,6 +49,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-delete_save}{\code{LensViewer$delete_save()}}
     \item \href{#method-LensViewer-send}{\code{LensViewer$send()}}
     \item \href{#method-LensViewer-connected}{\code{LensViewer$connected()}}
+    \item \href{#method-LensViewer-allow}{\code{LensViewer$allow()}}
     \item \href{#method-LensViewer-push_metadata}{\code{LensViewer$push_metadata()}}
     \item \href{#method-LensViewer-set_column_type}{\code{LensViewer$set_column_type()}}
     \item \href{#method-LensViewer-catalog}{\code{LensViewer$catalog()}}
@@ -353,7 +354,7 @@ kept.
 \if{html}{\out{<a id="method-LensViewer-send"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-send}{}}}
 \subsection{\code{LensViewer$send()}}{
-  Send a typed message to every connected tab
+  Send a typed message to the window that shows the viewer
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$send(type, data = NULL)}
@@ -373,10 +374,38 @@ kept.
 \if{html}{\out{<a id="method-LensViewer-connected"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-connected}{}}}
 \subsection{\code{LensViewer$connected()}}{
-  Whether any browser tab is connected
+  Whether a browser window shows the viewer
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$connected()}
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-allow"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-allow}{}}}
+\subsection{\code{LensViewer$allow()}}{
+  Give the viewer to a browser window. One window shows
+the viewer at a time (adr/0028): the one \code{\link[=launch_lens]{launch_lens()}} opened.
+Any other window that opens the viewer URL shows a code and
+waits; \code{allow(code)} with that code moves the viewer to it, as
+does typing the code in the window that shows the viewer. The
+code is shown in the waiting window only. Without a code or with
+a code no waiting window shows, \code{allow()} warns and changes
+nothing. Without a code and with no window waiting, the next
+window to open the URL gets the viewer, as after
+\code{launch_lens(open = FALSE)} in a script.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$allow(code = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{code}}{The code the waiting window shows}
+    }
     \if{html}{\out{</div>}}
   }
 }

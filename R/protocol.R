@@ -1,11 +1,12 @@
 # ── Viewer → R messages ──────────────────────────────────────────────────────
 
 # Bump with PROTOCOL in inst/viewer-src/core/comms.js
-.lens_protocol <- 7L
+.lens_protocol <- 8L
 
 # Message types the viewer sends; anything else arriving on the socket is
-# dropped. `on()` callbacks can be registered for the first two.
-.lens_inbound_types <- c("cell_selection", "annotations_update",
+# dropped. `on()` callbacks can be registered for the first two. `hello` is
+# the only one read from a window that does not show the viewer (adr/0028).
+.lens_inbound_types <- c("cell_selection", "annotations_update", "hello",
     "ready", "reply", "client_error", "log", "config", "panel_closed",
     "registration_update", "set_column_type", "ask", "close", "panel_pick",
     "analysis_param", "analysis_labels",
@@ -27,8 +28,9 @@
 .lens_object_ops <- c("catalog", "pull", "item", "cell_ids", "region", "save")
 
 # Parse and validate one WebSocket text frame.
-# Returns list(type, data), or NULL with a warning when the frame is invalid.
-.parse_ws_message <- function(msg) {
+# Returns list(type, data), or NULL when the frame is invalid, with a warning
+# if `warn`.
+.parse_ws_message <- function(msg, warn = TRUE) {
     parsed <- tryCatch(
         jsonlite::fromJSON(msg, simplifyVector = FALSE),
         error = function(e) NULL
@@ -36,7 +38,7 @@
     type <- if (is.list(parsed)) parsed[["type"]]
     if (!is.character(type) || length(type) != 1L ||
         !type %in% .lens_inbound_types) {
-        warning("[LensViewer] dropped an invalid message from the viewer",
+        if (warn) warning("[LensViewer] dropped an invalid message from the viewer",
             call. = FALSE)
         return(NULL)
     }

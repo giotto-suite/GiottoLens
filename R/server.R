@@ -7,23 +7,25 @@
 # unit. Anything else is a 404.
 #
 #   /lens/<token>/            viewer bundle, served from the package in place
-#   /lens/<token>/session/    manifest.json, the cell table, items/ (temp dir)
-#   /lens/<token>/work/       the viewer's working bundle (adr/0026): metadata/,
-#                             panels/. In the project, where others may write,
-#                             so it goes through the handler below, which
-#                             checks real paths on every request.
-#   /lens/<token>/data/<m>/   data store <m>, through the Range handler below.
-#                             The stores and images change when another
-#                             object is loaded (`routes`); the token does not.
-#   /lens/<token>/files/<m>/  the same files whole, from httpuv's own thread
-#                             (fast when the browser is local; adr/0004). That
-#                             thread follows symlinks, so a store with links
-#                             leading out of it goes through the handler
-#                             below instead, which checks real paths.
-#   /lens/<token>/image/<k>   image file k, one file per image, through the
-#                             Range handler (the viewer reads TIFF tiles by
-#                             Range). Only the listed files are served.
 #   /lens/<token>/ws          the WebSocket
+#   /lens/<token>/d/<secret>/ the data, below. <secret> is random and sent
+#                             over the WebSocket to the one window that shows
+#                             the viewer (adr/0028); it changes when the
+#                             viewer moves to another window.
+#     session/    manifest.json, the cell table, items/ (temp dir)
+#     work/       the viewer's working bundle (adr/0026): metadata/, panels/.
+#                 In the project, where others may write, so it goes through
+#                 the handler below, which checks real paths on every request.
+#     data/<m>/   data store <m>, through the Range handler below. The stores
+#                 and images change when another object is loaded (`routes`);
+#                 the token does not.
+#     files/<m>/  the same files whole, from httpuv's own thread (fast when
+#                 the browser is local; adr/0004). That thread follows
+#                 symlinks, so a store with links leading out of it goes
+#                 through the handler below instead, which checks real paths.
+#     image/<k>   image file k, one file per image, through the Range handler
+#                 (the viewer reads TIFF tiles by Range). Only the listed
+#                 files are served.
 #
 # The viewer bundle and the data stores are never written to; the project
 # folder itself is never served.
@@ -36,10 +38,11 @@
     "Content-Encoding"             = "identity"
 )
 
-# `routes`: environment holding `mounts`, the data directories (name → path),
-# `images`, the image files (k → path, see .image_entries()), and `work`, the
-# working bundle's directory, all normalized; read on each request, so a load can change them. The files/
-# paths of a new object's stores are added with .files_paths().
+# `routes`: environment holding `secret`, the data path segment, `mounts`, the
+# data directories (name → path), `images`, the image files (k → path, see
+# .image_entries()), and `work`, the working bundle's directory, all
+# normalized; read on each request, so a load can change them. The static
+# paths of a new secret or a new object's stores are set with .data_paths().
 # `session_dir`: directory with manifest.json and metadata/.
 # `ws_handlers`: list(open = function(ws), message = function(ws, msg),
 #   close = function(ws)); `token`: the per-launch path segment.
@@ -49,15 +52,12 @@
                       check_origin = TRUE) {
     root <- .lens_root(token)
     paths <- c(
-        stats::setNames(list(.static_path(viewer_dir, index = TRUE),
-            .static_path(session_dir), httpuv::excludeStaticPath(),
-            httpuv::excludeStaticPath(), httpuv::excludeStaticPath()),
-            paste0(root, c("", "/session", "/data", "/image", "/work"))),
-        .files_paths(root, routes$mounts)
+        stats::setNames(list(.static_path(viewer_dir, index = TRUE)), root),
+        .data_paths(.data_root(root, routes$secret), session_dir, routes$mounts)
     )
     list(
-        call = function(req) .data_response(req, routes$mounts, root, routes$images,
-            routes$work),
+        call = function(req) .data_response(req, routes$mounts,
+            .data_root(root, routes$secret), routes$images, routes$work),
         staticPaths = paths,
         onWSOpen = function(ws) {
             if (!.ws_allowed(ws$request, token, check_origin)) {
@@ -75,14 +75,27 @@
 
 .lens_root <- function(token) paste0("/lens/", token)
 
+# The path the data is served under: `root` is .lens_root()
+.data_root <- function(root, secret) paste0(root, "/d/", secret)
+
+# The static paths under `data_root`: session/ and the stores' files/<m> from
+# httpuv's own thread, everything else through .data_response(). `linked`:
+# per mount, whether .links_outside().
+.data_paths <- function(data_root, session_dir, mounts,
+                        linked = vapply(mounts, .links_outside, NA)) {
+    c(stats::setNames(list(httpuv::excludeStaticPath(), .static_path(session_dir)),
+        paste0(data_root, c("", "/session"))),
+        .files_paths(data_root, mounts, linked))
+}
+
 .static_path <- function(dir, index = FALSE) httpuv::staticPath(dir,
     indexhtml = index, fallthrough = FALSE, headers = .static_headers)
 
 # The files/<m> static paths for normalized store dirs `mounts`; none when the
 # cells come from spatial locations alone
-.files_paths <- function(root, mounts) {
-    files <- lapply(mounts, function(m)
-        if (.links_outside(m)) httpuv::excludeStaticPath() else .static_path(m))
+.files_paths <- function(root, mounts, linked = vapply(mounts, .links_outside, NA)) {
+    files <- Map(function(m, out)
+        if (out) httpuv::excludeStaticPath() else .static_path(m), mounts, linked)
     if (length(files)) stats::setNames(files, paste0(root, "/files/", names(mounts)))
 }
 
@@ -120,7 +133,7 @@
 # httpuv's staticPath ignores Range (always 200 + whole file), which makes the
 # viewer download every column of every tile. This handler answers single
 # byte ranges with 206. It runs on R's main thread, so requests wait while R
-# is busy (adr/0004). `root`: the /lens/<token> prefix. It also answers
+# is busy (adr/0004). `root`: the data path (.data_root()). It also answers
 # files/<m>/ for stores not mounted statically (.links_outside()), image/<k>
 # for the files in `images`, and work/ for the files under `work`.
 
