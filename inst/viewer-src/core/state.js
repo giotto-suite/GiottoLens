@@ -40,4 +40,5 @@ export const state = {
   brushDown:    false,
   brushPos:     null,
   landmarkDrag: null,       // render/landmarks.ts LandmarkDrag
+  annotDrag:    null,       // ui/annot-edit.ts AnnotDrag
 };

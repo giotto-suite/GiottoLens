@@ -16,6 +16,7 @@ import { imageLayer } from '../render/image-layer.ts';
 import { landmarkLayers, type Side, type LandmarkDrag } from '../render/landmarks.ts';
 import { spatialView, type SpatialView } from '../spatial/current.ts';
 import { clientToWorld, fitZoom, dragPan, spaceHeld } from './dom.js';
+import { setOverHandle } from './controller.ts';
 import {
   apply, compose, invert, flip, rotate90, currentTransform, registrationFit, matrix4,
   mapView, UPRIGHT, type Registration, type Landmark, type XY, type Affine,
@@ -109,18 +110,20 @@ let _deck: any = null;            // the image's pane, in the open view (attachR
 let _vs: any = null;              // its view state
 let _armed: { side: Side; id: string; pos: XY; x: number; y: number } | null = null;
 let _dropped = false;
-const _over: Record<Side, boolean> = { moving: false, fixed: false };
+let _overMoving = false;
 const deckOf = (side: Side) => side === 'fixed' ? spatialView()?.deck : _deck;
-const panController = (side: Side, pan: boolean) => deckOf(side)?.setProps({
-  controller: pan ? { doubleClickZoom: false } : { dragPan: false, doubleClickZoom: false } });
+// The main view's controller is ui/controller.ts's to set; the pane has no
+// other writer
+const panController = (side: Side, pan: boolean) => side === 'fixed' ? setOverHandle(!pan)
+  : _deck?.setProps({ controller: pan ? { doubleClickZoom: false } : { dragPan: false, doubleClickZoom: false } });
 
 const _hovers: Record<Side, (info: { picked?: boolean }) => void> = {
   moving: info => hover('moving', info), fixed: info => hover('fixed', info),
 };
 function hover(side: Side, info: { picked?: boolean }) {
   const over = !!info.picked && registering();
-  if (over === _over[side] || state.landmarkDrag) return;
-  _over[side] = over;
+  if (state.landmarkDrag || (side === 'moving' && over === _overMoving)) return;
+  if (side === 'moving') _overMoving = over;
   panController(side, !over);
 }
 export const landmarkHover = (side: Side) => _hovers[side];
@@ -152,7 +155,7 @@ export function landmarkDragEnd(): boolean {
   const d = state.landmarkDrag as LandmarkDrag | null;
   if (!d) return false;
   state.landmarkDrag = null;
-  _over[d.which] = false;
+  if (d.which === 'moving') _overMoving = false;
   panController(d.which, true);
   const reg = store.getState().registration;
   const value = reg && stored(reg, d.which, d.pos);
@@ -331,7 +334,7 @@ export function attachRegistration(view: SpatialView): () => void {
     _deck?.finalize();
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
     _deck = null; _vs = null; _paneImage = null; _paneOrient = null;
-    _armed = null; _over.moving = false; _over.fixed = false;
+    _armed = null; _overMoving = false;
   };
 }
 
