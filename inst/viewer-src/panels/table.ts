@@ -124,7 +124,13 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
   const rowsEl = el('div', { className: 'table-rows' });
   inner.append(head, rowsEl);
   scroll.append(inner);
-  body.append(bar, helpNote, scroll);
+  // One shadow down the cell_ID column's edge while scrolled sideways, over
+  // the scroll rather than per row, whose blurs would band
+  const view   = el('div', { className: 'table-view' });
+  const shadow = el('div', { className: 'table-id-shadow' });
+  shadow.style.left = `${ID_W}px`;
+  view.append(scroll, shadow);
+  body.append(bar, helpNote, view);
 
   let columns: string[] = [];
   let inView: string[] = [];              // columns in view, pinned while shown
@@ -171,7 +177,8 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
     rowsEl.style.top = `${w.top + ROW_H}px`;
     const p = picks();
     const cw = colWindowFor(scroll.scrollLeft, scroll.clientWidth, columns.length);
-    scroll.classList.toggle('scrolled-x', scroll.scrollLeft > 0);
+    view.classList.toggle('scrolled-x', scroll.scrollLeft > 0);
+    shadow.style.bottom = `${scroll.offsetHeight - scroll.clientHeight}px`;   // above the scrollbar
     inView = columns.slice(cw.first, cw.first + cw.count);
     // '…' while a column in view loads; a column out of view shows only if
     // already loaded, since reading it would load it
