@@ -38,7 +38,11 @@ Besides that temporary folder, GiottoLens writes:
 
 Of a project, the server serves only the stores and image files it mounted and the viewer's
 own working bundle; the project folder itself is never served. Folder names never contain the
-token. Saves are opened only by a name GiottoLens lists, never by a path from the page.
+token. Saves are opened and deleted only by a name GiottoLens lists, never by a path from the
+page; a symbolic link in `lens/` is never taken for a save. The start page can delete a save,
+or work a viewer that ended left, in any project it lists, once you confirm; only the window
+that shows the viewer can ask. A working bundle records the user, machine and process that
+write it.
 
 Who can read or change what GiottoLens writes into a project is decided by the project
 folder's permissions, as for your data: GiottoLens has no users and no per-user access

@@ -298,15 +298,16 @@ viewer's settings, with the snapshot shown, which is kept
     \describe{
       \item{\code{sessions}}{Whether to list the working bundles of viewers that
 ended with work not saved too (\code{kind = "session"}; \code{live} is
-\code{TRUE} for a viewer still running, \code{NA} for one on another
-machine)}
+\code{TRUE} for a viewer still running: on another machine, one that
+wrote it in the last two minutes)}
     }
     \if{html}{\out{</div>}}
   }
   \subsection{Returns}{
     A data.frame: \code{name} (what \code{open_save()} takes), \code{kind},
 \code{created}, \code{updated}, \code{snapshot} (the tag of the snapshot it was
-made on), \code{description}, \code{labels}, \code{live}
+made on), \code{description}, \code{labels}, \code{user} (who wrote it), \code{host}
+(where, for a working bundle), \code{live}
   }
 }
 
@@ -338,8 +339,10 @@ same way, and removed once this viewer has taken it over.
 \if{html}{\out{<a id="method-LensViewer-delete_save"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-delete_save}{}}}
 \subsection{\code{LensViewer$delete_save()}}{
-  Delete a save of the project shown. Its snapshot stays
-kept.
+  Delete saves of the project shown, or work not saved
+that a viewer that ended left there. A save's snapshot stays
+kept. The start page's Delete, Discard and Delete selected buttons
+do the same.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$delete_save(name)}
@@ -348,7 +351,8 @@ kept.
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{name}}{A save's name, as \code{saves()} lists it}
+      \item{\code{name}}{Names of saves, as \code{saves()} lists them. None is deleted
+if one cannot be (not listed, or the work of a viewer still running).}
     }
     \if{html}{\out{</div>}}
   }

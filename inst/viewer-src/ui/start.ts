@@ -1,6 +1,6 @@
 // The start page (adr/0019): open a GiottoDisk project, from the recent ones,
-// a path or the IDE's folder dialog, and open one of its saves (adr/0026) or
-// snapshots. R does
+// a path or the IDE's folder dialog, and open one of its snapshots (the
+// Objects tab), saves (adr/0026) or work viewers left (Recovered). R does
 // all of it (askR()); the page only lists and asks. Shown in place of the
 // view when no object is loaded, and as a dialog from the toolbar's project
 // button when one is.
@@ -18,7 +18,9 @@ export interface Snapshot {
 }
 
 // A save of the viewer's work, or the work a viewer that ended left in the
-// project (`kind` session). `snapshot`: null when it was deleted.
+// project (`kind` session). `snapshot`: null when it was deleted. `user`,
+// `host`: who wrote it, where (`host` for a session only); `mine`: not
+// written by another user, a label for browsing, not access control.
 export interface Save {
   name: string;
   kind: 'save' | 'session';
@@ -26,6 +28,9 @@ export interface Save {
   description: string | null;
   labels: string[];
   snapshot: string | null;
+  user?: string | null;
+  host?: string | null;
+  mine?: boolean;
   current: boolean;
 }
 
@@ -39,6 +44,11 @@ export const isAuto = (s: Snapshot) => s.creator === 'GiottoLens' && s.keep === 
 // The snapshots listed: automatic ones only when asked for, or when shown now
 export function listed(snaps: Snapshot[], showAuto: boolean, current: string | null): Snapshot[] {
   return snaps.filter(s => showAuto || !isAuto(s) || s.tag === current);
+}
+
+// The saves listed: work other users' viewers left only when asked for
+export function listedSaves(saves: Save[], showOthers: boolean): Save[] {
+  return saves.filter(s => s.kind === 'save' || showOthers || s.mine !== false);
 }
 
 export function when(iso: string | null): string {
@@ -66,7 +76,8 @@ function button(text: string, onClick: () => void, cls = 'start-btn'): HTMLButto
 // Asks R to open (`op`, with `args`) `name` of `path`. R refuses to drop Lens
 // work not saved on the object shown without `discard`: the page asks first,
 // then sends it. On success R reloads the page.
-async function open(root: HTMLElement, op: 'open' | 'open_save', name: string, args: Record<string, unknown>) {
+async function open(root: HTMLElement, anchor: HTMLElement, op: 'open' | 'open_save', name: string,
+  args: Record<string, unknown>) {
   const status = root.querySelector('.start-status') as HTMLElement;
   const send = async (discard: boolean) => {
     status.textContent = `opening ${name}…`;
@@ -78,7 +89,7 @@ async function open(root: HTMLElement, op: 'open' | 'open_save', name: string, a
       root.classList.remove('busy');
       if (e.code === 'work' && !discard) {
         status.textContent = '';
-        confirmDiscard(root, `Opening ${name} drops Lens work: ${e.message}.`, () => send(true));
+        confirmBox(anchor, `Opening ${name} drops Lens work: ${e.message}.`, 'Discard and open', () => send(true));
         return;
       }
       status.textContent = e.message;
@@ -88,17 +99,29 @@ async function open(root: HTMLElement, op: 'open' | 'open_save', name: string, a
   await send(false);
 }
 
-function confirmDiscard(root: HTMLElement, text: string, ok: () => void) {
+// A confirm box right under `anchor`, scrolled into view: on a long list the
+// end of the page is out of sight. One at a time; an `ok` that fails leaves
+// its message in the box.
+function confirmBox(anchor: HTMLElement, text: string, okText: string, ok: () => unknown) {
+  anchor.closest('.start')?.querySelector('.start-confirm')?.remove();
   const box = el('div', 'start-confirm');
-  box.append(el('div', 'start-confirm-text', text));
+  const msg = el('div', 'start-confirm-text', text);
   const row = el('div', 'start-confirm-row');
-  row.append(
-    button('Discard and open', () => { box.remove(); ok(); }, 'start-btn danger'),
-    button('Cancel', () => box.remove()),
-  );
-  box.append(row);
-  root.querySelector('.start-confirm')?.remove();
-  root.append(box);
+  const go = button(okText, async () => {
+    go.disabled = true;
+    try {
+      await ok();
+      box.remove();
+    } catch (e: any) {
+      msg.textContent = e.message;
+      msg.classList.add('error');
+      go.remove();
+    }
+  }, 'start-btn danger');
+  row.append(go, button('Cancel', () => box.remove()));
+  box.append(msg, row);
+  anchor.after(box);
+  box.scrollIntoView?.({ block: 'nearest' });
 }
 
 // A spatial unit / feature type picker; none when there is no choice (R picks)
@@ -127,33 +150,132 @@ function snapshotRow(root: HTMLElement, path: string, s: Snapshot, current: stri
   const act = el('div', 'start-actions');
   if (unit) act.append(unit);
   if (feat) act.append(feat);
-  act.append(button('Open', () => open(root, 'open', s.name, {
+  act.append(button('Open', () => open(root, row, 'open', s.name, {
     path, ...(unit ? { spat_unit: unit.value } : {}), ...(feat ? { feat_type: feat.value } : {}),
   })));
   row.append(act);
   return row;
 }
 
-function saveRow(root: HTMLElement, path: string, s: Save): HTMLElement {
+// What deleting `saves` does, for the confirm box
+export function deleteText(saves: Save[]): string {
+  const n = saves.filter(s => s.kind === 'save').length;
+  const m = saves.length - n;
+  if (saves.length === 1) {
+    const s = saves[0];
+    return m ? `Discard the work ${s.mine === false && s.user ? s.user + "'s" : 'a'} viewer left here${s.updated ? ' (' + when(s.updated) + ')' : ''}? It cannot be recovered.`
+      : `Delete the save ${s.name}? It cannot be recovered; its snapshot stays.`;
+  }
+  const parts = [n && `delete ${n} save${n > 1 ? 's' : ''}`, m && `discard ${m} work not saved`].filter(Boolean);
+  const text = parts.join(' and ');
+  return `${text[0].toUpperCase()}${text.slice(1)}? They cannot be recovered${n ? '; snapshots stay' : ''}.`;
+}
+
+// Asks R to delete `saves` of `path` together, once confirmed in a box under
+// `anchor`. R deletes none if it refuses one (the work of a viewer still
+// running). `done` lists the project again.
+function remove(anchor: HTMLElement, path: string, saves: Save[], done: () => void) {
+  const left = saves.every(s => s.kind === 'session');
+  confirmBox(anchor, deleteText(saves), left ? 'Discard' : 'Delete', async () => {
+    await askR('delete_save', { path, name: saves.map(s => s.name) });
+    done();
+  });
+}
+
+function saveRow(root: HTMLElement, path: string, s: Save, done: () => void,
+  ticked: Set<string>, onTick: () => void): HTMLElement {
   const row = el('div', 'start-row' + (s.current ? ' current' : ''));
-  const main = el('div', 'start-main');
   const left = s.kind === 'session';
+  const tick = el('input', 'start-check');
+  tick.type = 'checkbox';
+  tick.checked = ticked.has(s.name);
+  tick.title = 'select, to delete several together';
+  tick.setAttribute('aria-label', `select ${left ? 'work not saved' : s.name}`);
+  tick.addEventListener('change', () => {
+    if (tick.checked) ticked.add(s.name); else ticked.delete(s.name);
+    onTick();
+  });
+  const main = el('div', 'start-main');
   const title = el('div', 'start-name', left ? 'Work not saved' : s.name);
   if (s.current) title.append(el('span', 'start-badge', 'shown'));
-  if (left) title.append(el('span', 'start-badge auto', 'left by a viewer that ended'));
+  if (left) title.append(el('span', 'start-badge auto', s.mine === false
+    ? `left by ${s.user}${s.host ? ' on ' + s.host : ''}` : 'left by a viewer that ended'));
   for (const l of s.labels) title.append(el('span', 'start-badge auto', l));
   main.append(title);
   const on = s.snapshot ? `on ${s.snapshot}` : 'its snapshot was deleted';
   main.append(el('div', 'start-sub', [when(s.updated), on].filter(Boolean).join(' · ')));
   if (s.description) main.append(el('div', 'start-desc', s.description));
-  row.append(main);
+  row.append(tick, main);
   const act = el('div', 'start-actions');
-  if (s.snapshot) act.append(button('Open', () => open(root, 'open_save', s.name, { path })));
+  if (s.snapshot) act.append(button('Open', () => open(root, row, 'open_save', s.name, { path })));
+  act.append(button(left ? 'Discard' : 'Delete', () => remove(row, path, [s], done), 'start-btn danger'));
   row.append(act);
   return row;
 }
 
 let showAuto = false;
+let showOthers = false;
+
+// The project page's three tabs: the object's snapshots, the saves of Lens
+// work, and work viewers that ended left (adr/0026)
+export type Tab = 'objects' | 'saves' | 'recovered';
+const TABS: [Tab, string][] = [['objects', 'Objects'], ['saves', 'Saves'], ['recovered', 'Recovered']];
+// The tab picked while the page is open; until then, Saves when there are any
+let picked: Tab | null = null;
+export const firstTab = (saves: Save[], pick: Tab | null): Tab =>
+  pick ?? (saves.some(s => s.kind === 'save') ? 'saves' : 'objects');
+
+function toggle(text: string, on: boolean, change: (on: boolean) => void): HTMLLabelElement {
+  const lab = el('label', 'start-toggle');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.checked = on;
+  cb.addEventListener('change', () => change(cb.checked));
+  lab.append(cb, ' ' + text);
+  return lab;
+}
+
+// A list of saves (or work left) with a bar to delete ticked ones together.
+// `shown()`: the rows listed now; `empty`: the note when there are none.
+function saveList(root: HTMLElement, path: string, shown: () => Save[], verb: string,
+  empty: string, done: () => void): { el: HTMLElement; draw: () => void } {
+  const wrap = el('div', 'start-pane');
+  // Ticked for deleting together; only the rows listed count
+  const ticked = new Set<string>();
+  const bar = el('div', 'start-bulk');
+  const tickAll = el('input', 'start-check');
+  tickAll.type = 'checkbox';
+  tickAll.setAttribute('aria-label', 'select all');
+  const delSel = button(`${verb} selected`, () => {
+    const sel = shown().filter(s => ticked.has(s.name));
+    if (sel.length) remove(bar, path, sel, done);
+  }, 'start-btn danger');
+  const tickAllLab = el('label', 'start-toggle');
+  tickAllLab.append(tickAll, ' select all');
+  bar.append(tickAllLab, delSel);
+  const list = el('div', 'start-list');
+  const updateBar = () => {
+    const rows = shown();
+    const n = rows.filter(s => ticked.has(s.name)).length;
+    delSel.disabled = !n;
+    delSel.textContent = n ? `${verb} selected (${n})` : `${verb} selected`;
+    tickAll.checked = n > 0 && n === rows.length;
+    tickAll.indeterminate = n > 0 && n < rows.length;
+  };
+  const draw = () => {
+    const rows = shown();
+    list.replaceChildren(...rows.map(s => saveRow(root, path, s, done, ticked, updateBar)));
+    if (!rows.length) list.append(el('div', 'start-sub', empty));
+    bar.style.display = rows.length > 1 ? '' : 'none';
+    updateBar();
+  };
+  tickAll.addEventListener('change', () => {
+    for (const s of shown()) if (tickAll.checked) ticked.add(s.name); else ticked.delete(s.name);
+    draw();
+  });
+  wrap.append(bar, list);
+  return { el: wrap, draw };
+}
 
 async function showProject(root: HTMLElement, body: HTMLElement, path: string, back: () => void) {
   body.replaceChildren(el('div', 'start-sub', 'reading the project…'));
@@ -171,32 +293,62 @@ async function showProject(root: HTMLElement, body: HTMLElement, path: string, b
   where.append(el('b', '', basename(res.path)), el('span', 'start-sub', ' ' + res.path));
   head.append(where);
 
+  const again = () => showProject(root, body, path, back);
+  const all = res.saves ?? [];
+  const saves = all.filter(s => s.kind === 'save');
+  const left = all.filter(s => s.kind === 'session');
+  const objects = () => listed(res.snapshots, showAuto, res.current);
+  const recovered = () => listedSaves(left, showOthers);
   const nAuto = res.snapshots.filter(isAuto).length;
-  const list = el('div', 'start-list');
-  const draw = () => {
-    const shown = listed(res.snapshots, showAuto, res.current);
-    list.replaceChildren(...shown.map(s => snapshotRow(root, res.path, s, res.current)));
-    if (!shown.length) list.append(el('div', 'start-sub', res.snapshots.length
-      ? 'Only automatic saves: show them below.' : 'No snapshots in this project.'));
-  };
-  draw();
+  const nOthers = left.length - listedSaves(left, false).length;
 
-  body.replaceChildren(head);
-  if (res.saves?.length) {
-    const saves = el('div', 'start-list');
-    saves.append(...res.saves.map(s => saveRow(root, res.path, s)));
-    body.append(el('div', 'start-label', 'Saves'), saves, el('div', 'start-label', 'Snapshots'));
+  const tabs = el('div', 'start-tabs');
+  tabs.setAttribute('role', 'tablist');
+  const pane = el('div', 'start-pane');
+  const count = (t: Tab) => t === 'objects' ? objects().length : t === 'saves' ? saves.length : recovered().length;
+  let tab = firstTab(all, picked);
+
+  const drawTab = () => {
+    for (const b of tabs.children as HTMLCollectionOf<HTMLElement>) {
+      const t = b.dataset.tab as Tab;
+      b.classList.toggle('active', t === tab);
+      b.setAttribute('aria-selected', String(t === tab));
+      (b.querySelector('.start-tab-n') as HTMLElement).textContent = String(count(t));
+    }
+    if (tab === 'objects') {
+      const list = el('div', 'start-list');
+      const rows = objects();
+      list.replaceChildren(...rows.map(s => snapshotRow(root, res.path, s, res.current)));
+      if (!rows.length) list.append(el('div', 'start-sub', res.snapshots.length
+        ? 'Only automatic objects: show them below.' : 'No objects in this project.'));
+      pane.replaceChildren(list);
+      if (nAuto) pane.append(toggle(`show automatic objects (${nAuto})`, showAuto,
+        on => { showAuto = on; drawTab(); }));
+    } else if (tab === 'saves') {
+      const l = saveList(root, res.path, () => saves, 'Delete',
+        'No saves yet: save from the tools bar, or viewer$save(name) in R.', again);
+      l.draw();
+      pane.replaceChildren(l.el);
+    } else {
+      const l = saveList(root, res.path, recovered, 'Discard', nOthers
+        ? 'Only work left by others: show it below.' : 'Nothing to recover: no viewer left work not saved.', again);
+      l.draw();
+      pane.replaceChildren(l.el);
+      if (nOthers) pane.append(toggle(`show work left by others (${nOthers})`, showOthers,
+        on => { showOthers = on; drawTab(); }));
+    }
+  };
+  for (const [t, label] of TABS) {
+    const b = el('button', 'start-tab');
+    b.type = 'button';
+    b.dataset.tab = t;
+    b.setAttribute('role', 'tab');
+    b.append(label, el('span', 'start-tab-n'));
+    b.addEventListener('click', () => { tab = picked = t; drawTab(); });
+    tabs.append(b);
   }
-  body.append(list);
-  if (nAuto) {
-    const lab = el('label', 'start-toggle');
-    const cb = el('input');
-    cb.type = 'checkbox';
-    cb.checked = showAuto;
-    cb.addEventListener('change', () => { showAuto = cb.checked; draw(); });
-    lab.append(cb, ` show automatic saves (${nAuto})`);
-    body.append(lab);
-  }
+  drawTab();
+  body.replaceChildren(head, tabs, pane);
 }
 
 async function showProjects(root: HTMLElement, body: HTMLElement, pick: (path: string) => void) {

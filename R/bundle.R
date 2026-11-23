@@ -82,23 +82,39 @@
     any(vapply(rule$params$parts %||% list(), .rule_has_ids, NA))
 }
 
-# Whether the viewer that wrote a working bundle still runs: one of this
-# process's running viewers, or a process still running on this machine. NA
-# when it ran on another machine.
-.session_live <- function(b) {
-    if (!identical(b$host, Sys.info()[["nodename"]]) || !is.numeric(b$pid)) return(NA)
-    if (b$pid == Sys.getpid())
-        return(any(vapply(as.list(.lens_registry), function(v)
-            identical(get("private", v$.__enclos_env__)$session_id, b$session), NA)))
-    isTRUE(tryCatch(tools::pskill(b$pid, 0L), error = function(e) FALSE, warning = function(w) FALSE))
+# A running viewer rewrites its working bundle's bundle.json at least this
+# often (seconds), so a viewer on another machine can tell it still runs
+# (adr/0033)
+.heartbeat_s <- 30
+
+# Whether the viewer that wrote working bundle `dir` (`b` its bundle.json)
+# still runs: on this machine, one of this process's running viewers or a
+# process still running; on another, one whose bundle.json was written less
+# than four heartbeats ago. The file's time comes from the file system, the
+# margin covers clocks a little apart.
+.session_live <- function(b, dir) {
+    if (identical(b$host, Sys.info()[["nodename"]]) && is.numeric(b$pid)) {
+        if (b$pid == Sys.getpid())
+            return(any(vapply(as.list(.lens_registry), function(v)
+                identical(get("private", v$.__enclos_env__)$session_id, b$session), NA)))
+        return(isTRUE(tryCatch(tools::pskill(b$pid, 0L), error = function(e) FALSE,
+            warning = function(w) FALSE)))
+    }
+    age <- difftime(Sys.time(), file.mtime(file.path(dir, "bundle.json")), units = "secs")
+    isTRUE(as.numeric(age) < 4 * .heartbeat_s)
 }
 
 # The bundles in project `src`: saves, and with `sessions` the working bundles
 # of viewers that have ended. A data.frame with name (what open_save() takes),
 # kind ("save" or "session"), created, updated, snapshot (its tag),
-# description, labels, live (for sessions) and dir.
+# description, labels, user and host (who wrote it, where), live (for
+# sessions) and dir.
 .lens_saves <- function(src, sessions = FALSE) {
+    # A link is never a bundle (adr/0033): others may write to the project, and
+    # opening, deleting or overwriting a link named like one would reach a
+    # folder elsewhere
     dirs <- list.dirs(.lens_dir(src), recursive = FALSE)
+    dirs <- dirs[!nzchar(Sys.readlink(dirs))]
     rows <- lapply(dirs, function(d) {
         b <- .read_bundle_json(file.path(d, "bundle.json"))
         if (is.null(b) || !identical(as.integer(b$format), .bundle_format)) return(NULL)
@@ -111,12 +127,14 @@
             snapshot = as.character(b$snapshot %||% NA),
             description = as.character(b$description %||% NA),
             labels = paste(unlist(b$labels), collapse = ", "),
-            live = if (work) .session_live(b) else NA, dir = d)
+            user = as.character(b$user %||% NA), host = as.character(b$host %||% NA),
+            live = if (work) .session_live(b, d) else NA, dir = d)
     })
     out <- do.call(rbind, Filter(Negate(is.null), rows))
     if (is.null(out)) out <- data.frame(name = character(), kind = character(),
         created = numeric(), updated = numeric(), snapshot = character(),
-        description = character(), labels = character(), live = logical(), dir = character())
+        description = character(), labels = character(), user = character(),
+        host = character(), live = logical(), dir = character())
     if (!sessions) out <- out[out$kind == "save", , drop = FALSE]
     out$created <- .POSIXct(out$created)
     out$updated <- .POSIXct(out$updated)
@@ -126,11 +144,11 @@
 }
 
 # The bundle `name` in project `src`, one R lists: a save's name, or a
-# working bundle's folder name. Never a path taken as given.
-.find_save <- function(src, name, site) {
+# working bundle's folder name. Never a path taken as given. `all`: the
+# listing, when several are looked up.
+.find_save <- function(src, name, site, all = .lens_saves(src, sessions = TRUE)) {
     if (!is.character(name) || length(name) != 1L || is.na(name))
         stop("[", site, "] `name` must be the name of a save", call. = FALSE)
-    all <- .lens_saves(src, sessions = TRUE)
     hit <- all[all$name == name, , drop = FALSE]
     if (!nrow(hit)) {
         saves <- all$name[all$kind == "save"]
@@ -174,10 +192,13 @@
 
 # The saves of `src` as the start page lists them, newest first, and the work
 # viewers that ended left there; `current`: the save shown, if any. A save
-# whose snapshot was deleted has `snapshot` null.
+# whose snapshot was deleted has `snapshot` null; `mine`: not written by
+# another user (one written before bundles named their user counts), a label
+# for browsing, not access control (adr/0026).
 .project_saves <- function(src, current = NULL) {
     s <- .lens_saves(src, sessions = TRUE)
-    s <- s[s$kind == "save" | !(s$live %in% TRUE), , drop = FALSE]
+    s <- s[s$kind == "save" | !s$live, , drop = FALSE]
+    me <- Sys.info()[["user"]]
     snaps <- GiottoDisk::snapshotInfo(src)
     iso <- function(t) if (!is.na(t)) format(t, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     lapply(seq_len(nrow(s)), function(i) {
@@ -186,6 +207,8 @@
             description = if (!is.na(s$description[[i]])) s$description[[i]],
             labels = if (nzchar(s$labels[[i]])) as.list(strsplit(s$labels[[i]], ", ")[[1L]]) else list(),
             snapshot = if (length(snap)) snap[[1L]],
+            user = if (!is.na(s$user[[i]])) s$user[[i]], host = if (!is.na(s$host[[i]])) s$host[[i]],
+            mine = is.na(s$user[[i]]) || identical(s$user[[i]], me),
             current = identical(basename(s$dir[[i]]), current))
     })
 }

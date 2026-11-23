@@ -616,11 +616,12 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @description The saves of the project shown, newest first
         #' @param sessions Whether to list the working bundles of viewers that
         #'   ended with work not saved too (`kind = "session"`; `live` is
-        #'   `TRUE` for a viewer still running, `NA` for one on another
-        #'   machine)
+        #'   `TRUE` for a viewer still running: on another machine, one that
+        #'   wrote it in the last two minutes)
         #' @returns A data.frame: `name` (what `open_save()` takes), `kind`,
         #'   `created`, `updated`, `snapshot` (the tag of the snapshot it was
-        #'   made on), `description`, `labels`, `live`
+        #'   made on), `description`, `labels`, `user` (who wrote it), `host`
+        #'   (where, for a working bundle), `live`
         saves = function(sessions = FALSE) {
             if (is.null(private$project))
                 stop("[LensViewer$saves] no project open", call. = FALSE)
@@ -643,21 +644,17 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
-        #' @description Delete a save of the project shown. Its snapshot stays
-        #'   kept.
-        #' @param name A save's name, as `saves()` lists it
+        #' @description Delete saves of the project shown, or work not saved
+        #'   that a viewer that ended left there. A save's snapshot stays
+        #'   kept. The start page's Delete, Discard and Delete selected buttons
+        #'   do the same.
+        #' @param name Names of saves, as `saves()` lists them. None is deleted
+        #'   if one cannot be (not listed, or the work of a viewer still running).
         delete_save = function(name) {
             site <- "LensViewer$delete_save"
             if (is.null(private$project))
                 stop("[", site, "] no project open", call. = FALSE)
-            hit <- .find_save(private$project, name, site)
-            if (hit$kind == "session" && (identical(normalizePath(hit$dir), private$work) ||
-                    isTRUE(hit$live)))
-                stop("[", site, "] '", name, "' is the work of a viewer still running",
-                    call. = FALSE)
-            unlink(hit$dir, recursive = TRUE)
-            if (identical(private$saved_tag, basename(hit$dir))) private$saved_tag <- NULL
-            private$add_log("delete_save", name)
+            private$delete_save_in(private$project, name, site)
             invisible(self)
         },
 
@@ -2540,6 +2537,14 @@ LensViewer <- R6::R6Class("LensViewer",
                     private$open_save_in(src, str1(dat$name), TRUE, "LensViewer")
                     list(data = list(snapshot = private$snapshot, save = private$saved_tag))
                 },
+                # Saves of a project, or the work viewers that ended left
+                # there, deleted from the start page; refused as delete_save()
+                delete_save = {
+                    src <- .project_source(str1(dat$path), "LensViewer")
+                    name <- if (is.list(dat$name)) unlist(dat$name) else dat$name
+                    private$delete_save_in(src, if (is.character(name)) name, "LensViewer")
+                    list(data = list())
+                },
                 # The tools bar's save button
                 save = {
                     name <- str1(dat$name) %||% ""
@@ -2669,6 +2674,8 @@ LensViewer <- R6::R6Class("LensViewer",
         cells_fp     = NULL,     # .cells_fingerprint() of the cells shown
         saved_sig    = NULL,     # work_sig() as last saved or opened
         written_sig  = NULL,     # what the working bundle last got
+        written_at   = NULL,     # when, as bundle.json's `updated`
+        beat_at      = 0,        # when bundle.json was last written, for heartbeat()
         saved_tag    = NULL,     # the save last made or opened
         added_args   = list(),   # add_image() arguments by image name, to add them again
         registration_msg = NULL, # the last registration_update, as the page sent it
@@ -2684,7 +2691,7 @@ LensViewer <- R6::R6Class("LensViewer",
             private$work <- normalizePath(dir)
             private$routes$work <- private$work
             private$work_created <- as.numeric(Sys.time())
-            private$written_sig <- NULL
+            private$written_sig <- private$written_at <- NULL
             private$object_uid <- if (!is.null(private$project) && !is.null(private$snapshot)) {
                 info <- GiottoDisk::snapshotInfo(private$project)
                 uid <- info$object[info$tag == private$snapshot]
@@ -2708,9 +2715,9 @@ LensViewer <- R6::R6Class("LensViewer",
         work_sig = function() .bundle_json(private$state_list()),
 
         bundle_info = function(kind) list(format = .bundle_format, kind = kind,
-            created = private$work_created, updated = as.numeric(Sys.time()),
+            created = private$work_created, updated = private$written_at %||% as.numeric(Sys.time()),
             creator = "GiottoLens", session = private$session_id,
-            host = Sys.info()[["nodename"]], pid = Sys.getpid(),
+            user = Sys.info()[["user"]], host = Sys.info()[["nodename"]], pid = Sys.getpid(),
             snapshot = private$snapshot, object = private$object_uid,
             spat_unit = private$spat_unit, feat_type = private$feat_type,
             cells = private$cells_fp),
@@ -2732,17 +2739,30 @@ LensViewer <- R6::R6Class("LensViewer",
             .write_json_atomic(st, file.path(w, "state.json"))
             if (!is.null(private$config_json))
                 .write_text_atomic(private$config_json, file.path(w, "config.json"))
+            private$written_at <- as.numeric(Sys.time())
             .write_json_atomic(private$bundle_info("session"), file.path(w, "bundle.json"))
             private$written_sig <- sig
+            private$beat_at <- private$written_at
+            invisible(TRUE)
+        },
+
+        # Rewrite bundle.json when it is a heartbeat old: what tells a viewer
+        # on another machine that this one still runs (.session_live())
+        heartbeat = function() {
+            if (!private$loaded || is.null(private$work) || !dir.exists(private$work) ||
+                    as.numeric(Sys.time()) - private$beat_at < .heartbeat_s)
+                return(invisible(FALSE))
+            .write_json_atomic(private$bundle_info("session"), file.path(private$work, "bundle.json"))
+            private$beat_at <- as.numeric(Sys.time())
             invisible(TRUE)
         },
 
         # Write the working bundle every second or so while the viewer runs
-        # (option GiottoLens.autosave_interval, seconds)
+        # (option GiottoLens.autosave_interval, seconds), and its heartbeat
         autosave = function() {
             later::later(function() {
                 if (is.null(private$server)) return()
-                tryCatch(private$write_state(), error = function(e)
+                tryCatch(private$write_state() || private$heartbeat(), error = function(e)
                     private$add_log("error", list(where = "autosave", message = conditionMessage(e))))
                 private$autosave()
             }, getOption("GiottoLens.autosave_interval", 1))
@@ -2762,9 +2782,10 @@ LensViewer <- R6::R6Class("LensViewer",
         work_changed = function() !is.null(private$lens_work()) &&
             !identical(private$work_sig(), private$saved_sig),
 
-        # open_save() in project `src`, also from the start page
-        open_save_in = function(src, name, discard, site) {
-            hit <- .find_save(src, name, site)
+        # Bundle `name` of project `src`, unless it is the work of a viewer
+        # still running, this one's included
+        find_bundle = function(src, name, site, all = .lens_saves(src, sessions = TRUE)) {
+            hit <- .find_save(src, name, site, all)
             if (hit$kind == "session") {
                 if (identical(normalizePath(hit$dir), private$work))
                     stop("[", site, "] '", name, "' is this viewer's own work", call. = FALSE)
@@ -2772,8 +2793,26 @@ LensViewer <- R6::R6Class("LensViewer",
                     stop("[", site, "] '", name, "' is the work of a viewer still running",
                         call. = FALSE)
             }
+            hit
+        },
+
+        # open_save() in project `src`, also from the start page
+        open_save_in = function(src, name, discard, site) {
+            hit <- private$find_bundle(src, name, site)
             private$check_work(site, discard)
             private$open_bundle(src, hit, site)
+        },
+
+        # delete_save() in project `src`, also from the start page: every
+        # name checked before any is deleted
+        delete_save_in = function(src, name, site) {
+            if (!is.character(name) || !length(name) || anyNA(name))
+                stop("[", site, "] `name` must be names of saves", call. = FALSE)
+            all <- .lens_saves(src, sessions = TRUE)
+            dirs <- vapply(unique(name), function(n) private$find_bundle(src, n, site, all)$dir, "")
+            unlink(dirs, recursive = TRUE)
+            if (isTRUE(private$saved_tag %in% basename(dirs))) private$saved_tag <- NULL
+            private$add_log("delete_save", unname(name))
         },
 
         # Show bundle `hit` (a row of .lens_saves()) of project `src`: its

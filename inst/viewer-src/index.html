@@ -966,8 +966,23 @@
       display: flex; flex-direction: column; gap: 8px;
     }
     .start-confirm-row { display: flex; gap: 6px; }
+    .start-confirm-text.error { color: #fca5a5; }
+    .start-list > .start-confirm { margin: 0 8px 8px; }
+    .start-tabs { display: flex; align-self: flex-start; border: 1px solid var(--bg-3); border-radius: 6px; overflow: hidden; margin-top: 4px; }
+    .start-tab {
+      padding: 4px 12px; background: none; border: none; border-left: 1px solid var(--bg-3);
+      color: var(--fg-2); font-size: 11px; font-family: monospace; cursor: pointer;
+    }
+    .start-tab:first-child { border-left: none; }
+    .start-tab:hover { color: var(--fg-0); }
+    .start-tab.active { background: var(--bg-3); color: var(--fg-0); }
+    .start-tab-n { margin-left: 6px; color: var(--fg-3); }
+    .start-pane { display: flex; flex-direction: column; gap: 8px; }
+    .start-bulk { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .start-bulk .start-btn:disabled { opacity: 0.45; cursor: default; }
+    .start-check { margin: 0; accent-color: var(--accent-fg); cursor: pointer; }
     /* The dialog follows the theme; the start page is in the always-dark spatial pane */
-    :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error) { color: #b91c1c; }
+    :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error, .start-confirm-text.error) { color: #b91c1c; }
   </style>
 </head>
 <body>

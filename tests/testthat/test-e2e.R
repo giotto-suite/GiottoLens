@@ -1951,6 +1951,19 @@ test_that("the page saves the work and opens the save from the start page", {
         "window.__giottolens.store.getState().annotations.map(a => a.name).join() === 'kept'"))
     pump_until(function() FALSE, timeout = 0.5)
     expect_identical(names(v$annotations), "kept")
+
+    # Deleted from the project dialog, after asking
+    br$js("document.querySelector('[data-panel=tools] [data-act=project]').click()")
+    delete_save <- paste0("(() => { const r = [...document.querySelectorAll('.start-row')]",
+        ".find(r => r.querySelector('.start-name')?.firstChild?.textContent === 'first');",
+        " r?.querySelector('.start-actions .start-btn.danger')?.click(); return !!r; })()")
+    expect_true(browser_wait(br, delete_save))
+    expect_true(browser_wait(br, "document.querySelector('.start-confirm .danger')?.textContent === 'Delete'"))
+    expect_identical(nrow(v$saves()), 1L)
+    br$js("document.querySelector('.start-confirm .danger').click()")
+    expect_true(pump_until(function() nrow(v$saves()) == 0L))
+    expect_true(browser_wait(br, paste0("!!document.querySelector('.start-row') && ",
+        "!document.querySelector('.start-row .start-btn.danger')")))
     expect_identical(br$errors(), character())
 })
 
