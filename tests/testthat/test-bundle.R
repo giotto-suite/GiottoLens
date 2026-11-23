@@ -1,12 +1,14 @@
 # The viewer's work is kept in a working bundle in the project and saved as a
 # bundle beside it (R/bundle.R, adr/0026).
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
 # A viewer on the bins fixture written into a project of its own
 bundle_viewer <- function(td = tempfile("lensproj_")) {
     bx <- lens_bins_fixture()
     v <- suppressMessages(launch_lens(bx$mem, spat_unit = "bin", feat_type = NULL,
         open = FALSE, project = td))
-    list(v = v, bx = bx, td = td, priv = get("private", v$.__enclos_env__),
+    list(v = v, bx = bx, td = td, priv = lens_priv(v),
         done = function() { v$close(discard = TRUE); unlink(td, recursive = TRUE) })
 }
 
@@ -28,6 +30,25 @@ add_work <- function(r) {
     r$priv$config_json <- '{"version":3,"colorBy":"half"}'
     invisible(r)
 }
+
+# Work as a viewer elsewhere left it: `r`'s working bundle copied to another
+# session folder, written by `user` on `host`
+left_work <- function(r, host = Sys.info()[["nodename"]], user = Sys.info()[["user"]], pid = -1) {
+    r$priv$write_state(force = TRUE)
+    id <- tolower(.rand_id(8L))
+    dir <- file.path(r$td, "lens", paste0("session-", id))
+    dir.create(dir)
+    file.copy(list.files(r$priv$work, full.names = TRUE), dir, recursive = TRUE)
+    b <- jsonlite::fromJSON(file.path(dir, "bundle.json"), simplifyVector = FALSE)
+    b$session <- id
+    b$host <- host
+    b$user <- user
+    b$pid <- pid
+    writeLines(.bundle_json(b), file.path(dir, "bundle.json"))
+    dir
+}
+
+# ── Working bundle and autosave ──────────────────────────────────────────────
 
 test_that("work goes to the working bundle in the project and is served under work/", {
     skip_if_not_installed("curl")
@@ -64,6 +85,51 @@ test_that("work goes to the working bundle in the project and is served under wo
     expect_identical(b$cells$n, 900L)
     expect_identical(readLines(file.path(w, "config.json")), r$priv$config_json)
 })
+
+test_that("the working bundle is written as the work changes", {
+    old <- options(GiottoLens.autosave_interval = 0.1)
+    on.exit(options(old), add = TRUE)
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    state <- function() .read_bundle_json(file.path(r$priv$work, "state.json"))
+    r$v$save_selection("top", lens_cells(r$priv$cell_ids[1:5]))
+    expect_true(pump_until(function() identical(names(state()$selections), "top")))
+    r$v$remove_selection("top")
+    expect_true(pump_until(function() !length(state()$selections)))
+})
+
+test_that("work not saved stays in the project when the viewer closes, and opens again", {
+    r <- bundle_viewer()
+    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
+    add_work(r)
+    w <- r$priv$work
+    expect_message(r$v$close(), "work not saved .* is kept in")
+    expect_true(dir.exists(w))
+    v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
+    on.exit(v2$close(discard = TRUE), add = TRUE)
+    s <- v2$saves(sessions = TRUE)
+    left <- s[s$kind == "session", ]
+    expect_identical(left$name, basename(w))
+    expect_false(left$live)
+    expect_identical(nrow(v2$saves()), 0L)
+    suppressMessages(v2$open_save(basename(w)))
+    expect_false(dir.exists(w))
+    expect_identical(v2$selections()$name, "top")
+    # Taken over, and still not saved
+    expect_match(lens_priv(v2)$unsaved_work(), "1 saved selection")
+})
+
+test_that("close(discard = TRUE) deletes work not saved", {
+    r <- bundle_viewer()
+    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
+    add_work(r)
+    w <- r$priv$work
+    r$v$close(discard = TRUE)
+    expect_false(dir.exists(w))
+    expect_error(r$v$close(discard = NA), "TRUE or FALSE")
+})
+
+# ── Save, open and delete from R ─────────────────────────────────────────────
 
 test_that("a save copies the work, keeps its snapshot and counts as saved", {
     r <- bundle_viewer()
@@ -114,7 +180,7 @@ test_that("a save opens with its snapshot and its work", {
     r$v$close()
     v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
     on.exit(v2$close(discard = TRUE), add = TRUE)
-    p2 <- get("private", v2$.__enclos_env__)
+    p2 <- lens_priv(v2)
     expect_error(v2$open_save("../first"), "no save '../first'")
     suppressMessages(v2$open_save("first"))
     expect_identical(p2$snapshot, r$priv$snapshot)
@@ -135,36 +201,82 @@ test_that("a save opens with its snapshot and its work", {
     expect_no_error(suppressMessages(v2$open_project(r$td)))
 })
 
-test_that("work not saved stays in the project when the viewer closes, and opens again", {
-    r <- bundle_viewer()
-    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
-    add_work(r)
-    w <- r$priv$work
-    expect_message(r$v$close(), "work not saved .* is kept in")
-    expect_true(dir.exists(w))
-    v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
-    on.exit(v2$close(discard = TRUE), add = TRUE)
-    s <- v2$saves(sessions = TRUE)
-    left <- s[s$kind == "session", ]
-    expect_identical(left$name, basename(w))
-    expect_false(left$live)
-    expect_identical(nrow(v2$saves()), 0L)
-    suppressMessages(v2$open_save(basename(w)))
-    expect_false(dir.exists(w))
-    expect_identical(v2$selections()$name, "top")
-    # Taken over, and still not saved
-    expect_match(get("private", v2$.__enclos_env__)$unsaved_work(), "1 saved selection")
+test_that("saving needs an object in a project", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$save("x"), "nowhere to save")
+    expect_error(v$saves(), "no project open")
 })
 
-test_that("close(discard = TRUE) deletes work not saved", {
+test_that("several saves are deleted together, or none", {
     r <- bundle_viewer()
-    on.exit(unlink(r$td, recursive = TRUE), add = TRUE)
+    on.exit(r$done(), add = TRUE)
     add_work(r)
-    w <- r$priv$work
-    r$v$close(discard = TRUE)
-    expect_false(dir.exists(w))
-    expect_error(r$v$close(discard = NA), "TRUE or FALSE")
+    suppressMessages(r$v$save("first"))
+    suppressMessages(r$v$save("second"))
+    left <- left_work(r)
+    expect_error(r$v$delete_save(c("first", "nope")), "no save 'nope'")
+    expect_error(r$v$delete_save(character()), "names of saves")
+    expect_setequal(r$v$saves()$name, c("first", "second"))
+    # From the page, as a JSON array
+    lens_ask(r$v, op = "delete_save", path = r$td, name = list("first", basename(left)))
+    expect_identical(r$v$saves()$name, "second")
+    expect_false(dir.exists(left))
+    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = list(1, 2)), "names of saves")
+    r$v$delete_save(c("second", "second"))
+    expect_identical(nrow(r$v$saves()), 0L)
 })
+
+# ── Page asks ────────────────────────────────────────────────────────────────
+
+test_that("the page saves, lists saves and opens one", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    res <- suppressMessages(lens_ask(r$v, op = "save", name = "first", description = "d"))
+    expect_match(res$data$save, "^first\\.")
+    res <- lens_ask(r$v, op = "save", name = "first")
+    expect_identical(res$code, "exists")
+    expect_match(suppressMessages(lens_ask(r$v, op = "save", name = "first", description = "d",
+        overwrite = TRUE))$data$save,
+        "^first\\.")
+    expect_error(lens_ask(r$v, op = "save", name = "../x"), "letters, digits")
+    r$v$save_selection("bottom", lens_cells(r$priv$cell_ids[880:900]))
+    snaps <- lens_ask(r$v, op = "snapshots", path = r$td)$data
+    s <- snaps$saves[[1L]]
+    expect_identical(s[c("name", "kind", "description")], list(name = "first", kind = "save",
+        description = "d"))
+    expect_identical(s$snapshot, GiottoDisk::snapshotInfo(r$priv$project)$name[[1L]])
+    expect_true(s$current)
+    # This viewer's own work is not listed while it runs
+    expect_length(snaps$saves, 1L)
+    res <- lens_ask(r$v, op = "open_save", path = r$td, name = "first")
+    expect_identical(res$code, "work")
+    expect_match(res$error, "2 saved selections")
+    res <- suppressMessages(lens_ask(r$v, op = "open_save", path = r$td, name = "first", discard = TRUE))
+    expect_match(res$data$save, "^first\\.")
+    expect_identical(r$v$selections()$name, "top")
+})
+
+test_that("the page deletes a save and work a viewer that ended left", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    tag <- suppressMessages(r$v$save("first"))
+    left <- left_work(r)
+    expect_identical(lens_ask(r$v, op = "delete_save", path = r$td, name = "first"), list(data = list()))
+    expect_false(dir.exists(file.path(r$td, "lens", tag)))
+    expect_null(r$priv$saved_tag)
+    expect_true(GiottoDisk::snapshotInfo(r$priv$project)$keep[[1L]])
+    lens_ask(r$v, op = "delete_save", path = r$td, name = basename(left))
+    expect_false(dir.exists(left))
+    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = "../first"), "no save '../first'")
+    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = basename(r$priv$work)), "own work")
+    expect_true(dir.exists(r$priv$work))
+})
+
+# ── Liveness ─────────────────────────────────────────────────────────────────
 
 test_that("a running viewer's work cannot be opened or deleted by another", {
     r <- bundle_viewer()
@@ -179,6 +291,44 @@ test_that("a running viewer's work cannot be opened or deleted by another", {
     expect_error(v2$delete_save(name), "still running")
     expect_error(r$v$open_save(name), "own work")
 })
+
+test_that("work left on another machine is live while its heartbeat is fresh", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    add_work(r)
+    left <- left_work(r, host = "elsewhere.example", user = "someone")
+    s <- r$v$saves(sessions = TRUE)
+    s <- s[s$name == basename(left), ]
+    expect_true(s$live)
+    expect_identical(c(s$user, s$host), c("someone", "elsewhere.example"))
+    expect_error(r$v$delete_save(basename(left)), "still running")
+    expect_error(r$v$open_save(basename(left), discard = TRUE), "still running")
+    Sys.setFileTime(file.path(left, "bundle.json"), Sys.time() - 5 * .heartbeat_s)
+    expect_false(r$v$saves(sessions = TRUE)$live[r$v$saves(sessions = TRUE)$name == basename(left)])
+    saves <- lens_ask(r$v, op = "snapshots", path = r$td)$data$saves
+    mine <- saves[[which(vapply(saves, `[[`, "", "name") == basename(left))]]
+    expect_identical(mine[c("user", "host", "mine")],
+        list(user = "someone", host = "elsewhere.example", mine = FALSE))
+    r$v$delete_save(basename(left))
+    expect_false(dir.exists(left))
+})
+
+test_that("a running viewer rewrites bundle.json as a heartbeat", {
+    r <- bundle_viewer()
+    on.exit(r$done(), add = TRUE)
+    r$priv$write_state(force = TRUE)
+    f <- file.path(r$priv$work, "bundle.json")
+    updated <- jsonlite::fromJSON(f)$updated
+    expect_false(r$priv$heartbeat())
+    r$priv$beat_at <- 0
+    Sys.setFileTime(f, Sys.time() - 5 * .heartbeat_s)
+    expect_true(r$priv$heartbeat())
+    expect_lt(as.numeric(difftime(Sys.time(), file.mtime(f), units = "secs")), 10)
+    # The work did not change: `updated` stays when it was written
+    expect_identical(jsonlite::fromJSON(f)$updated, updated)
+})
+
+# ── Cell mismatch and missing snapshot ───────────────────────────────────────
 
 test_that("rules naming cells by position are left out when the cells differ", {
     r <- bundle_viewer()
@@ -210,43 +360,7 @@ test_that("a save whose snapshot was deleted does not open", {
     expect_error(r$v$open_save("first", discard = TRUE), "'gone.00000000' that 'first' was made on was deleted")
 })
 
-test_that("saving needs an object in a project", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$save("x"), "nowhere to save")
-    expect_error(v$saves(), "no project open")
-})
-
-test_that("the page saves, lists saves and opens one", {
-    ask <- function(v, ...) get("private", v$.__enclos_env__)$ask(list(...))
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    add_work(r)
-    res <- suppressMessages(ask(r$v, op = "save", name = "first", description = "d"))
-    expect_match(res$data$save, "^first\\.")
-    res <- ask(r$v, op = "save", name = "first")
-    expect_identical(res$code, "exists")
-    expect_match(suppressMessages(ask(r$v, op = "save", name = "first", description = "d",
-        overwrite = TRUE))$data$save,
-        "^first\\.")
-    expect_error(ask(r$v, op = "save", name = "../x"), "letters, digits")
-    r$v$save_selection("bottom", lens_cells(r$priv$cell_ids[880:900]))
-    snaps <- ask(r$v, op = "snapshots", path = r$td)$data
-    s <- snaps$saves[[1L]]
-    expect_identical(s[c("name", "kind", "description")], list(name = "first", kind = "save",
-        description = "d"))
-    expect_identical(s$snapshot, GiottoDisk::snapshotInfo(r$priv$project)$name[[1L]])
-    expect_true(s$current)
-    # This viewer's own work is not listed while it runs
-    expect_length(snaps$saves, 1L)
-    res <- ask(r$v, op = "open_save", path = r$td, name = "first")
-    expect_identical(res$code, "work")
-    expect_match(res$error, "2 saved selections")
-    res <- suppressMessages(ask(r$v, op = "open_save", path = r$td, name = "first", discard = TRUE))
-    expect_match(res$data$save, "^first\\.")
-    expect_identical(r$v$selections()$name, "top")
-})
+# ── Links and security ───────────────────────────────────────────────────────
 
 test_that("a link in a save does not bring a file from elsewhere into the project", {
     skip_on_os("windows")
@@ -273,53 +387,6 @@ test_that("a link in a save does not bring a file from elsewhere into the projec
     expect_error(suppressMessages(r$v$save("second")), NA)
 })
 
-test_that("the working bundle is written as the work changes", {
-    old <- options(GiottoLens.autosave_interval = 0.1)
-    on.exit(options(old), add = TRUE)
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    state <- function() .read_bundle_json(file.path(r$priv$work, "state.json"))
-    r$v$save_selection("top", lens_cells(r$priv$cell_ids[1:5]))
-    expect_true(pump_until(function() identical(names(state()$selections), "top")))
-    r$v$remove_selection("top")
-    expect_true(pump_until(function() !length(state()$selections)))
-})
-
-# Work as a viewer elsewhere left it: `r`'s working bundle copied to another
-# session folder, written by `user` on `host`
-left_work <- function(r, host = Sys.info()[["nodename"]], user = Sys.info()[["user"]], pid = -1) {
-    r$priv$write_state(force = TRUE)
-    id <- tolower(.rand_id(8L))
-    dir <- file.path(r$td, "lens", paste0("session-", id))
-    dir.create(dir)
-    file.copy(list.files(r$priv$work, full.names = TRUE), dir, recursive = TRUE)
-    b <- jsonlite::fromJSON(file.path(dir, "bundle.json"), simplifyVector = FALSE)
-    b$session <- id
-    b$host <- host
-    b$user <- user
-    b$pid <- pid
-    writeLines(.bundle_json(b), file.path(dir, "bundle.json"))
-    dir
-}
-
-test_that("the page deletes a save and work a viewer that ended left", {
-    ask <- function(v, ...) get("private", v$.__enclos_env__)$ask(list(...))
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    add_work(r)
-    tag <- suppressMessages(r$v$save("first"))
-    left <- left_work(r)
-    expect_identical(ask(r$v, op = "delete_save", path = r$td, name = "first"), list(data = list()))
-    expect_false(dir.exists(file.path(r$td, "lens", tag)))
-    expect_null(r$priv$saved_tag)
-    expect_true(GiottoDisk::snapshotInfo(r$priv$project)$keep[[1L]])
-    ask(r$v, op = "delete_save", path = r$td, name = basename(left))
-    expect_false(dir.exists(left))
-    expect_error(ask(r$v, op = "delete_save", path = r$td, name = "../first"), "no save '../first'")
-    expect_error(ask(r$v, op = "delete_save", path = r$td, name = basename(r$priv$work)), "own work")
-    expect_true(dir.exists(r$priv$work))
-})
-
 test_that("a link in lens/ named like a bundle is neither opened nor deleted", {
     skip_on_os("windows")
     r <- bundle_viewer()
@@ -339,60 +406,3 @@ test_that("a link in lens/ named like a bundle is neither opened nor deleted", {
     expect_error(r$v$open_save("evil", discard = TRUE), "no save 'evil'")
     expect_true(file.exists(file.path(elsewhere, "precious.txt")))
 })
-
-test_that("work left on another machine is live while its heartbeat is fresh", {
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    add_work(r)
-    left <- left_work(r, host = "elsewhere.example", user = "someone")
-    s <- r$v$saves(sessions = TRUE)
-    s <- s[s$name == basename(left), ]
-    expect_true(s$live)
-    expect_identical(c(s$user, s$host), c("someone", "elsewhere.example"))
-    expect_error(r$v$delete_save(basename(left)), "still running")
-    expect_error(r$v$open_save(basename(left), discard = TRUE), "still running")
-    Sys.setFileTime(file.path(left, "bundle.json"), Sys.time() - 5 * .heartbeat_s)
-    expect_false(r$v$saves(sessions = TRUE)$live[r$v$saves(sessions = TRUE)$name == basename(left)])
-    saves <- get("private", r$v$.__enclos_env__)$ask(list(op = "snapshots", path = r$td))$data$saves
-    mine <- saves[[which(vapply(saves, `[[`, "", "name") == basename(left))]]
-    expect_identical(mine[c("user", "host", "mine")],
-        list(user = "someone", host = "elsewhere.example", mine = FALSE))
-    r$v$delete_save(basename(left))
-    expect_false(dir.exists(left))
-})
-
-test_that("a running viewer rewrites bundle.json as a heartbeat", {
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    r$priv$write_state(force = TRUE)
-    f <- file.path(r$priv$work, "bundle.json")
-    updated <- jsonlite::fromJSON(f)$updated
-    expect_false(r$priv$heartbeat())
-    r$priv$beat_at <- 0
-    Sys.setFileTime(f, Sys.time() - 5 * .heartbeat_s)
-    expect_true(r$priv$heartbeat())
-    expect_lt(as.numeric(difftime(Sys.time(), file.mtime(f), units = "secs")), 10)
-    # The work did not change: `updated` stays when it was written
-    expect_identical(jsonlite::fromJSON(f)$updated, updated)
-})
-
-test_that("several saves are deleted together, or none", {
-    ask <- function(v, ...) get("private", v$.__enclos_env__)$ask(list(...))
-    r <- bundle_viewer()
-    on.exit(r$done(), add = TRUE)
-    add_work(r)
-    suppressMessages(r$v$save("first"))
-    suppressMessages(r$v$save("second"))
-    left <- left_work(r)
-    expect_error(r$v$delete_save(c("first", "nope")), "no save 'nope'")
-    expect_error(r$v$delete_save(character()), "names of saves")
-    expect_setequal(r$v$saves()$name, c("first", "second"))
-    # From the page, as a JSON array
-    ask(r$v, op = "delete_save", path = r$td, name = list("first", basename(left)))
-    expect_identical(r$v$saves()$name, "second")
-    expect_false(dir.exists(left))
-    expect_error(ask(r$v, op = "delete_save", path = r$td, name = list(1, 2)), "names of saves")
-    r$v$delete_save(c("second", "second"))
-    expect_identical(nrow(r$v$saves()), 0L)
-})
-

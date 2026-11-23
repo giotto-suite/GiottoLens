@@ -1,7 +1,5 @@
 # Projects opened in the viewer, from R or the start page (adr/0019)
 
-ask <- function(v, ...) get("private", v$.__enclos_env__)$ask(list(...))
-
 test_that("recent projects: newest first, once each, up to the cap", {
     f <- tempfile(fileext = ".json")
     expect_identical(nrow(.recent_projects(f)), 0L)
@@ -54,7 +52,6 @@ test_that("left-out keys come from the object: preferred, its defaults, its firs
     expect_identical(.default_keys(fx$g, prefer_unit = "nope"),
         list(spat_unit = "cell", feat_type = "rna"))
     # "cell" leads the object's active unit, as on the start page
-    sw <- function(...) suppressMessages(suppressWarnings(...))
     g <- sw(GiottoClass::setGiotto(bx$mem, GiottoClass::createSpatLocsObj(
         bx$xy, spat_unit = "cell", name = "raw", verbose = FALSE), verbose = FALSE))
     GiottoClass::instructions(g, "active_spat_unit", initialize = FALSE) <- "bin"
@@ -67,7 +64,7 @@ test_that("open_project() shows the start page, and checkout() a snapshot as sav
     proj <- bx$g@source@path
     v <- launch_lens(open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     expect_error(v$open_project(tempdir()), "not a GiottoDisk project")
     expect_error(v$checkout("fixture"), "no project open")
 
@@ -100,7 +97,7 @@ test_that("a snapshot without a manifest is shown as it is, without a new save",
     v <- launch_lens(project = src@path, open = FALSE)
     on.exit(v$close(), add = TRUE)
     v$checkout("fixture", spat_unit = "bin", feat_type = NULL)
-    expect_identical(get("private", v$.__enclos_env__)$snapshot, info$tag)
+    expect_identical(lens_priv(v)$snapshot, info$tag)
     expect_identical(nrow(GiottoDisk::snapshotInfo(src)), 1L)
 })
 
@@ -112,15 +109,15 @@ test_that("Lens work is not dropped by opening without discard", {
     proj <- bx$g@source@path
     expect_error(v$open_project(proj), "1 annotation; save it with save\\(name\\), or pass `discard = TRUE`")
     expect_error(v$checkout("fixture"), "1 annotation")
-    res <- ask(v, op = "open", path = proj, name = "fixture")
+    res <- lens_ask(v, op = "open", path = proj, name = "fixture")
     expect_identical(res$code, "work")
     expect_match(res$error, "1 annotation")
-    expect_message(res <- ask(v, op = "open", path = proj, name = "fixture", discard = TRUE),
+    expect_message(res <- lens_ask(v, op = "open", path = proj, name = "fixture", discard = TRUE),
         "opened snapshot 'fixture'")
     expect_null(res$error)
     expect_identical(v$annotations, list())
     v$open_project(proj)
-    expect_false(get("private", v$.__enclos_env__)$loaded)
+    expect_false(lens_priv(v)$loaded)
 })
 
 test_that("the page asks R over the socket and gets answers back", {
@@ -131,34 +128,23 @@ test_that("the page asks R over the socket and gets answers back", {
     on.exit(v$close(), add = TRUE)
     a <- ws_client(ws_url(v), load = 1L)
     expect_true(pump_until(function() v$connected()))
-    answer <- function(id) {
-        hit <- NULL
-        pump_until(function() {
-            for (m in a$state$msgs) if (m$type == "answer" && identical(m$data$id, id)) hit <<- m$data
-            !is.null(hit)
-        })
-        hit
-    }
-    send <- function(id, ...) a$ws$send(jsonlite::toJSON(list(type = "ask", id = id,
-        data = list(...)), auto_unbox = TRUE))
-
-    send("1", op = "projects")
-    r <- answer("1")
+    ws_ask(a, "1", op = "projects")
+    r <- ws_answer(a, "1")
     expect_identical(r$data$current, normalizePath(proj))
     expect_false(r$data$browse)
-    send("2", op = "snapshots", path = proj)
-    r <- answer("2")
+    ws_ask(a, "2", op = "snapshots", path = proj)
+    r <- ws_answer(a, "2")
     expect_true("fixture" %in% vapply(r$data$snapshots, `[[`, "", "name"))
     expect_null(r$data$current)
-    send("3", op = "snapshots", path = tempdir())
-    expect_match(answer("3")$error, "not a GiottoDisk project")
-    send("4", op = "nope")
-    expect_identical(answer("4")$error, "unknown request")
-    expect_message(send("5", op = "open", path = proj, name = "fixture"), NA)
-    expect_true(pump_until(function() get("private", v$.__enclos_env__)$loaded))
+    ws_ask(a, "3", op = "snapshots", path = tempdir())
+    expect_match(ws_answer(a, "3")$error, "not a GiottoDisk project")
+    ws_ask(a, "4", op = "nope")
+    expect_identical(ws_answer(a, "4")$error, "unknown request")
+    expect_message(ws_ask(a, "5", op = "open", path = proj, name = "fixture"), NA)
+    expect_true(pump_until(function() lens_priv(v)$loaded))
     info <- GiottoDisk::snapshotInfo(bx$g@source)
-    expect_identical(answer("5")$data$snapshot, info$tag[info$name == "fixture"])
-    expect_true(any(vapply(a$state$msgs, function(m) m$type == "reload", NA)))
+    expect_identical(ws_answer(a, "5")$data$snapshot, info$tag[info$name == "fixture"])
+    expect_true(length(ws_msgs(a, "reload")) > 0L)
     a$ws$close()
 })
 
@@ -194,7 +180,7 @@ test_that("object_info() reads the snapshot's sidecars: save tags and contents",
     expect_identical(vapply(i$contents$spatial_locs[[1]]$items, `[[`, "", "name"), "raw")
 
     # the page's ask answers the same, as JSON
-    res <- ask(v, op = "object_info")
+    res <- lens_ask(v, op = "object_info")
     expect_identical(res$data$snapshot$owner, "ana")
     expect_match(.encode_ws_message("answer", res), '"labels":\\["qc","v2"\\]')
 

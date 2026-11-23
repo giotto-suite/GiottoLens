@@ -29,7 +29,7 @@ CSVs through the reference image's own pixel transform, and into a `giottoAffine
 ## Consequences
 
 - The fit equals Giotto's `calculateAffineMatrixFromLandmarks()` (9e-13 on 12 noisy pairs);
-  on exact pairs it recovers the 10x matrix of the breast H&E (`test/registration.test.ts`).
+  on exact pairs it recovers the 10x matrix of the breast H&E (`test/data/registration.test.ts`).
 - The fit is affine (6 parameters); Xenium Explorer's own fit may differ for the same pairs.
 - Flips and rotations orient the image's pane only; the fit does not depend on them.
 - Two Decks draw while registering; the image's tiles load in its pane, and in the main view
@@ -51,6 +51,6 @@ CSVs through the reference image's own pixel transform, and into a `giottoAffine
 ## References
 
 `inst/viewer-src/data/registration.ts`, `ui/registration.ts`, `render/landmarks.ts`,
-`R/registration.R`, `R/images.R`; `test/registration.test.ts`,
-`tests/testthat/test-registration.R`, `test-images.R`, `test-e2e.R`.
+`R/registration.R`, `R/images.R`; `test/data/registration.test.ts`,
+`tests/testthat/test-registration.R`, `test-images.R`, `test-e2e-images.R`.
 10x Genomics, Image Alignment in Xenium Explorer (keypoints and matrix CSV formats).

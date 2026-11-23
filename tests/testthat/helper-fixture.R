@@ -265,9 +265,25 @@ ws_answer <- function(cl, id, timeout = 10) {
     hit
 }
 
+# A window that says `hello` (or `first`) and no more; every message R sends
+# is in `state$msgs`
+window_raw <- function(v, key = NULL, first = NULL) {
+    ws <- websocket::WebSocket$new(ws_url(v), autoConnect = FALSE)
+    state <- new.env()
+    state$msgs <- list(); state$closed <- FALSE
+    first <- first %||% jsonlite::toJSON(list(type = "hello",
+        data = list(protocol = .lens_protocol, key = key)), auto_unbox = TRUE, null = "null")
+    ws$onOpen(function(e) for (m in first) ws$send(m))
+    ws$onClose(function(e) state$closed <- TRUE)
+    ws$onMessage(function(e) state$msgs[[length(state$msgs) + 1L]] <-
+        jsonlite::fromJSON(e$data, simplifyVector = FALSE))
+    ws$connect()
+    list(ws = ws, state = state)
+}
+
 # The URL of data path `rel` of `viewer`, under its current data secret
 lens_data_url <- function(viewer, rel = "") {
-    paste0(viewer$url, "d/", get("private", viewer$.__enclos_env__)$routes$secret, "/", rel)
+    paste0(viewer$url, "d/", lens_priv(viewer)$routes$secret, "/", rel)
 }
 
 ws_url <- function(viewer, token = NULL) {
@@ -281,6 +297,34 @@ ws_url <- function(viewer, token = NULL) {
 # Many tests launch from the fixture's layers on purpose; the deprecation is
 # tested on its own (test-launch.R)
 .lens_warned$layers <- TRUE
+
+# Saved selections to compare (test-selections.R, test-e2e-saved-selections.R)
+# The bins fixture with normalized expression: g1 high in the left half
+de_object <- local({
+    out <- NULL
+    function() {
+        if (!is.null(out)) return(out)
+        bx <- lens_bins_fixture()
+        ids <- bx$xy$cell_ID
+        left <- bx$meta$half[match(ids, bx$meta$cell_ID)] == "left"
+        set.seed(1)
+        m <- rbind(g1 = ifelse(left, 3, 0.5) + stats::runif(length(ids)),
+            g2 = 1 + stats::runif(length(ids)))
+        colnames(m) <- ids
+        g <- suppressMessages(suppressWarnings(GiottoClass::setGiotto(bx$mem,
+            GiottoClass::createExprObj(m, spat_unit = "bin", feat_type = "rna",
+                name = "normalized"), verbose = FALSE)))
+        out <<- list(g = g, left = ids[left], right = ids[!left])
+    }
+})
+de_viewer <- function() {
+    d <- de_object()
+    td <- tempfile("lensproj_")
+    v <- suppressMessages(launch_lens(d$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        project = td))
+    list(v = v, d = d, priv = lens_priv(v),
+        done = function() { v$close(); unlink(td, recursive = TRUE) })
+}
 
 # Recent projects go to a file of the test run, not the user's data directory
 options(GiottoLens.recent_projects = tempfile("recent_", fileext = ".json"))

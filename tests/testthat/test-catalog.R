@@ -1,6 +1,8 @@
 # The catalog lists what the object shown can pull; pull() adds it to the
 # viewer's metadata through one spatValues() call (R/catalog.R).
 
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
 # The bins fixture with a second expression matrix (same features), a UMAP
 # and a spatial enrichment, in memory
 catalog_object <- local({
@@ -8,7 +10,6 @@ catalog_object <- local({
     function() {
         if (!is.null(g)) return(g)
         bx <- lens_bins_fixture()
-        sw <- function(...) suppressMessages(suppressWarnings(...))
         ids <- bx$xy$cell_ID
         m <- matrix(rep(c(1, 0, 0, 1), length.out = 2L * length(ids)), 2L,
             dimnames = list(c("g1", "g2"), ids))
@@ -30,9 +31,11 @@ catalog_viewer <- function() {
     td <- tempfile("lensproj_")
     v <- launch_lens(catalog_object(), spat_unit = "bin", feat_type = NULL, open = FALSE,
         project = td)
-    list(v = v, priv = get("private", v$.__enclos_env__),
+    list(v = v, priv = lens_priv(v),
         done = function() { v$close(); unlink(td, recursive = TRUE) })
 }
+
+# ── Pure functions ───────────────────────────────────────────────────────────
 
 test_that("the catalog lists each source's names, and the page's copy shares repeats", {
     cat <- .lens_catalog(catalog_object(), "bin")
@@ -87,7 +90,7 @@ test_that("a plan names repeated items by source and dim reduction axes by reduc
 })
 
 test_that("item keys encode as the page does and name one catalog item", {
-    # The same key is checked in inst/viewer-src/test/items.test.ts
+    # The same key is checked in inst/viewer-src/test/data/items.test.ts
     key <- "@expression/rna/normalized//CD3E%2F%CE%B1%20b"
     expect_identical(.item_key("expression", "rna", "CD3E/\u03b1 b", name = "normalized"), key)
     ref <- .parse_item_key(key, "t")
@@ -109,6 +112,8 @@ test_that("item keys encode as the page does and name one catalog item", {
     expect_error(.catalog_source_for(cat, .parse_item_key(
         .item_key("expression", "rna", "nope", name = "raw"), "t"), "t"), "has no 'nope'")
 })
+
+# ── Reading items ────────────────────────────────────────────────────────────
 
 test_that("an item is read on its own into items/, never into the metadata", {
     cv <- catalog_viewer()
@@ -158,6 +163,8 @@ test_that("asks for an item being read share its job, and are answered if the ob
     expect_identical(got$error, "the object shown changed")
 })
 
+# ── pull() ───────────────────────────────────────────────────────────────────
+
 test_that("pull() adds columns to the metadata shown and replaces one of the same name", {
     cv <- catalog_viewer()
     on.exit(cv$done(), add = TRUE)
@@ -204,9 +211,11 @@ test_that("only an object can be pulled from, and layers have no catalog", {
     on.exit(v$close(), add = TRUE)
     expect_error(v$catalog(), "shows layers, not a giotto object")
     expect_error(v$pull("score"), "shows layers, not a giotto object")
-    expect_null(jsonlite::read_json(file.path(get("private", v$.__enclos_env__)$session,
+    expect_null(jsonlite::read_json(file.path(lens_priv(v)$session,
         "manifest.json"))$catalog)
 })
+
+# ── Page asks ────────────────────────────────────────────────────────────────
 
 test_that("the page asks for the catalog and pulls, from the current object only", {
     testthat::skip_if_not_installed("websocket")
@@ -214,52 +223,40 @@ test_that("the page asks for the catalog and pulls, from the current object only
     on.exit(cv$done(), add = TRUE)
     v <- cv$v
     expect_true(jsonlite::read_json(file.path(cv$priv$session, "manifest.json"))$catalog)
-    got <- function(cl, type) any(vapply(cl$state$msgs, function(m) m$type == type, NA))
     # Once R has its `ready`: the socket opens before the client says it
     a <- ws_client(ws_url(v), load = cv$priv$load_seq)
     on.exit(a$ws$close(), add = TRUE, after = FALSE)
-    expect_true(pump_until(function() got(a, "restore")))
-    answer <- function(id) {
-        hit <- NULL
-        pump_until(function() {
-            for (m in a$state$msgs) if (m$type == "answer" && identical(m$data$id, id)) hit <<- m$data
-            !is.null(hit)
-        })
-        hit
-    }
-    send <- function(id, ...) a$ws$send(jsonlite::toJSON(list(type = "ask", id = id,
-        data = list(...)), auto_unbox = TRUE))
+    expect_true(pump_until(function() length(ws_msgs(a, "restore")) > 0L))
 
-    send("1", op = "catalog")
-    r <- answer("1")$data
+    ws_ask(a, "1", op = "catalog")
+    r <- ws_answer(a, "1")$data
     expect_identical(r$spat_unit, "bin")
     meta <- Find(function(s) s$slot == "cell_metadata", r$sources)
-    send("2", op = "pull", keys = list(list(source = meta$id, items = list("array_row", "half"),
+    ws_ask(a, "2", op = "pull", keys = list(list(source = meta$id, items = list("array_row", "half"),
         types = list("categorical", "auto"))))
-    r <- suppressMessages(answer("2"))
+    r <- suppressMessages(ws_answer(a, "2"))
     expect_identical(unlist(r$data$columns), c("array_row", "half"))
     expect_identical(cv$priv$meta_entry("array_row")$kind, "categorical")
-    send("3", op = "pull", keys = list(list(source = meta$id, items = list("nope"))))
-    expect_match(answer("3")$error, "not in the catalog: nope")
+    ws_ask(a, "3", op = "pull", keys = list(list(source = meta$id, items = list("nope"))))
+    expect_match(ws_answer(a, "3")$error, "not in the catalog: nope")
     key <- .item_key("expression", "rna", "g2", name = "raw")
-    send("5", op = "item", key = key)
-    r <- answer("5")$data
+    ws_ask(a, "5", op = "item", key = key)
+    r <- ws_answer(a, "5")$data
     # Read by a job, which the page hears of
-    expect_true(got(a, "job"))
-    read <- Filter(function(m) m$type == "job" && identical(m$data$label, "read g2"), a$state$msgs)
+    expect_true(length(ws_msgs(a, "job")) > 0L)
+    read <- Filter(function(m) identical(m$data$label, "read g2"), ws_msgs(a, "job"))
     expect_identical(read[[length(read)]]$data$state, "done")
     expect_identical(r$name, key)
     expect_match(r$url, "^session/items/")
     expect_false("g2" %in% cv$priv$meta_names())
-    send("6", op = "item", key = "g2")
-    expect_match(answer("6")$error, "not an item key")
+    ws_ask(a, "6", op = "item", key = "g2")
+    expect_match(ws_answer(a, "6")$error, "not an item key")
 
     # A page still on an earlier load is refused
     b <- ws_client(ws_url(v), load = cv$priv$load_seq - 1L)
     on.exit(b$ws$close(), add = TRUE, after = FALSE)
-    expect_true(pump_until(function() got(b, "reload")))
-    b$ws$send(jsonlite::toJSON(list(type = "ask", id = "4", data = list(op = "catalog")),
-        auto_unbox = TRUE))
+    expect_true(pump_until(function() length(ws_msgs(b, "reload")) > 0L))
+    ws_ask(b, "4", op = "catalog")
     hit <- NULL
     pump_until(function() {
         for (m in b$state$msgs) if (m$type == "answer") hit <<- m$data

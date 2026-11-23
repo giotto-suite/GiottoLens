@@ -11,7 +11,7 @@ skip_without_contains <- function() {
 }
 
 snaps <- function(v) {
-    p <- get("private", v$.__enclos_env__)
+    p <- lens_priv(v)
     GiottoDisk::snapshotInfo(p$project)
 }
 
@@ -35,7 +35,7 @@ test_that("an object in memory is written into `project` and kept", {
     on.exit(unlink(td, recursive = TRUE), add = TRUE)
     v <- launch_lens(bx$mem, spat_unit = "bin", feat_type = NULL, open = FALSE, project = td)
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     info <- snaps(v)
     expect_identical(nrow(info), 1L)
     expect_match(info$name, "^lens_[0-9]{8}_[0-9]{6}$")
@@ -56,7 +56,7 @@ test_that("an object that matches its snapshot is shown from it, without a save"
     before <- GiottoDisk::snapshotInfo(fx$g@source)
     v <- launch_lens(fx$g, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     info <- snaps(v)
     expect_identical(info$tag, before$tag)
     expect_identical(priv$snapshot, info$tag[info$name == "fixture"])
@@ -79,12 +79,12 @@ test_that("a changed object gets a new snapshot, one per change", {
     expect_false(any(lens$keep))
     expect_identical(lens$creator, c("GiottoLens", "GiottoLens"))
     expect_identical(anyDuplicated(lens$name), 0L)
-    expect_identical(get("private", v$.__enclos_env__)$snapshot, utils::tail(lens$tag, 1L))
+    expect_identical(lens_priv(v)$snapshot, utils::tail(lens$tag, 1L))
     # The latest snapshot is the one shown and loaded back
     expect_true("extra" %in% names(GiottoClass::pDataDT(v$gobject(), spat_unit = "bin")))
     # and the first, checked out by name
     v$checkout("fixture")
-    expect_identical(get("private", v$.__enclos_env__)$snapshot, info$tag[info$name == "fixture"])
+    expect_identical(lens_priv(v)$snapshot, info$tag[info$name == "fixture"])
 })
 
 test_that("a save that would move the object's data is refused, and nothing changes", {
@@ -92,7 +92,7 @@ test_that("a save that would move the object's data is refused, and nothing chan
     fx <- lens_image_fixture()
     v <- launch_lens(fx$g, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     before <- priv$snapshot
     # polygons in a store outside the project, as a disk step leaves them
     g <- fx$g
@@ -103,34 +103,4 @@ test_that("a save that would move the object's data is refused, and nothing chan
     expect_error(v$set_object(g), "not saved in its project \\(polygons 'cell'\\).*saveGiotto")
     expect_identical(priv$snapshot, before)
     expect_identical(priv$load_seq, 1L)
-})
-
-test_that("an untiled store is read as one tile, up to the cap", {
-    bx <- lens_bins_fixture()
-    fx <- lens_fixture()
-    gp <- fx$gpolygons
-    gp@spatVector <- suppressMessages(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(),
-        GiottoDisk::storeRead(gp@spatVector, output = "terra")))
-    st <- .store_tiles(gp@spatVector)
-    expect_identical(nrow(st), 1L)
-    expect_identical(st$n, 100L)
-    expect_true(file.exists(file.path(gp@spatVector@path, st$file)))
-    expect_silent(.check_tile_store(gp, "giottoPolygon", "polygons"))
-    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = 50L),
-        expect_error(.check_tile_store(gp, "giottoPolygon", "polygons"),
-            "untiled store of 100 geometries"))
-    cells <- .build_cells(gp@spatVector)
-    expect_identical(nrow(cells$table), 100L)
-    expect_identical(cells$tiles$n, 100L)
-})
-
-test_that("the untiled cap is per layer kind", {
-    fx <- lens_fixture()
-    gp <- fx$gpolygons
-    gp@spatVector <- suppressMessages(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(),
-        GiottoDisk::storeRead(gp@spatVector, output = "terra")))
-    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = c(points = 10)),
-        expect_silent(.check_tile_store(gp, "giottoPolygon", "polygons")))
-    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = c(polygons = 10)),
-        expect_error(.check_tile_store(gp, "giottoPolygon", "polygons"), "up to 10 "))
 })

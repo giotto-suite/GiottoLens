@@ -167,7 +167,7 @@ test_that("added images belong to the object shown", {
     fx <- lens_image_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- v$.__enclos_env__$private
+    priv <- lens_priv(v)
     v$add_image(fx$image_file, name = "post")
     expect_error(v$set_object(fx$gpoints, fx$gpolygons), "1 added image")
     v$set_object(fx$gpoints, fx$gpolygons, discard = TRUE)

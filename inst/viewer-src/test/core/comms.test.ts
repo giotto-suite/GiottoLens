@@ -1,0 +1,296 @@
+// The window handshake of core/comms.js (adr/0028), against a fake socket
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from '../helpers.ts';
+
+class FakeSocket {
+  static OPEN = 1;
+  static last: FakeSocket;
+  readyState = 0;
+  sent: any[] = [];
+  onopen?: () => void;
+  onmessage?: (e: { data: string }) => void;
+  onclose?: () => void;
+  onerror?: () => void;
+  constructor(public url: string) { FakeSocket.last = this; }
+  send(m: string) { this.sent.push(JSON.parse(m)); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  say(type: string, data?: unknown) { this.onmessage?.({ data: JSON.stringify({ type, data }) }); }
+  types() { return this.sent.map(m => m.type); }
+}
+
+const store = new Map<string, string>();
+const reload = vi.fn();
+
+const replaceState = vi.fn();
+
+async function load(hash = '') {
+  vi.resetModules();
+  store.clear();
+  reload.mockClear();
+  replaceState.mockClear();
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('document', { baseURI: 'http://lens/lens/tok/' });
+  vi.stubGlobal('location', { protocol: 'http:', pathname: '/lens/tok/', search: '', hash, reload });
+  vi.stubGlobal('history', { state: null, replaceState });
+  vi.stubGlobal('window', { addEventListener: () => {} });
+  vi.stubGlobal('sessionStorage', {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => { store.set(k, v); },
+  });
+  const comms = await import('../../core/comms.js');
+  const base = await import('../../core/base.ts');
+  return { comms, base };
+}
+
+describe('window handshake', () => {
+  let comms: any, base: any, gates: any[];
+  beforeEach(async () => {
+    ({ comms, base } = await load());
+    gates = [];
+    comms.onGate((g: any) => gates.push(g));
+  });
+
+  it('says hello, waits with the code, and reads data only after the grant', async () => {
+    let got = false;
+    comms.acquire().then(() => { got = true; });
+    const ws = FakeSocket.last;
+    expect(ws.url).toBe('ws://lens/lens/tok/ws');
+    ws.open();
+    expect(ws.sent).toEqual([{ type: 'hello', data: { protocol: comms.PROTOCOL, key: null } }]);
+    ws.say('wait', { code: '4821' });
+    await Promise.resolve();
+    expect(gates.at(-1)).toEqual({ state: 'waiting', code: '4821' });
+    expect(got).toBe(false);
+    expect(comms.isConnected()).toBe(false);
+
+    ws.say('grant', { data: 'SECRET', key: 'KEY' });
+    await Promise.resolve();
+    expect(got).toBe(true);
+    expect(gates.at(-1)).toEqual({ state: 'granted' });
+    expect(base.dataUrl('session/manifest.json')).toBe('http://lens/lens/tok/d/SECRET/session/manifest.json');
+    expect([...store.values()]).toEqual(['KEY']);
+    // 'ready' goes once the handlers are registered, in a task of its own
+    expect(ws.types()).toEqual(['hello']);
+    comms.initComms();
+    expect(ws.types()).toEqual(['hello']);
+    expect(comms.isConnected()).toBe(false);
+    await new Promise(r => setTimeout(r, 0));
+    expect(ws.types()).toEqual(['hello', 'ready']);
+    expect(comms.isConnected()).toBe(true);
+  });
+
+  it('queues messages until it is live and ignores R before the grant', async () => {
+    const seen: any[] = [];
+    comms.onMessage('ping', (d: any) => { seen.push(d); });
+    comms.initComms();
+    const ws = FakeSocket.last;
+    ws.open();
+    comms.sendToR('config', { json: '{}' });
+    ws.say('ping', { n: 1 });
+    await Promise.resolve();
+    expect(seen).toEqual([]);
+    expect(ws.types()).toEqual(['hello']);
+    ws.say('grant', { data: 'S', key: 'K' });
+    expect(ws.types()).toEqual(['hello', 'ready', 'config']);
+    ws.say('ping', { n: 2 });
+    await Promise.resolve();
+    expect(seen).toEqual([{ n: 2 }]);
+  });
+
+  it('a reconnect sends the key; a grant of other data paths reloads the page', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('grant', { data: 'S1', key: 'K1' });
+    a.readyState = 3;
+    vi.useFakeTimers();
+    a.onclose?.();
+    expect(comms.isConnected()).toBe(false);
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+    const b = FakeSocket.last;
+    expect(b).not.toBe(a);
+    b.open();
+    expect(b.sent[0]).toEqual({ type: 'hello', data: { protocol: comms.PROTOCOL, key: 'K1' } });
+    b.say('grant', { data: 'S1', key: 'K1' });
+    expect(reload).not.toHaveBeenCalled();
+    expect(b.types()).toEqual(['hello', 'ready']);
+    b.say('grant', { data: 'S2', key: 'K2' });
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('released: not live, quiet on reconnect until the viewer is asked for', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('grant', { data: 'S1', key: 'K1' });
+    a.say('released');
+    expect(gates.at(-1)).toEqual({ state: 'released' });
+    expect(comms.isConnected()).toBe(false);
+    comms.sendToR('close', null);
+    expect(a.types()).toEqual(['hello', 'ready']);
+    a.readyState = 3;
+    vi.useFakeTimers();
+    a.onclose?.();
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+    const b = FakeSocket.last;
+    b.open();
+    expect(b.sent).toEqual([]);
+    comms.requestViewer();
+    expect(b.types()).toEqual(['hello']);
+  });
+
+  it('released: asks waiting for an answer are rejected', async () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('grant', { data: 'S1', key: 'K1' });
+    const ask = comms.askR('pull', {});
+    const id = a.sent.at(-1).id;
+    a.say('released');
+    await expect(ask).rejects.toThrow('the viewer moved to another window');
+    a.say('answer', { id, data: {} });
+  });
+
+  it('probe: the window that shows the viewer replies, another does not', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    const probe = (id: string) => a.onmessage?.({ data: JSON.stringify({ type: 'probe', id }) });
+    probe('probe-1');
+    expect(a.types()).toEqual(['hello']);
+    a.say('grant', { data: 'S1', key: 'K1' });
+    probe('probe-2');
+    expect(a.sent.at(-1)).toEqual({ type: 'reply', id: 'probe-2', data: {} });
+    a.say('released');
+    probe('probe-3');
+    expect(a.sent.at(-1)).toEqual({ type: 'reply', id: 'probe-2', data: {} });
+  });
+
+  it('a waiting window shows no code once its socket closes, until R sends one again', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('wait', { code: '4821' });
+    expect(gates.at(-1)).toEqual({ state: 'waiting', code: '4821' });
+    a.readyState = 3;
+    vi.useFakeTimers();
+    a.onclose?.();
+    expect(gates.at(-1)).toEqual({ state: 'reconnecting' });
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+    const b = FakeSocket.last;
+    expect(b).not.toBe(a);
+    b.open();
+    expect(b.sent).toEqual([{ type: 'hello', data: { protocol: comms.PROTOCOL, key: null } }]);
+    expect(gates.at(-1)).toEqual({ state: 'reconnecting' });
+    b.say('wait', { code: '1357' });
+    expect(gates.at(-1)).toEqual({ state: 'waiting', code: '1357' });
+  });
+
+  it('closed: says so and does not reconnect', () => {
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    a.say('closed');
+    expect(gates.at(-1)).toEqual({ state: 'closed' });
+    a.readyState = 3;
+    vi.useFakeTimers();
+    a.onclose?.();
+    vi.advanceTimersByTime(5000);
+    vi.useRealTimers();
+    expect(FakeSocket.last).toBe(a);
+  });
+});
+
+describe('launch key', () => {
+  it('goes with hello until the grant, and leaves the address bar', async () => {
+    const { comms } = await load('#launch=abcDEF123');
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/lens/tok/');
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    expect(a.sent).toEqual([{ type: 'hello',
+      data: { protocol: comms.PROTOCOL, key: null, launch: 'abcDEF123' } }]);
+    a.say('grant', { data: 'S1', key: 'K1' });
+    a.say('released');
+    comms.requestViewer();
+    expect(a.sent.at(-1)).toEqual({ type: 'hello', data: { protocol: comms.PROTOCOL, key: 'K1' } });
+  });
+
+  it('another fragment is not a launch key', async () => {
+    const { comms } = await load('#launch=a/b');
+    expect(replaceState).not.toHaveBeenCalled();
+    comms.initComms();
+    const a = FakeSocket.last;
+    a.open();
+    expect(a.sent).toEqual([{ type: 'hello', data: { protocol: comms.PROTOCOL, key: null } }]);
+  });
+});
+
+// Catalog loading across the window handshake (data/catalog.ts, core/comms.js):
+// an ask refused before the page is live is asked again on connect, also when
+// the panel was built in the same task as initComms()
+const payload = { spat_unit: 'bin', sources: [{ id: 1, slot: 'cell_metadata', feat_type: 'rna', items: ['a', 'b'] }] };
+
+describe('catalog across the handshake', () => {
+  let comms: any, catalog: any;
+  beforeEach(async () => {
+    ({ comms } = await load());
+    catalog = await import('../../data/catalog.ts');
+  });
+
+  it('a panel built before the page is live gets the catalog on connect', async () => {
+    const got: any[] = [];
+    // A panel as panels/data.ts: load at once, and again on connect
+    let sources: any[] = [];
+    let note = '';
+    const load = async () => {
+      if (sources.length) return;
+      try { sources = await catalog.loadCatalog(); got.push(sources); } catch (e: any) { note = e.message; }
+    };
+    const granted = comms.acquire();
+    const ws = FakeSocket.last;
+    ws.open();
+    ws.say('grant', { data: 'S', key: 'K' });
+    await granted;
+    void load();                              // built during boot: granted, not live
+    comms.onConnect(() => void load());
+    await tick();
+    expect(note).toBe('R is not connected');
+    comms.initComms();                        // 'ready', then the connect callbacks
+    await tick();
+    const asks = ws.sent.filter(m => m.type === 'ask');
+    expect(ws.types().slice(0, 2)).toEqual(['hello', 'ready']);
+    expect(asks.map(m => m.data.op)).toEqual(['catalog']);
+    ws.say('answer', { id: asks[0].id, data: payload });
+    await tick();
+    expect(got.length).toBe(1);
+    expect(sources[0].items).toEqual(['a', 'b']);
+  });
+
+  it('a panel built in the same task as the connect is not left without it', async () => {
+    let sources: any[] = [];
+    let note = '';
+    const load = async () => {
+      if (sources.length) return;
+      try { sources = await catalog.loadCatalog(); } catch (e: any) { note = e.message; }
+    };
+    const granted = comms.acquire();
+    const ws = FakeSocket.last;
+    ws.open();
+    ws.say('grant', { data: 'S', key: 'K' });
+    await granted;
+    void load();                              // no task boundary before initComms()
+    comms.onConnect(() => void load());
+    comms.initComms();
+    await tick();
+    const asks = ws.sent.filter(m => m.type === 'ask');
+    expect(asks.map(m => m.data.op)).toEqual(['catalog']);
+    ws.say('answer', { id: asks[0].id, data: payload });
+    await tick();
+    expect(note).toBe('R is not connected');   // the first, refused ask
+    expect(sources.length).toBe(1);
+  });
+});

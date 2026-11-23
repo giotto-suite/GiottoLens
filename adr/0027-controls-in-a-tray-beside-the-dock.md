@@ -84,4 +84,4 @@ shown, as a background dock tab does.
 
 `inst/viewer-src/panels/tray.ts`, `panels/dock.ts`, `core/store.ts` (`trayShown`,
 `migrateConfig()`), `index.html` (`#tray`); adr/0016, adr/0023;
-`tests/testthat/test-e2e.R` ("the controls are in the tray").
+`tests/testthat/test-e2e-layout.R` ("the controls are in the tray").

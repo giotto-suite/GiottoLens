@@ -4,7 +4,7 @@
 jobs_viewer <- function() {
     fx <- lens_bins_fixture()
     v <- suppressMessages(launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE))
-    list(v = v, priv = get("private", v$.__enclos_env__))
+    list(v = v, priv = lens_priv(v))
 }
 
 test_that("a job runs over the object shown, loaded once by the daemon", {
@@ -69,7 +69,6 @@ test_that("the page hears of jobs and their progress, and can cancel one", {
     a <- ws_client(ws_url(jv$v), load = priv$load_seq)
     on.exit(a$ws$close(), add = TRUE, after = FALSE)
     expect_true(pump_until(function() jv$v$connected()))
-    jobs_heard <- function() Filter(function(m) m$type == "job", a$state$msgs)
 
     end <- NULL
     priv$start_job("steps", function(g) {
@@ -78,8 +77,8 @@ test_that("the page hears of jobs and their progress, and can cancel one", {
     }, ref = "p1", progress = TRUE, on_end = function(r) end <<- r)
     expect_true(pump_until(function() !is.null(end), timeout = 60))
     expect_identical(end$state, "done")
-    expect_true(pump_until(function() any(vapply(jobs_heard(), function(m) identical(m$data$state, "done"), NA))))
-    heard <- jobs_heard()
+    expect_true(pump_until(function() any(vapply(ws_msgs(a, "job"), function(m) identical(m$data$state, "done"), NA))))
+    heard <- ws_msgs(a, "job")
     expect_true(all(vapply(heard, function(m) identical(m$data$ref, "p1"), NA)))
     prog <- Filter(Negate(is.null), lapply(heard, function(m) m$data$progress))
     expect_gte(length(prog), 2L)
@@ -96,6 +95,7 @@ test_that("the page hears of jobs and their progress, and can cancel one", {
         m$type == "job" && identical(m$data$id, id) && identical(m$data$state, "running"), NA))))
     hit <- Find(function(m) m$type == "job", b$state$msgs)
     expect_true(is.numeric(hit$data$started))
+    # Not ws_ask(): its own `id` argument would take the job's
     b$ws$send(jsonlite::toJSON(list(type = "ask", id = "c1", data = list(op = "cancel_job", id = id)),
         auto_unbox = TRUE))
     expect_true(pump_until(function() identical(end$state, "cancelled"), timeout = 10))
@@ -107,7 +107,7 @@ test_that("jobs need an object from a snapshot, and close() stops the daemon", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    expect_error(get("private", v$.__enclos_env__)$start_job("x", function(g) 1),
+    expect_error(lens_priv(v)$start_job("x", function(g) 1),
         "jobs need an object shown from a snapshot")
 
     jv <- jobs_viewer()

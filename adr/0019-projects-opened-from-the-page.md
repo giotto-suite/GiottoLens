@@ -80,4 +80,4 @@ function exists, so it appears in Positron once Positron adds it.
 
 `R/projects.R`, `R/viewer.R` (`open_project`, `checkout`, `open_snapshot`, `check_work`,
 `ask`), `R/protocol.R`, `inst/viewer-src/ui/start.ts`, `inst/viewer-src/core/comms.js`
-(`askR`); `tests/testthat/test-projects.R`, `tests/testthat/test-e2e.R`.
+(`askR`); `tests/testthat/test-projects.R`, `tests/testthat/test-e2e-projects.R`.

@@ -85,6 +85,6 @@ replace the marks once their tiles load, as they replace dots today.
 
 `R/export.R` (`.build_cells`, `.build_cells_xy`), `R/marks.R`, `R/viewer.R`
 (`.resolve_layers`, `.spat_locations`), `render/marks.ts`, `render/render.js`,
-`data/schedule.js`; `tests/testthat/test-marks.R`, `test-e2e.R` ("bins without polygons"); GiottoClass
+`data/schedule.js`; `tests/testthat/test-marks.R`, `test-e2e-marks.R` ("bins without polygons"); GiottoClass
 `polyStamp()`, `circleVertices()`; Giotto `.visiumhd_cellmeta()`; GiottoDisk
 `convenience-visiumhd.R`; roadmap.Rmd "Cells without polygons".

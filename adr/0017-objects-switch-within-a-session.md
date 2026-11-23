@@ -88,4 +88,4 @@ methods that need one stop with that message.
 `R/viewer.R` (`set_object`, `load`, `clear_object`, `set_routes`, `reload_tabs`),
 `R/server.R` (`.lens_app`, `.files_paths`), `R/export.R` (`.export_empty`),
 `inst/viewer-src/main.js`, `core/comms.js` (`setHello`);
-`tests/testthat/test-launch.R`, `tests/testthat/test-e2e.R`.
+`tests/testthat/test-launch.R`, `tests/testthat/test-e2e-projects.R`.

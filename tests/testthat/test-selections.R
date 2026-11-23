@@ -2,33 +2,6 @@
 # comparing two runs Giotto::findScranMarkers() as a job (R/selections.R,
 # adr/0020).
 
-# The bins fixture with normalized expression: g1 high in the left half
-de_object <- local({
-    out <- NULL
-    function() {
-        if (!is.null(out)) return(out)
-        bx <- lens_bins_fixture()
-        ids <- bx$xy$cell_ID
-        left <- bx$meta$half[match(ids, bx$meta$cell_ID)] == "left"
-        set.seed(1)
-        m <- rbind(g1 = ifelse(left, 3, 0.5) + stats::runif(length(ids)),
-            g2 = 1 + stats::runif(length(ids)))
-        colnames(m) <- ids
-        g <- suppressMessages(suppressWarnings(GiottoClass::setGiotto(bx$mem,
-            GiottoClass::createExprObj(m, spat_unit = "bin", feat_type = "rna",
-                name = "normalized"), verbose = FALSE)))
-        out <<- list(g = g, left = ids[left], right = ids[!left])
-    }
-})
-de_viewer <- function() {
-    d <- de_object()
-    td <- tempfile("lensproj_")
-    v <- suppressMessages(launch_lens(d$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
-        project = td))
-    list(v = v, d = d, priv = get("private", v$.__enclos_env__),
-        done = function() { v$close(); unlink(td, recursive = TRUE) })
-}
-
 test_that("saved selections keep the rules, and bring them back as they were", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
@@ -50,7 +23,7 @@ test_that("saved selections keep the rules, and bring them back as they were", {
     v$restore_selection("a")
     expect_identical(v$rules()$source, c("hist:score", "scatter"))
     expect_setequal(v$selection, sel)
-    expect_identical(get("private", v$.__enclos_env__)$combine, "or")
+    expect_identical(lens_priv(v)$combine, "or")
     # Edited after, the saved one stays as it was
     v$select(lens_range("score", 9, 10), source = "hist:score", replace = FALSE)
     expect_identical(v$selections()$cells[1L], length(sel))
@@ -140,108 +113,29 @@ test_that("the page acts on saved selections through the `selection` ask, and a 
     a <- ws_client(ws_url(v), load = dv$priv$load_seq)
     on.exit(a$ws$close(), add = TRUE, after = FALSE)
     expect_true(pump_until(function() v$connected()))
-    of <- function(type) Filter(function(m) identical(m$type, type), a$state$msgs)
-    expect_true(pump_until(function() length(of("selections")) > 0L))
-    answer <- function(id) {
-        hit <- NULL
-        pump_until(function() {
-            for (m in of("answer")) if (identical(m$data$id, id)) hit <<- m$data
-            !is.null(hit)
-        }, timeout = 60)
-        hit
-    }
-    send <- function(id, ...) a$ws$send(jsonlite::toJSON(list(type = "ask", id = id,
-        data = list(op = "selection", ...)), auto_unbox = TRUE))
+    expect_true(pump_until(function() length(ws_msgs(a, "selections")) > 0L))
 
     v$set_selection(dv$d$left)
-    send("1", action = "save", name = "left")
-    expect_identical(answer("1")$data$cells, length(dv$d$left))
-    expect_true(isTRUE(utils::tail(of("selections"), 1L)[[1L]]$data$open))
+    ws_ask(a, "1", op = "selection", action = "save", name = "left")
+    expect_identical(ws_answer(a, "1", timeout = 60)$data$cells, length(dv$d$left))
+    expect_true(isTRUE(utils::tail(ws_msgs(a, "selections"), 1L)[[1L]]$data$open))
     v$select(NULL)
-    send("2", action = "save", name = "empty")
-    expect_match(answer("2")$error, "no rules to save")
-    send("2b", action = "restore", name = "left")
-    expect_true(!is.null(answer("2b")$data))
+    ws_ask(a, "2", op = "selection", action = "save", name = "empty")
+    expect_match(ws_answer(a, "2", timeout = 60)$error, "no rules to save")
+    ws_ask(a, "2b", op = "selection", action = "restore", name = "left")
+    expect_true(!is.null(ws_answer(a, "2b", timeout = 60)$data))
     expect_setequal(v$selection, dv$d$left)
-    send("3", action = "compare", a = "left", b = "", ref = "p1")
-    r <- suppressMessages(answer("3"))
+    ws_ask(a, "3", op = "selection", action = "compare", a = "left", b = "", ref = "p1")
+    r <- suppressMessages(ws_answer(a, "3", timeout = 60))
     expect_identical(r$data$id, "de-1")
-    expect_true(any(vapply(of("job"), function(m) identical(m$data$ref, "p1"), NA)))
+    expect_true(any(vapply(ws_msgs(a, "job"), function(m) identical(m$data$ref, "p1"), NA)))
 
     # A click on g1 in the volcano plot: that page colours its cells by it
-    a$ws$send(jsonlite::toJSON(list(type = "panel_pick", data = list(id = "de-1",
-        value = list(gene = list("g1")))), auto_unbox = TRUE))
+    ws_say(a, "panel_pick", list(id = "de-1", value = list(gene = list("g1"))))
     key <- .item_key("expression", "rna", "g1", name = "normalized")
-    expect_true(pump_until(function() any(vapply(of("set_color_by"), function(m)
+    expect_true(pump_until(function() any(vapply(ws_msgs(a, "set_color_by"), function(m)
         identical(m$data$column, key), NA)), timeout = 60))
-    hit <- Find(function(m) identical(m$data$column, key), of("set_color_by"))
+    hit <- Find(function(m) identical(m$data$column, key), ws_msgs(a, "set_color_by"))
     expect_match(hit$data$item$url, "^session/items/")
     expect_false("g1" %in% dv$priv$meta_names())
-})
-
-test_that("the selection panel saves selections, and a volcano pick colors the cells", {
-    skip_if_not_installed("Giotto")
-    skip_if_not_installed("scran")
-    dv <- de_viewer()
-    on.exit(dv$done(), add = TRUE)
-    v <- dv$v
-    br <- lens_browser(v$url)
-    on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
-    expect_true(pump_until(function() v$connected()))
-    q <- function(sel) sprintf("document.querySelector('[data-panel=selection] %s')", sel)
-
-    # One saved from R shows in the saved selections
-    v$save_selection("right", lens_cells(dv$d$right))
-    expect_true(browser_wait(br, sprintf("!!%s", q(".rg-item[data-saved=right]"))))
-
-    # The page saves the selection under the name typed
-    v$set_selection(dv$d$left)
-    expect_true(browser_wait(br, sprintf("!%s.disabled", q(".rg-save"))))
-    br$js(sprintf("(() => { %s.value = 'left'; %s.click(); })()", q(".rg-name"), q(".rg-save")))
-    expect_true(pump_until(function() setequal(v$selections()$name, c("left", "right"))))
-    expect_identical(length(v$selections("left")), length(dv$d$left))
-    # A click brings its rules back
-    v$select(NULL)
-    br$js(sprintf("%s.click()", q(".rg-item[data-saved=left]")))
-    expect_true(pump_until(function() setequal(v$selection, dv$d$left)))
-
-    # Compare left vs right from R, reading the normalized values
-    suppressMessages(v$compare_selections("left", "right", values = "normalized"))
-    expect_true(suppressMessages(pump_until(function() nrow(v$de_results()) == 1L, timeout = 60)))
-    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=de-1] canvas')"))
-
-    # A gene picked in the volcano plot colors the cells by its item key
-    key <- .item_key("expression", "rna", "g1", name = "normalized")
-    br$js("(() => { const v = window.__giottolens.panel('de-1').view;
-        return v.signal('pick_tuple', { unit: 'layer_0', fields: v.signal('pick_tuple_fields'),
-            values: ['g1'] }).runAsync().then(() => true); })()")
-    expect_true(browser_wait(br, sprintf("window.__giottolens.store.getState().colorBy === '%s'", key)))
-    expect_true(browser_wait(br, "window.__giottolens.state.colorLegend?.type === 'continuous'"))
-    expect_false("g1" %in% dv$priv$meta_names())
-
-    # Genes share one scale: set for one, it stays for the next
-    v$set_color_scale(style = "sequential", preset = "magma", limits = c(0, 2))
-    v$color_by(.item_key("expression", "rna", "g2", name = "normalized"))
-    lg <- br$js("(() => { const l = window.__giottolens.state.colorLegend;
-        return { style: l.style, preset: l.scale.preset, lo: l.lo, hi: l.hi }; })()")
-    expect_identical(lg, list(style = "sequential", preset = "magma", lo = 0L, hi = 2L))
-
-    # Dragging the high handle on the bar to its middle moves the high end only
-    # (the legend is the layers panel's; saving a selection showed the other)
-    tray_show(br, "layers", "cells")
-    pt <- br$js("(() => { const h = document.querySelector('.scale-handle[data-handle=hi]').getBoundingClientRect();
-        const b = document.querySelector('.scale-bar').getBoundingClientRect();
-        return [h.left + h.width / 2, h.top + h.height / 2, b.left + b.width / 2]; })()")
-    mouse <- function(type, x, buttons) br$session$Input$dispatchMouseEvent(type = type, x = x,
-        y = pt[[2]], button = "left", buttons = buttons, clickCount = 1L)
-    mouse("mousePressed", pt[[1]], 1L)
-    mouse("mouseMoved", (pt[[1]] + pt[[3]]) / 2, 1L)
-    mouse("mouseMoved", pt[[3]], 1L)
-    mouse("mouseReleased", pt[[3]], 0L)
-    expect_true(browser_wait(br, "(() => { const l = window.__giottolens.state.colorLegend;
-        return l.lo === 0 && Math.abs(l.hi - (l.min + l.max) / 2) < 0.02 * (l.max - l.min); })()", 10))
-    sc <- v$state()$config$colorScales[["@expression"]]
-    expect_equal(unlist(sc$limits)[1L], 0)
-    expect_identical(br$errors(), character())
 })

@@ -75,4 +75,4 @@ view; points are thinned by zoom when decoded, so their file size is the cost.
 
 `R/viewer.R` (`.check_project`, `.matching_snapshot`, `.lens_snapshot_name`, `handover`,
 `gobject`, `checkout`, `.check_tile_store`), `R/export.R` (`.store_tiles`);
-`tests/testthat/test-handover.R`, `tests/testthat/test-e2e.R`; GiottoDisk#162.
+`tests/testthat/test-handover.R`, `tests/testthat/test-e2e-boot.R`; GiottoDisk#162.
