@@ -1,5 +1,13 @@
 # GiottoLens (development version)
 
+* The left rail's modules button closes its list when clicked again.
+* The tray's selection button shows how many selection rules are on, as the jobs button shows
+  running jobs; its tooltip gives the cells they select.
+* The table's cell_ID column has a divider, and a shadow while the table is scrolled sideways.
+* In the light theme, the spatial view's toolbar, cursor readout and cell tooltip and the
+  scatter's tools are light; the views themselves stay dark.
+* The start page, shown before an object opens, follows the theme preference; it was always
+  dark.
 * A new viewer opens with the spatial view, the scatter and, below it, the table; the
   histogram and density charts are added from a pane's `+`. A layout already saved keeps its
   panels.

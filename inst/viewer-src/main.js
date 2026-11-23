@@ -172,19 +172,7 @@ async function main() {
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(spatialView()?.viewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
-  // The config's theme when set (set_theme()), else the preference
-  let theme = null;
-  const themeNow = () => {
-    const t = store.getState().theme ?? prefs().theme;
-    if (t === theme) return;
-    const first = theme === null;
-    theme = t;
-    applyTheme(t);
-    if (!first) refreshCharts();
-  };
-  themeNow();
-  store.subscribe(s => s.theme, themeNow);
-  onPrefs(themeNow);
+  followTheme();
 
   initAnnotations();
   initReleaseGuard();
@@ -275,15 +263,34 @@ async function main() {
   $status('ready');
 }
 
+// The config's theme when set (set_theme()), else the preference
+function followTheme() {
+  let theme = null;
+  const themeNow = () => {
+    const t = store.getState().theme ?? prefs().theme;
+    if (t === theme) return;
+    const first = theme === null;
+    theme = t;
+    applyTheme(t);
+    if (!first) refreshCharts();
+  };
+  themeNow();
+  store.subscribe(s => s.theme, themeNow);
+  onPrefs(themeNow);
+}
+
 // No object loaded: the start page, to open a project and one of its
-// snapshots (`project`: the project R has open), or wait for R to load one
+// snapshots (`project`: the project R has open), or wait for R to load one.
+// It takes the theme preference: there is no config yet.
 function showEmpty(project) {
   document.body.classList.add('empty');
   const host = document.createElement('div');
-  host.className = 'spatial-pane start-host';
+  host.className = 'start-host';
   document.getElementById('main-layout').prepend(host);
   showStartPage(host, project);
   initRStatus();
+  onMessage('preferences', applyPrefs);
+  followTheme();
   initComms();
   $status('no object');
 }

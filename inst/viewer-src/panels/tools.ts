@@ -51,7 +51,7 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
   const offDrawer = store.subscribe(s => s.drawer, () => anBtn.classList.toggle('active', openDrawer() === 'analysis'),
     { fireImmediately: true });
   const mods = bar.querySelector('[data-act=modules]') as HTMLElement;
-  mods.addEventListener('click', () => openModulesMenu(mods));
+  mods.addEventListener('click', () => closeModulesMenu ? closeModulesMenu() : openModulesMenu(mods));
   // Lit while a module is on
   const offModule = store.subscribe(s => s.module, () =>
     mods.classList.toggle('active', moduleList().some(m => m.on)), { fireImmediately: true });
@@ -126,14 +126,19 @@ function saveForm(button: HTMLElement): () => void {
 }
 
 // The modules button's menu: modes for one task (panels/modules.ts), the one
-// on ticked; picking it leaves it, picking another enters that one
+// on ticked; picking it leaves it, picking another enters that one. The button
+// clicked again closes it.
+let closeModulesMenu: (() => void) | null = null;
 function openModulesMenu(anchor: HTMLElement): void {
   const doc = anchor.ownerDocument;
   doc.querySelectorAll('.dock-menu.open').forEach(m => m.classList.remove('open'));
   const menu = Object.assign(doc.createElement('div'), { className: 'dock-menu open dock-menu-float modules-menu' });
   const r = anchor.getBoundingClientRect();
   Object.assign(menu.style, { left: `${r.right + 4}px`, top: `${r.top}px`, right: 'auto' });
-  const close = () => { menu.remove(); doc.removeEventListener('click', close); };
+  // A click anywhere else closes it; the button's own click toggles it
+  const onDoc = (e: Event) => { if (!anchor.contains(e.target as Node)) close(); };
+  const close = () => { menu.remove(); doc.removeEventListener('click', onDoc); closeModulesMenu = null; };
+  closeModulesMenu = close;
   menu.append(...moduleList().map(m => {
     const item = Object.assign(doc.createElement('button'), {
       textContent: `${m.on ? '\u2713' : '\u2003'} ${m.label}`, disabled: !m.available,
@@ -144,5 +149,5 @@ function openModulesMenu(anchor: HTMLElement): void {
     return item;
   }));
   doc.body.append(menu);
-  setTimeout(() => doc.addEventListener('click', close));   // not the click that opened it
+  doc.addEventListener('click', onDoc);
 }

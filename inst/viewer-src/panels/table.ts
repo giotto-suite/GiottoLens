@@ -171,6 +171,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
     rowsEl.style.top = `${w.top + ROW_H}px`;
     const p = picks();
     const cw = colWindowFor(scroll.scrollLeft, scroll.clientWidth, columns.length);
+    scroll.classList.toggle('scrolled-x', scroll.scrollLeft > 0);
     inView = columns.slice(cw.first, cw.first + cw.count);
     // '…' while a column in view loads; a column out of view shows only if
     // already loaded, since reading it would load it
