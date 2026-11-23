@@ -94,11 +94,6 @@ test_that("Markers between groups write changed advanced settings into their R c
 })
 
 
-.table_ids <- function(a) {
-    tabs <- a$.__enclos_env__$private$tables
-    unlist(lapply(tabs, function(x) vapply(x, `[[`, "", "id")), use.names = FALSE)
-}
-
 .table_of <- function(a, id) {
     tabs <- unlist(a$.__enclos_env__$private$tables, recursive = FALSE)
     Find(function(x) identical(x$id, id), tabs)

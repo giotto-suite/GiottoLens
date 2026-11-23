@@ -182,6 +182,7 @@ pump_until <- function(cond, timeout = 10) {
 }
 
 http_get <- function(url, headers = list(), timeout = 10) {
+    testthat::skip_if_not_installed("curl")
     res <- NULL
     h <- curl::new_handle()
     if (length(headers)) curl::handle_setheaders(h, .list = headers)

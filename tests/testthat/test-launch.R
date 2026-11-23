@@ -187,8 +187,8 @@ test_that("style_categories checks its arguments before sending", {
 })
 
 test_that("WebSocket needs the token, rejects foreign origins, and tracks its window", {
-    fx <- lens_fixture()
     skip_if_not_installed("websocket")
+    fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
 
@@ -258,8 +258,8 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
 })
 
 test_that("R keeps the page's config and pushed panels for the next page", {
-    fx <- lens_fixture()
     skip_if_not_installed("websocket")
+    fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
 
@@ -501,9 +501,9 @@ test_that("layer launches are deprecated, once per session", {
 })
 
 test_that("set_object() serves another object from a clean slate", {
+    skip_if_not_installed("websocket")
     fx <- lens_image_fixture()
     bx <- lens_bins_fixture()
-    skip_if_not_installed("websocket")
     v <- launch_lens(fx$g, open = FALSE)
     on.exit(v$close(), add = TRUE)
     priv <- get("private", v$.__enclos_env__)

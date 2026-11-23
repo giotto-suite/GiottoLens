@@ -13,6 +13,11 @@ function naivePip(ring: Ring, x: number, y: number) {
   return inside;
 }
 
+function rng(seed: number) {
+  let s = seed;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+
 // 10 x 10 grid of cells at (i + 0.5, j + 0.5), two tiles split at x = 5
 function grid(): Cells {
   const n = 100, x = new Float32Array(n), y = new Float32Array(n);
@@ -41,8 +46,9 @@ describe('ringTester', () => {
       return [10 + r * Math.cos(a), 10 + r * Math.sin(a)];
     });
     const T = ringTester(ring, 16);
+    const rand = rng(1);
     for (let i = 0; i < 2000; i++) {
-      const x = Math.random() * 20, y = Math.random() * 20;
+      const x = rand() * 20, y = rand() * 20;
       expect(T.test(x, y)).toBe(naivePip(ring, x, y));
     }
   });

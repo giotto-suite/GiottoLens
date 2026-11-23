@@ -198,7 +198,7 @@ test_that("pull() adds columns to the metadata shown and replaces one of the sam
     expect_identical(priv$meta_names(), "half")
 })
 
-test_that("only an object can be pulled from, and a load clears its catalog", {
+test_that("only an object can be pulled from, and layers have no catalog", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)

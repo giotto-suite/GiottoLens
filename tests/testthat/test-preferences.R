@@ -84,9 +84,9 @@ test_that("the viewer's Preferences panel sets and clears preferences", {
 })
 
 test_that("a page gets the preferences on connect and after a change", {
+    skip_if_not_installed("websocket")
     local_pref_file()
     fx <- lens_fixture()
-    skip_if_not_installed("websocket")
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
     cl <- ws_client(ws_url(v))

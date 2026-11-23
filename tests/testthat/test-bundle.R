@@ -31,6 +31,7 @@ add_work <- function(r) {
 
 test_that("work goes to the working bundle in the project and is served under work/", {
     skip_if_not_installed("curl")
+    skip_on_os("windows")  # file.symlink
     r <- bundle_viewer()
     on.exit(r$done(), add = TRUE)
     w <- r$priv$work

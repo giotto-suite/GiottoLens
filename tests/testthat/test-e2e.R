@@ -149,9 +149,11 @@ test_that("a polygons-only viewer boots without errors", {
     on.exit(br$close(), add = TRUE)
 
     expect_true(browser_wait(br, tiles_loaded))
-    # No transcripts, so no transcripts panel
     expect_true(pump_until(function() v$connected()))
-    expect_false("transcripts" %in% v$panels()$id)
+    # No transcripts, so no transcripts layer
+    tray_show(br, "layers")
+    expect_true(br$js("!!document.querySelector('[data-section=cells]')"))
+    expect_false(br$js("!!document.querySelector('[data-section=transcripts]')"))
     expect_identical(br$errors(), character())
 })
 
@@ -163,9 +165,11 @@ test_that("a points-only viewer boots without errors", {
     on.exit(br$close(), add = TRUE)
 
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
-    # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("spatial", "scatter", "table", "layers"))
+    # No cells, so no cells layer
+    tray_show(br, "layers")
+    expect_true(br$js("!!document.querySelector('[data-section=transcripts]')"))
+    expect_false(br$js("!!document.querySelector('[data-section=cells]')"))
     expect_identical(br$errors(), character())
 })
 
