@@ -9,6 +9,9 @@
        the page (ui/theme.ts). The spatial view and the scatter canvas
        (.lens-dark) keep the dark ones in both: their colours (selection,
        uncoloured cells, image channels) are chosen for a dark background.
+       Their tools and readouts are page controls and take the page's (the
+       spatial toolbar, hud and cell tooltip here, the scatter's tools by not
+       being .lens-dark).
        color-scheme sets the browser's own controls to match. */
     :root, .spatial-pane, .lens-dark {
       color-scheme: dark;
@@ -17,7 +20,7 @@
       --accent: #3b82f6; --accent-fg: #93c5fd; --accent-bg: #1e3a5f; --accent-bg-hover: #1e4a7f; --row-sel: #1e2d40;
       --tag-green-bg: #1a3a2a; --tag-green-fg: #6ee7b7; --tag-amber-bg: #3a2a1a; --tag-amber-fg: #fcd34d;
     }
-    :root[data-theme="light"] {
+    :root[data-theme="light"], :root[data-theme="light"] .spatial-pane :is(.toolbar, .hud, .cell-tooltip) {
       color-scheme: light;
       --bg-0: #ffffff; --bg-1: #f3f4f6; --bg-2: #e5e7eb; --bg-3: #d1d5db;
       --fg-0: #111827; --fg-1: #374151; --fg-2: #4b5563; --fg-3: #6b7280; --fg-4: #9ca3af;
@@ -33,13 +36,13 @@
     .hud {
       position: absolute; top: 12px; left: 12px;
       color: var(--fg-1); font-size: 12px; line-height: 1.6;
-      background: rgba(17,24,39,0.75); border: 1px solid rgba(255,255,255,0.06);
+      background: color-mix(in srgb, var(--bg-1) 75%, transparent); border: 1px solid var(--bg-2);
       border-radius: 5px; padding: 3px 10px;
       pointer-events: none; user-select: none;
     }
     .hud:not(:has(.hud-item:not(:empty))) { display: none; }
     .hud-item { color: var(--fg-3); font-size: 11px; }
-    .hud-item:not(:empty) ~ .hud-item:not(:empty) { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12); }
+    .hud-item:not(:empty) ~ .hud-item:not(:empty) { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--bg-3); }
     .cursor-coords { font-family: monospace; }
     .ruler-label {
       position: absolute; display: none; pointer-events: none;
@@ -51,12 +54,13 @@
 
     .cell-tooltip {
       position: absolute; display: none; pointer-events: none;
-      background: rgba(17,24,39,0.92); border: 1px solid var(--bg-3); border-radius: 4px;
+      background: color-mix(in srgb, var(--bg-1) 92%, transparent); border: 1px solid var(--bg-3); border-radius: 4px;
       padding: 5px 8px; color: var(--fg-1); font-size: 11px; font-family: monospace;
       white-space: nowrap; z-index: 11; max-width: 260px;
     }
     .cell-tooltip.visible { display: block; }
     .cell-tooltip .ctt-id { color: #fef08a; }
+    :root[data-theme="light"] .cell-tooltip .ctt-id { color: var(--tag-amber-fg); }
     .cell-tooltip .ctt-row { display: flex; gap: 8px; line-height: 1.5; }
     .cell-tooltip .ctt-key { color: var(--fg-3); flex: 0 0 auto; }
     .cell-tooltip .ctt-val { color: var(--fg-1); overflow: hidden; text-overflow: ellipsis; }
@@ -421,10 +425,13 @@
     .table-row { display: flex; height: 20px; line-height: 20px; font-size: 11px; font-family: monospace;
       color: var(--fg-2); cursor: pointer; user-select: none; }
     .table-row.picked { background: var(--row-sel); color: var(--fg-0); }
-    .table-header { position: sticky; top: 0; z-index: 1; background: var(--bg-1); color: var(--fg-3);
+    .table-header { position: sticky; top: 0; z-index: 2; background: var(--bg-1); color: var(--fg-3);
       border-bottom: 1px solid var(--bg-3); cursor: default; }
     .table-cell { flex: 0 0 110px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .table-cell.table-id { flex-basis: 150px; position: sticky; left: 0; background: inherit; }
+    .table-cell.table-id { flex-basis: 150px; position: sticky; left: 0; z-index: 1; background: inherit;
+      border-right: 1px solid var(--bg-3); }
+    /* Scrolled sideways: a shadow where the columns pass under cell_ID */
+    .table-scroll.scrolled-x .table-cell.table-id { box-shadow: 4px 0 6px -3px rgba(0, 0, 0, 0.45); }
     .table-rows .table-row { background: var(--bg-0); }
     .table-rows .table-row:hover { background: var(--bg-2); }
     .table-rows .table-row.picked { background: var(--row-sel); }
@@ -680,10 +687,11 @@
     .tools-bar [data-act=preferences] { margin-top: auto; }
     .tools-bar .tool-btn { width: 30px; height: 30px; }
     /* The jobs button and its popover (ui/jobs.ts) */
-    .jobs-btn { position: relative; }
-    .jobs-badge { position: absolute; top: 1px; right: 1px; min-width: 12px; padding: 0 3px; border-radius: 6px;
+    /* A number on a rail button: running jobs, selection rules */
+    .tool-btn:has(> .rail-badge) { position: relative; }
+    .rail-badge { position: absolute; top: 1px; right: 1px; min-width: 12px; padding: 0 3px; border-radius: 6px;
       background: var(--accent); color: var(--bg-0); font-size: 9px; line-height: 12px; }
-    .jobs-badge:empty { display: none; }
+    .rail-badge:empty { display: none; }
     .jobs-btn.busy svg { animation: jobs-pulse 1.2s ease-in-out infinite; color: var(--accent-fg); }
     @keyframes jobs-pulse { 50% { opacity: 0.35; } }
     .jobs-popover { position: fixed; z-index: 1000; width: 280px; max-height: 60vh; overflow-y: auto; padding: 6px 8px;
@@ -824,7 +832,7 @@
       position: absolute; bottom: 20px;
       left: 50%; transform: translateX(-50%);
       display: flex; align-items: center; gap: 3px;
-      background: rgba(17,24,39,0.88); border: 1px solid var(--bg-3); border-radius: 6px;
+      background: color-mix(in srgb, var(--bg-1) 88%, transparent); border: 1px solid var(--bg-3); border-radius: 6px;
       padding: 4px; pointer-events: all; user-select: none; z-index: 10;
     }
     .tool-btn {
@@ -844,7 +852,7 @@
     .tool-submenu {
       display: none; flex-direction: column; gap: 3px;
       position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-      background: rgba(17,24,39,0.92); border: 1px solid var(--bg-3); border-radius: 6px; padding: 4px;
+      background: color-mix(in srgb, var(--bg-1) 92%, transparent); border: 1px solid var(--bg-3); border-radius: 6px; padding: 4px;
     }
     .tool-group.open .tool-submenu { display: flex; }
 
@@ -905,7 +913,7 @@
     body.empty #workarea, body.empty .selbar-sel { display: none; }
     body.empty #status { margin-left: auto; }
     body.empty #btn-panels { display: none; }
-    .start-host { position: relative; flex: 1; inset: auto; }
+    .start-host { position: relative; flex: 1; overflow: hidden; background: var(--bg-0); color: var(--fg-1); }
 
     /* The start page (ui/start.ts): in place of the view, or as a dialog */
     .start {
@@ -981,10 +989,11 @@
     .start-bulk { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .start-bulk .start-btn:disabled { opacity: 0.45; cursor: default; }
     .start-check { margin: 0; accent-color: var(--accent-fg); cursor: pointer; }
-    /* The dialog follows the theme; the start page is in the always-dark spatial pane */
-    :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error, .start-confirm-text.error) { color: #b91c1c; }
+    /* The start page and the dialog follow the theme */
+    :root[data-theme="light"] :is(.start-overlay, .start-host) :is(.start-btn.danger, .start-status.error, .start-confirm-text.error) { color: #b91c1c; }
+    :root[data-theme="light"] .start-row.recent:hover { background: var(--bg-1); }
   </style>
-  <script type="module" crossorigin src="./assets/index-CY0yFbb7.js"></script>
+  <script type="module" crossorigin src="./assets/index-DJrPqqKq.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-BHncyuL9.css">
 </head>
 <body>
