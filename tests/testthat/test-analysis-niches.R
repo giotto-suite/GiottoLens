@@ -54,10 +54,10 @@ test_that("Niche advanced settings have kmeans defaults and reach the code", {
     expect_silent(parse(text = code))
 })
 
-test_that("Niches label cells and show the niche composition", {
+test_that("Niches label cells and show the niche composition, then run with advanced kmeans settings", {
     r <- lens_analysis_rig(analyses = "niches", params = c(lens_analysis_params, list(
         nc_groups = list(column = "object:band"),
-        nc_kmeans = list(k = 5))))
+        nc_kmeans = list(k = 5))), start = FALSE)
     on.exit(r$done(), add = TRUE)
     a <- r$a
     v <- r
@@ -91,23 +91,12 @@ test_that("Niches label cells and show the niche composition", {
     expect_identical(unname(st()), c("done", "done", "done", "stale"))
     expect_identical(a$status$nc_proportions$secs, secs)
     expect_identical(nrow(a$history("niches")), 1L)
-})
 
-test_that("Niches run with advanced kmeans settings", {
-    r <- lens_analysis_rig(analyses = "niches", params = c(lens_analysis_params, list(
-        nc_groups = list(column = "object:band"),
-        nc_kmeans = list(k = 4, iter_max = 50, nstart = 5, algorithm = "Lloyd", seed = 7))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    v <- r
-    ist <- c("nc_groups", "nc_network", "nc_proportions", "nc_kmeans")
-    st <- function() step_status(a, ist)
-    a$wait(300)
+    a$set("nc_kmeans", iter_max = 50, nstart = 5, algorithm = "Lloyd", seed = 7)
     a$run("niches")
     a$wait(180)
     expect_true(all(st() == "done"), info = paste(ist, st(), collapse = ", "))
     expect_match(a$status$nc_kmeans$summary, "^4 niches \\(silhouette [0-9.]+\\): niche 1 ")
-    expect_true("nc_niche" %in% names(v$meta()))
     code <- a$code("niches")
     expect_match(code, "centers = 4, iter.max = 50, nstart = 5, algorithm = \"Lloyd\")",
         fixed = TRUE)

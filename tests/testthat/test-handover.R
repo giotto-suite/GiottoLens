@@ -80,11 +80,9 @@ test_that("a changed object gets a new snapshot, one per change", {
     expect_identical(lens$creator, c("GiottoLens", "GiottoLens"))
     expect_identical(anyDuplicated(lens$name), 0L)
     expect_identical(lens_priv(v)$snapshot, utils::tail(lens$tag, 1L))
-    # The latest snapshot is the one shown and loaded back
+    # The latest snapshot is the one shown and loaded back; checkout() of an
+    # earlier one is in test-projects.R
     expect_true("extra" %in% names(GiottoClass::pDataDT(v$gobject(), spat_unit = "bin")))
-    # and the first, checked out by name
-    v$checkout("fixture")
-    expect_identical(lens_priv(v)$snapshot, info$tag[info$name == "fixture"])
 })
 
 test_that("a save that would move the object's data is refused, and nothing changes", {

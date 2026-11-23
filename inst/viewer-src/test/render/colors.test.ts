@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   cellColorBuffer, DEFAULT_CELL, continuousColor, scaleStops, SCALE_PRESETS, scalePosition, scaleRange,
+  scaleStyle, scalePreset, columnScale, categoryPalette,
   medianOf, DIVERGENT_PRESETS, SEQUENTIAL_PRESETS, sliderToValue, valueToSlider, dragHandle, autoHandle, barColors,
 } from '../../render/colors.ts';
 import { applyPrefs, BUILTIN } from '../../core/prefs.ts';
+import { PALETTE, PALETTE_OKABE_ITO } from '../../core/constants.js';
 
 describe('cellColorBuffer', () => {
   it('fills the default colour without a column', () => {
@@ -23,17 +25,6 @@ describe('cellColorBuffer', () => {
     const { colors, fill } = cellColorBuffer(1, col);
     expect(colors[3]).toBe(255);
     expect(fill[0]).toBe(230);
-  });
-  it('gives a continuous scale the fill opacity preference, as categories have', () => {
-    const col = { name: 'x', kind: 'continuous' as const, values: Float64Array.from([0, 1, NaN]), min: 0, max: 1 };
-    let { colors, fill } = cellColorBuffer(3, col);
-    expect([colors[3], fill[0], fill[1]]).toEqual([255, 230, 230]);
-    expect([...colors.slice(8, 12)]).toEqual([80, 80, 80, 180]);
-    expect(fill[2]).toBe(110);
-    applyPrefs({ defaults: BUILTIN, set: { fill_opacity: 0.4 } });
-    ({ colors, fill } = cellColorBuffer(3, col));
-    expect([colors[3], fill[0]]).toEqual([204, 102]);
-    applyPrefs({ defaults: BUILTIN, set: {} });
   });
   it('applies per-category color, visibility and opacity', () => {
     const col = { name: 'c', kind: 'categorical' as const, levels: ['a', 'b', 'c'], values: Int32Array.from([0, 1, 2, -1]), min: 0, max: 0 };
@@ -76,6 +67,54 @@ describe('cellColorBuffer', () => {
     expect(legend).toMatchObject({ type: 'continuous', column: 'v', min: 0, max: 10 });
     expect(colors[4]).toBe(255);
     expect(colors[0]).toBe(0);
+  });
+});
+
+describe('preference defaults', () => {
+  afterEach(() => applyPrefs({ defaults: BUILTIN, set: {} }));
+
+  it('set the default scale style and palettes', () => {
+    expect(scaleStyle({})).toBe('divergent');
+    expect(scalePreset({})).toBe('blue-white-red');
+    applyPrefs({ defaults: BUILTIN, set: { scale_style: 'sequential', seq_palette: 'magma' } });
+    expect(scaleStyle({})).toBe('sequential');
+    expect(scalePreset({})).toBe('magma');
+    expect(scaleStops({})).toEqual(SCALE_PRESETS.magma);
+    expect(scalePreset({ preset: 'turbo' })).toBe('turbo');
+    expect(scaleStyle({ style: 'divergent' })).toBe('divergent');
+  });
+
+  it('give expression items their own style', () => {
+    expect(columnScale('@expression', {})).toBeUndefined();
+    applyPrefs({ defaults: BUILTIN, set: { gene_style: 'sequential' } });
+    expect(columnScale('@expression', {})).toEqual({ style: 'sequential' });
+    expect(columnScale('@expression', { '@expression': { style: 'divergent' } })).toEqual({ style: 'divergent' });
+    expect(columnScale('score', {})).toBeUndefined();
+  });
+
+  it('color categories by palette, under per-column styles', () => {
+    expect(categoryPalette()).toBe(PALETTE);
+    applyPrefs({ defaults: BUILTIN, set: { cat_palette: 'okabe_ito', fill_opacity: 0.5 } });
+    const col = { name: 'cell_type', kind: 'categorical', values: new Int32Array([0, 1]),
+      levels: ['B', 'T/NK'] } as never;
+    const { legend } = cellColorBuffer(2, col, {});
+    const items = (legend as { items: { color: number[]; alpha: number }[] }).items;
+    expect(items[0].color).toEqual(PALETTE_OKABE_ITO[0]);
+    expect(items[1].color).toEqual(PALETTE_OKABE_ITO[1]);
+    expect(items[0].alpha).toBe(0.5);
+    const styled = cellColorBuffer(2, col, { 'T/NK': { color: [0, 0, 255] } });
+    expect((styled.legend as { items: { color: number[] }[] }).items[1].color).toEqual([0, 0, 255]);
+  });
+
+  it('gives a continuous scale the fill opacity preference, as categories have', () => {
+    const col = { name: 'x', kind: 'continuous' as const, values: Float64Array.from([0, 1, NaN]), min: 0, max: 1 };
+    let { colors, fill } = cellColorBuffer(3, col);
+    expect([colors[3], fill[0], fill[1]]).toEqual([255, 230, 230]);
+    expect([...colors.slice(8, 12)]).toEqual([80, 80, 80, 180]);
+    expect(fill[2]).toBe(110);
+    applyPrefs({ defaults: BUILTIN, set: { fill_opacity: 0.4 } });
+    ({ colors, fill } = cellColorBuffer(3, col));
+    expect([colors[3], fill[0]]).toEqual([204, 102]);
   });
 });
 

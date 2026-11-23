@@ -83,6 +83,27 @@ test_that("rule code recreates the same cells", {
     }
 })
 
+test_that("rules(code = TRUE) recreates a viewer's cross-filtered selection", {
+    fx <- lens_fixture()
+    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    suppressMessages(v$push_metadata(fx$meta))
+    ring <- rbind(c(10, -80), c(70, -90), c(60, -20), c(20, -30))
+    v$select(lens_polygon(ring), source = "spatial", combine = "and")
+    v$select(lens_range("score", 3, 6), source = "hist:score", replace = FALSE)
+    sel <- v$selection
+    expect_gt(length(sel), 0L)
+
+    invisible(capture.output(lines <- v$rules(code = TRUE)))
+    v$select(NULL, combine = "or")
+    expect_length(v$selection, 0L)
+    viewer <- v
+    for (l in lines) eval(parse(text = l))
+    expect_setequal(v$selection, sel)
+    expect_identical(v$rules()$source, c("spatial", "hist:score"))
+    expect_identical(lens_priv(v)$combine, "and")
+})
+
 test_that("rule code escapes labels from the data or the browser", {
     evil <- c('a"); stop("injected"); c("', "back\\slash", "line\nbreak", "tab\t\033[31m")
     rules <- list(

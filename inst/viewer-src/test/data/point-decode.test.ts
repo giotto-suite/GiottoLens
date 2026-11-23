@@ -14,7 +14,16 @@ async function reference(ab: ArrayBuffer, genes: Map<string, number>) {
 describe('decodePoints', () => {
   // tile.parquet: arrow writer, dictionary pages, v1, snappy, 3 row groups.
   // tile-plain-v2.parquet: DuckDB writer, v2 pages, nulls, uncompressed.
-  for (const file of ['tile.parquet', 'tile-plain-v2.parquet']) {
+  // codec-*.parquet: the codecs other than SNAPPY (arrow writes "lz4" as
+  // LZ4_RAW; GiottoDisk's zarr converter writes ZSTD); these must not fall back
+  const fixtures = [
+    { file: 'tile.parquet', fallback: true },
+    { file: 'tile-plain-v2.parquet', fallback: true },
+    { file: 'codec-zstd.parquet', fallback: false },
+    { file: 'codec-gzip.parquet', fallback: false },
+    { file: 'codec-lz4.parquet', fallback: false },
+  ];
+  for (const { file, fallback } of fixtures) {
     it(`matches hyparquet on ${file}, at every stride`, async () => {
       const ab = load(file);
       const md = await parquetMetadataAsync(ab);
@@ -22,14 +31,15 @@ describe('decodePoints', () => {
       const ref = await reference(ab, genes);
       for (const stride of [1, 4, 16]) {
         let res;
-      try {
-        res = await decodePoints((a, b) => ab.slice(a, b), md, genes, stride);
-      } catch (e) {
-        // An encoding the fast path does not cover must say so (callers fall back)
-        expect(e).toBeInstanceOf(UnsupportedLayout);
-        return;
-      }
-      const { pos, geneIdxs } = res;
+        try {
+          res = await decodePoints((a, b) => ab.slice(a, b), md, genes, stride);
+        } catch (e) {
+          if (!fallback) throw e;
+          // An encoding the fast path does not cover must say so (callers fall back)
+          expect(e).toBeInstanceOf(UnsupportedLayout);
+          return;
+        }
+        const { pos, geneIdxs } = res;
         const want = ref.filter((_, i) => i % stride === 0);
         expect(geneIdxs.length).toBe(want.length);
         for (let k = 0; k < want.length; k++) {

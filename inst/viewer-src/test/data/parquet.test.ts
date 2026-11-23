@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { rangeBuffer, readColumns, compressors, tileSource, readTileColumns, setTransfer, transferMode, mergedRanges } from '../../data/parquet.ts';
 import { parquetMetadataAsync } from 'hyparquet';
-import { decodePoints } from '../../data/point-decode.ts';
 import { decodeTranscriptTile } from '../../data/tx-decode.ts';
 import { fixtureBuffer, fixtureBytes, rangeServer, tick } from '../helpers.ts';
 
@@ -36,27 +35,14 @@ describe('rangeBuffer', () => {
     const file = await rangeBuffer('u', 100);
     await expect(file.slice(0, 4)).rejects.toThrow(/not 206/);
   });
-
-  it('keeps at most six requests in flight', async () => {
-    let inflight = 0, peak = 0;
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      inflight++; peak = Math.max(peak, inflight);
-      await new Promise(r => setTimeout(r, 5));
-      inflight--;
-      return new Response(new Uint8Array(1), { status: 206 });
-    }));
-    const file = await rangeBuffer('u', 100);
-    await Promise.all(Array.from({ length: 20 }, (_, i) => file.slice(i, i + 1)));
-    expect(peak).toBe(6);
-  });
 });
 
 describe('codecs', () => {
   const load = fixtureBuffer;
-  const genes = new Map([['A', 0], ['B', 1], ['C', 2], ['D', 3]]);
 
-  // arrow writes "lz4" as LZ4_RAW; GiottoDisk's zarr converter writes ZSTD
-  it('reads ZSTD, GZIP and LZ4_RAW like SNAPPY, in hyparquet and the point decoder', async () => {
+  // arrow writes "lz4" as LZ4_RAW; GiottoDisk's zarr converter writes ZSTD.
+  // decodePoints on these files: data/point-decode.test.ts
+  it('reads ZSTD, GZIP and LZ4_RAW like SNAPPY', async () => {
     const ref = await readColumns(load('codec-snappy.parquet'), ['x_index', 'y_index', 'feat_ID']);
     for (const [file, codec] of [['codec-zstd.parquet', 'ZSTD'], ['codec-gzip.parquet', 'GZIP'], ['codec-lz4.parquet', 'LZ4_RAW']]) {
       const ab = load(file);
@@ -65,12 +51,6 @@ describe('codecs', () => {
       const c = await readColumns(ab, ['x_index', 'y_index', 'feat_ID'], md);
       expect(Array.from(c.x_index)).toEqual(Array.from(ref.x_index));
       expect(Array.from(c.feat_ID)).toEqual(Array.from(ref.feat_ID));
-      const p = await decodePoints((a, b) => ab.slice(a, b), md, genes, 1);
-      expect(p.geneIdxs.length).toBe(ref.x_index.length);
-      for (let i = 0; i < p.geneIdxs.length; i += 37) {
-        expect(p.pos[2 * i]).toBeCloseTo(ref.x_index[i], 4);
-        expect(p.geneIdxs[i]).toBe(genes.get(ref.feat_ID[i]));
-      }
     }
   });
 

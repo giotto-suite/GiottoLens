@@ -161,8 +161,6 @@ test_that("a save copies the work, keeps its snapshot and counts as saved", {
     expect_error(r$v$save("first"), "exists; pass `overwrite = TRUE`")
     r$v$save_selection("bottom", lens_cells(r$priv$cell_ids[880:900]))
     expect_match(r$priv$unsaved_work(), "2 saved selections")
-    expect_error(r$v$set_object(r$bx$mem, spat_unit = "bin", feat_type = NULL, project = tempfile()),
-        "work not saved: .*save it with save\\(name\\)")
     tag2 <- suppressMessages(r$v$save("first", overwrite = TRUE))
     expect_false(dir.exists(dir))
     expect_identical(r$v$saves()$name, "first")
@@ -181,7 +179,6 @@ test_that("a save opens with its snapshot and its work", {
     v2 <- suppressMessages(launch_lens(project = r$td, open = FALSE))
     on.exit(v2$close(discard = TRUE), add = TRUE)
     p2 <- lens_priv(v2)
-    expect_error(v2$open_save("../first"), "no save '../first'")
     suppressMessages(v2$open_save("first"))
     expect_identical(p2$snapshot, r$priv$snapshot)
     expect_identical(p2$spat_unit, "bin")
@@ -271,14 +268,13 @@ test_that("the page deletes a save and work a viewer that ended left", {
     expect_true(GiottoDisk::snapshotInfo(r$priv$project)$keep[[1L]])
     lens_ask(r$v, op = "delete_save", path = r$td, name = basename(left))
     expect_false(dir.exists(left))
-    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = "../first"), "no save '../first'")
-    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = basename(r$priv$work)), "own work")
-    expect_true(dir.exists(r$priv$work))
 })
 
 # ── Liveness ─────────────────────────────────────────────────────────────────
 
-test_that("a running viewer's work cannot be opened or deleted by another", {
+# open_save() and delete_save(), from R or the page, find a bundle through
+# one check: each refusal is asserted once, and each of the two shown to reach it
+test_that("a bundle is opened or deleted only by a listed name, never live or own", {
     r <- bundle_viewer()
     on.exit(r$done(), add = TRUE)
     add_work(r)
@@ -288,8 +284,9 @@ test_that("a running viewer's work cannot be opened or deleted by another", {
     name <- basename(r$priv$work)
     expect_true(v2$saves(sessions = TRUE)$live[[1L]])
     expect_error(v2$open_save(name), "still running")
-    expect_error(v2$delete_save(name), "still running")
-    expect_error(r$v$open_save(name), "own work")
+    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = "../first"), "no save '../first'")
+    expect_error(lens_ask(r$v, op = "delete_save", path = r$td, name = name), "own work")
+    expect_true(dir.exists(r$priv$work))
 })
 
 test_that("work left on another machine is live while its heartbeat is fresh", {
@@ -301,8 +298,6 @@ test_that("work left on another machine is live while its heartbeat is fresh", {
     s <- s[s$name == basename(left), ]
     expect_true(s$live)
     expect_identical(c(s$user, s$host), c("someone", "elsewhere.example"))
-    expect_error(r$v$delete_save(basename(left)), "still running")
-    expect_error(r$v$open_save(basename(left), discard = TRUE), "still running")
     Sys.setFileTime(file.path(left, "bundle.json"), Sys.time() - 5 * .heartbeat_s)
     expect_false(r$v$saves(sessions = TRUE)$live[r$v$saves(sessions = TRUE)$name == basename(left)])
     saves <- lens_ask(r$v, op = "snapshots", path = r$td)$data$saves

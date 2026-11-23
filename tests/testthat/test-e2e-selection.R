@@ -166,6 +166,7 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
 
     # Shapes stay clear of the overlays at the edges (HUD, rules strip)
     left  <- sel_after(function() browser_drag(br, box(0.2, 0.5, 0.2, 0.8)))
+    expect_gt(length(left), 0L)
     expect_identical(rule_kind(), "polygon")
     right <- sel_after(function() browser_drag(br, box(0.5, 0.8, 0.2, 0.8)))      # replaces
     expect_length(intersect(left, right), 0L)
@@ -199,7 +200,7 @@ test_that("Shift adds and Alt subtracts with the lasso and brush; R agrees", {
     expect_no_browser_errors(br)
 })
 
-test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE) in R", {
+test_that("rules are visible: a card per source in the viewer, rules() in R", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
@@ -211,7 +212,6 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     ring <- rbind(c(10, -80), c(70, -90), c(60, -20), c(20, -30))
     v$select(lens_polygon(ring), source = "spatial", combine = "and")
     v$select(lens_range("score", 3, 6), source = "hist:score", replace = FALSE)
-    n_both <- length(v$selection)
 
     # The selection panel: a card per source with its own count
     cards <- function() unlist(br$js("[...document.querySelectorAll('[data-panel=selection] .rule-card')].map(c => c.querySelector('.rule-label').textContent + ' · ' + c.querySelector('.rule-n').textContent)"))
@@ -222,23 +222,5 @@ test_that("rules are visible: strip in the viewer, rules() and rules(code = TRUE
     expect_true(any(grepl(sprintf("^lasso · %s cells", format(tab$cells[1], big.mark = ",")), cards())))
     expect_true(any(grepl(sprintf("^score 3–6 · %s cells", format(tab$cells[2], big.mark = ",")), cards())))
     expect_output(print(tab), "Combined with AND")
-
-    # The code recreates the selection
-    sel <- v$selection
-    code <- capture.output(lines <- v$rules(code = TRUE))
-    v$select(NULL)
-    expect_length(v$selection, 0L)
-    viewer <- v
-    for (l in lines) eval(parse(text = l))
-    expect_setequal(v$selection, sel)
-
-    # × drops one rule. The rules R just re-sent reach the page on the
-    # socket, which can lag this test's own commands
-    x_js <- "document.querySelector('[data-panel=selection] .rule-card[data-source=\"hist:score\"] .rule-x')"
-    expect_true(browser_wait(br, sprintf("!!%s && window.__giottolens.store.getState().selection.count === %d",
-        x_js, length(sel))))
-    br$js(paste0(x_js, ".click()"))
-    expect_true(pump_until(function() length(v$selection) > n_both))
-    expect_identical(v$rules()$source, "spatial")
     expect_no_browser_errors(br)
 })

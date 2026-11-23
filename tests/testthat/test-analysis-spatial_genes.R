@@ -246,7 +246,7 @@ test_that("Spatial genes views build tables and panels", {
 
 # ── Runs ────────────────────────────────────────────────────────────────────
 
-test_that("Spatial genes run", {
+test_that("Spatial genes run, then run again with advanced settings", {
     r <- lens_analysis_rig(analyses = "spatial_genes", params = c(lens_analysis_params, list(
         sg_genes = list(feats = "all"))))
     on.exit(r$done(), add = TRUE)
@@ -256,6 +256,7 @@ test_that("Spatial genes run", {
     a$wait(300)
     expect_true(all(st() == "stale"))
     expect_identical(nrow(a$history("spatial_genes")), 0L)
+    expect_error(a$set("sg_genes", implementation = "data.table"), "must be one of: fast")
 
     a$run("spatial_genes")
     a$wait(300)
@@ -271,37 +272,18 @@ test_that("Spatial genes run", {
     expect_identical(r$panels()$sg_top$mark$type, "bar")
     expect_identical(nrow(a$history("spatial_genes")), 1L)
 
-    a$set("sg_genes", method = "moran")
+    a$set("sg_genes", method = "binspect_rank", percentage_rank = 20,
+        adjust_method = "bonferroni")
     a$wait(10)
     expect_identical(unname(st()), c("done", "done", "stale"))
     expect_identical(nrow(a$history("spatial_genes")), 1L)
     a$run("spatial_genes")
     a$wait(300)
     expect_true(all(st() == "done"))
-    expect_match(a$status$sg_genes$summary, "Moran's I", fixed = TRUE)
-    expect_identical(nrow(a$history("spatial_genes")), 2L)
-
-    a$set("sg_network", k = 10)
-    a$wait(10)
-    expect_identical(unname(st()), c("done", "stale", "stale"))
-})
-
-test_that("Spatial genes advanced settings run", {
-    r <- lens_analysis_rig(analyses = "spatial_genes", params = c(lens_analysis_params, list(
-        sg_source = list(from = "object"),
-        sg_genes = list(method = "binspect_rank", percentage_rank = 20,
-            adjust_method = "bonferroni"))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    ist <- c("sg_source", "sg_network", "sg_genes")
-    st <- function() step_status(a, ist)
-    expect_error(a$set("sg_genes", implementation = "data.table"), "must be one of: fast")
-    a$run("spatial_genes")
-    a$wait(300)
-    expect_true(all(st() == "done"))
     expect_match(a$status$sg_genes$summary, "(binSpect rank)", fixed = TRUE)
     expect_match(a$code("spatial_genes"), 'percentage_rank = 20, adjust_method = "bonferroni")',
         fixed = TRUE)
+    expect_identical(nrow(a$history("spatial_genes")), 2L)
     n_rank <- as.integer(sub(" of.*", "", a$status$sg_genes$summary))
 
     a$set("sg_genes", method = "moran", null = "covariate", covariate = "band",
@@ -319,7 +301,11 @@ test_that("Spatial genes advanced settings run", {
     expect_true(all(st() == "done"))
     expect_match(a$code("spatial_genes"), 'null = "covariate", n_groups = 4, adjust_method = "BY"',
         fixed = TRUE)
-    tab <- a$.__enclos_env__$private$tables$sg_genes[[1L]]
+    tab <- priv$tables$sg_genes[[1L]]
     expect_gt(tab$n, 0L)
     expect_true(is.finite(n_rank))
+
+    a$set("sg_network", k = 10)
+    a$wait(10)
+    expect_identical(unname(st()), c("done", "stale", "stale"))
 })

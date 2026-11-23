@@ -70,26 +70,23 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
 
     expect_identical(http_get(lens_data_url(v, "data/transcripts/../x"))$status_code, 404L)
 
-    # Nothing is served without this launch's token in the path
+    # Nothing is served without this launch's token in the path, nor data
+    # without the data secret (adr/0028); the other forms of a wrong path are
+    # in test-server.R, on the app
     other <- sub("/lens/[^/]+/", "/lens/AAAAAAAAAAAAAAAAAAAAAAAA/", v$url)
     data <- sub(v$url, "", lens_data_url(v), fixed = TRUE)
-    for (p in c("", paste0(data, c("session/manifest.json", tile$url, tile$file)))) {
+    for (p in c("", paste0(data, c("session/manifest.json", tile$url, tile$file))))
         expect_identical(http_get(paste0(other, p))$status_code, 404L, info = p)
-        expect_identical(http_get(paste0(base, "/lens/", p))$status_code, 404L, info = p)
-    }
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
-
-    # No data is served without the data secret in the path (adr/0028)
-    for (p in c("session/manifest.json", tile$url, tile$file)) {
-        expect_identical(http_get(paste0(v$url, p))$status_code, 404L, info = p)
-        expect_identical(http_get(paste0(v$url, "d/", p))$status_code, 404L, info = p)
+    for (p in c("session/manifest.json", tile$url, tile$file))
         expect_identical(http_get(paste0(v$url, "d/AAAAAAAAAAAAAAAAAAAAAAAA/", p))$status_code,
             404L, info = p)
-    }
 })
 
 # ── Connect and protocol on a live socket ────────────────────────────────────
 
+# Parsing, mask decoding and annotation rows are in test-protocol.R; this is
+# what only a live socket shows: the gate, the connect order, r_seq and on()
 test_that("WebSocket needs the token, rejects foreign origins, and tracks its window", {
     skip_if_not_installed("websocket")
     fx <- lens_fixture()
@@ -118,19 +115,12 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
     expect_true(v$connected())
 
     ids <- lens_priv(v)$cell_ids
-    mask <- .encode_mask(match(c("cell_001", "cell_002"), ids), length(ids))
-    a$ws$send(sprintf('{"type":"cell_selection","data":{"mask":"%s","rules":[]}}', mask))
-    expect_true(pump_until(function() length(v$selection) == 2L))
-    expect_setequal(v$selection, c("cell_001", "cell_002"))
-    a$ws$send('{"type":1,"data":{}}')
-    expect_warning(pump_for(0.3), "invalid message")
-
     got <- NULL
     v$on("annotations_update", function(d) got <<- d)
     expect_error(v$on("bogus", identity), "must be one of")
     a$ws$send('{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}')
     expect_true(pump_until(function() !is.null(got)))
-    expect_identical(v$annotations, list(q = "{}"))
+    # The page's names are taken
     sq <- "POLYGON((0 0,1 0,1 1,0 1,0 0))"
     expect_error(v$push_polygons(sq, names = "q"), "must be unique; taken or repeated: q")
     expect_error(v$push_polygons(c(sq, sq), names = c("r", "r")), "repeated: r")
@@ -231,16 +221,22 @@ test_that("relaunching on a port closes the old viewer and close() cleans up", {
 
 # ── Cells from spatial locations ─────────────────────────────────────────────
 
-test_that("a spatial unit without polygons launches from its spatial locations", {
+# The mark inferred from the grid (squares) is checked in test-marks.R, by
+# describe()
+test_that("a spatial unit without polygons launches from its spatial locations, with a given mark", {
     fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
+        "circle")
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        mark = list(shape = "circle"))
     on.exit(v$close(), add = TRUE)
     priv <- lens_priv(v)
     expect_setequal(priv$cell_ids, fx$xy$cell_ID)
 
+    # The given shape over the grid's size and angle
     m <- jsonlite::fromJSON(file.path(priv$session, "manifest.json"), simplifyVector = FALSE)
     expect_false(m$layers$cells$geometry)
-    expect_identical(m$layers$cells$mark$shape, "square")
+    expect_identical(m$layers$cells$mark$shape, "circle")
     expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
     expect_equal(m$layers$cells$mark$angle, 10, tolerance = 1e-6)
     expect_null(m$layers$transcripts)
@@ -259,77 +255,58 @@ test_that("an unknown spat_unit lists units with polygons or locations", {
 
 # ── Styling argument checks ──────────────────────────────────────────────────
 
-test_that("set_outline checks its arguments before sending", {
+test_that("the styling methods check their arguments before sending", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    expect_error(v$set_outline(width = 0), "must be one number in \\[0.01, 20\\]")
-    expect_error(v$set_outline(width = 0.009), "must be one number in \\[0.01, 20\\]")
-    expect_error(v$set_outline(width = c(1, 2)), "must be one number")
-    expect_error(v$set_outline(color = c("red", "blue")), "one color name or hex string")
-    expect_error(v$set_outline(color = "notacolour"), "invalid color name")
-    expect_error(v$set_outline(alpha = 1.5), "must be one number in \\[0, 1\\]")
-    expect_error(v$set_outline(color = "black", width = 2), "no viewer connected")
-    expect_error(v$set_outline(width = 0.01), "no viewer connected")
-})
+    # A call and the error it gives; the last of each method's rows passes
+    # the checks and finds no viewer to send to
+    cases <- list(
+        list(quote(v$set_outline(width = 0)), "must be one number in \\[0.01, 20\\]"),
+        list(quote(v$set_outline(width = 0.009)), "must be one number in \\[0.01, 20\\]"),
+        list(quote(v$set_outline(width = c(1, 2))), "must be one number"),
+        list(quote(v$set_outline(color = c("red", "blue"))), "one color name or hex string"),
+        list(quote(v$set_outline(color = "notacolour")), "invalid color name"),
+        list(quote(v$set_outline(alpha = 1.5)), "must be one number in \\[0, 1\\]"),
+        list(quote(v$set_outline(color = "black", width = 2)), "no viewer connected"),
+        list(quote(v$set_outline(width = 0.01)), "no viewer connected"),
 
-test_that("set_selection_color checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_selection_color(c("red", "blue")), "one color name or hex string")
-    expect_error(v$set_selection_color(1), "one color name or hex string")
-    expect_error(v$set_selection_color("notacolour"), "invalid color name")
-    expect_error(v$set_selection_color("red"), "no viewer connected")
-    expect_error(v$set_selection_color(), "no viewer connected")
-})
+        list(quote(v$set_selection_color(c("red", "blue"))), "one color name or hex string"),
+        list(quote(v$set_selection_color(1)), "one color name or hex string"),
+        list(quote(v$set_selection_color("notacolour")), "invalid color name"),
+        list(quote(v$set_selection_color("red")), "no viewer connected"),
+        list(quote(v$set_selection_color()), "no viewer connected"),
 
-test_that("set_module checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_module("nope"), "one of: registration")
-    expect_error(v$set_module(c("registration", "registration")), "one of: registration")
-    expect_error(v$set_module("registration"), "no viewer connected")
-})
+        list(quote(v$set_module("nope")), "one of: registration"),
+        list(quote(v$set_module(c("registration", "registration"))), "one of: registration"),
+        list(quote(v$set_module("registration")), "no viewer connected"),
 
-test_that("set_theme checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_theme("blue"), "must be \"dark\" or \"light\"")
-    expect_error(v$set_theme(c("dark", "light")), "must be \"dark\" or \"light\"")
-    expect_error(v$set_theme("light"), "no viewer connected")
-})
+        list(quote(v$set_theme("blue")), "must be \"dark\" or \"light\""),
+        list(quote(v$set_theme(c("dark", "light"))), "must be \"dark\" or \"light\""),
+        list(quote(v$set_theme("light")), "no viewer connected"),
 
-test_that("set_color_scale checks its arguments before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_color_scale(column = c("a", "b")), "one column name")
-    expect_error(v$set_color_scale(preset = c("viridis", "magma")), "one preset name")
-    expect_error(v$set_color_scale(colors = "red"), "2 to 9 colors")
-    expect_error(v$set_color_scale(colors = rep("red", 10)), "2 to 9 colors")
-    expect_error(v$set_color_scale(colors = c("red", "notacolour")), "invalid color name")
-    expect_error(v$set_color_scale(reverse = NA), "TRUE or FALSE")
-    expect_error(v$set_color_scale(style = "rainbow"), "should be one of")
-    expect_error(v$set_color_scale(midpoint = c(1, 2)), "`midpoint` must be one number")
-    expect_error(v$set_color_scale(limits = c(2, 1)), "low < high")
-    expect_error(v$set_color_scale(limits = 1), "low < high")
-    expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
-})
+        list(quote(v$set_color_scale(column = c("a", "b"))), "one column name"),
+        list(quote(v$set_color_scale(preset = c("viridis", "magma"))), "one preset name"),
+        list(quote(v$set_color_scale(colors = "red")), "2 to 9 colors"),
+        list(quote(v$set_color_scale(colors = rep("red", 10))), "2 to 9 colors"),
+        list(quote(v$set_color_scale(colors = c("red", "notacolour"))), "invalid color name"),
+        list(quote(v$set_color_scale(reverse = NA)), "TRUE or FALSE"),
+        list(quote(v$set_color_scale(style = "rainbow")), "should be one of"),
+        list(quote(v$set_color_scale(midpoint = c(1, 2))), "`midpoint` must be one number"),
+        list(quote(v$set_color_scale(limits = c(2, 1))), "low < high"),
+        list(quote(v$set_color_scale(limits = 1)), "low < high"),
+        list(quote(v$set_color_scale(preset = "viridis")), "no viewer connected"),
 
-test_that("style_categories checks its arguments before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$style_categories(column = c("a", "b")), "one column name")
-    expect_error(v$style_categories(show = c(A = NA)), "TRUE/FALSE")
-    expect_error(v$style_categories(alpha = c(A = 2)), "must be in \\[0, 1\\]")
-    expect_error(v$style_categories(alpha = c(0.1, 0.2)), "at most one unnamed value")
-    expect_error(v$style_categories(colors = "red"), "named by category")
-    expect_error(v$style_categories(colors = c(A = "notacolour")), "invalid color name")
-    expect_error(v$style_categories(alpha = c(0.2, A = 1)), "no viewer connected")
+        list(quote(v$style_categories(column = c("a", "b"))), "one column name"),
+        list(quote(v$style_categories(show = c(A = NA))), "TRUE/FALSE"),
+        list(quote(v$style_categories(alpha = c(A = 2))), "must be in \\[0, 1\\]"),
+        list(quote(v$style_categories(alpha = c(0.1, 0.2))), "at most one unnamed value"),
+        list(quote(v$style_categories(colors = "red")), "named by category"),
+        list(quote(v$style_categories(colors = c(A = "notacolour"))), "invalid color name"),
+        list(quote(v$style_categories(alpha = c(0.2, A = 1))), "no viewer connected")
+    )
+    for (cs in cases)
+        expect_error(eval(cs[[1L]]), cs[[2L]], info = deparse(cs[[1L]]))
 })
 
 # ── set_object() ─────────────────────────────────────────────────────────────
@@ -347,10 +324,13 @@ test_that("set_object() serves another object from a clean slate", {
     tile <- manifest()$layers$cells$tiles[[1]]
     expect_identical(c(status(tile$url), status(tile$file)), c(200L, 200L))
 
+    # Added with no tab open: a tab would be asked to open it
+    v$add_image(fx$image_file, name = "post")
     a <- ws_client(ws_url(v), load = 1L)
     expect_true(pump_until(function() length(a$state$msgs) > 1))
     v$push_metadata(fx$meta)
     v$select(lens_categories("leiden_clus", "a"))
+    v$save_selection("s", lens_cells("cell_001"))
     expect_message(v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)), NA)
     cfg <- '{"state":{"genes":["Actb"]},"version":2}'
     annot <- '{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}'
@@ -360,7 +340,8 @@ test_that("set_object() serves another object from a clean slate", {
 
     # With work on the object, nothing changes unless it is discarded
     expect_error(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
-        "work not saved: 1 rule, 1 annotation, 1 pushed panel; save it with save\\(name\\), or pass `discard = TRUE`")
+        paste("work not saved: 1 rule, 1 annotation, 1 saved selection, 1 pushed panel, 1 added image;",
+            "save it with save\\(name\\), or pass `discard = TRUE`"))
     expect_identical(manifest()$load, 1L)
     expect_identical(v$rules()$source, "r")
     expect_identical(priv$config_json, cfg)
@@ -379,6 +360,11 @@ test_that("set_object() serves another object from a clean slate", {
     expect_length(v$annotations, 0L)
     expect_length(list.files(file.path(priv$work, "metadata")), 0L)
     expect_length(list.files(file.path(priv$work, "panels")), 0L)
+    expect_null(v$selection)
+    expect_identical(nrow(v$selections()), 0L)
+    expect_length(priv$added_images, 0L)
+    expect_false(file.exists(file.path(priv$session, "images_added.json")))
+    expect_length(priv$routes$images, 0L)
     expect_output(print(v), "900 cells")
 
     # Until it reloads, what the old tab says about its object is ignored

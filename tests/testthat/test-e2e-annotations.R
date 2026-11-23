@@ -1,34 +1,4 @@
-# Browser: annotations zoomed to, selected from and edited in pan mode
-
-test_that("zoom to an annotation after the view was zoomed by hand", {
-    fx <- lens_fixture()
-    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    br <- lens_browser(v$url, width = 900, height = 700)
-    on.exit(br$close(), add = TRUE)
-    expect_true(pump_until(function() v$connected()))
-    expect_true(browser_wait(br,
-        "!!document.querySelector('.r-status.connected')"))
-    v$push_polygons("POLYGON((5 -95,15 -95,15 -85,5 -85,5 -95))")
-    zoom <- function() br$js("window.__giottolens.spatial.deck.getViewports()[0].zoom")
-    z0 <- zoom()
-
-    # The controller's view state has maxZoomX/maxZoomY, not maxZoom
-    r <- canvas_rect(br, centre = TRUE)
-    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
-        deltaX = 0, deltaY = -500)
-    expect_true(browser_wait(br, sprintf(
-        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z0)))
-
-    tray_show(br, "annotations")
-    expect_true(browser_wait(br, "!!document.querySelector('.annot-row-nav')"))
-    br$js("document.querySelector('.annot-row-nav').click()")
-    expect_true(browser_wait(br,
-        "Math.abs(window.__giottolens.spatial.viewState.target[0] - 10) < 1e-6"))
-    expect_true(is.finite(zoom()))
-    expect_gt(zoom(), z0)
-    expect_no_browser_errors(br)
-})
+# Browser: annotations selected from and edited in pan mode (zoom to one: test-e2e-input.R)
 
 test_that("an annotation's select button selects the cells inside it", {
     fx <- lens_fixture()

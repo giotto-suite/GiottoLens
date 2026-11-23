@@ -1,6 +1,7 @@
 # Browser: the viewer boots for each kind of object and transfer mode, and the power button stops it
+# (polygons only: test-e2e-marks.R; a lasso reaching R: test-e2e-selection.R)
 
-test_that("viewer boots, lasso selection reaches R, and R selections reach the page", {
+test_that("viewer boots offline with cross-filter on, and R selections reach the page", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
@@ -21,15 +22,6 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     br$js("document.querySelector('[data-panel=layers] [data-layer=tx] .show').click()")
     expect_true(browser_wait(br, tiles_loaded))
 
-    set_tool(br, "lasso")
-    size <- br$js("(() => { const c = window.__giottolens.spatial.canvas; return [c.clientWidth, c.clientHeight]; })()")
-    cx <- size[[1]] / 2; cy <- size[[2]] / 2; r <- min(cx, cy) * 0.5
-    ring <- lapply(seq(0, 2 * pi, length.out = 24), function(a) c(cx + r * cos(a), cy + r * sin(a)))
-    browser_drag(br, ring)
-    expect_true(pump_until(function() length(v$selection) > 0))
-    expect_true(all(grepl("^cell_[0-9]{3}$", v$selection)))
-    expect_lt(length(v$selection), 100L)
-
     v$set_selection(c("cell_001", "cell_002", "cell_003"))
     expect_true(browser_wait(br,
         "document.getElementById('sel-count').textContent.startsWith('3 ')"))
@@ -44,22 +36,6 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     external <- br$js("performance.getEntriesByType('resource').map(e => e.name).filter(u => !u.startsWith(location.origin))")
     expect_length(external, 0L)
 
-    expect_no_browser_errors(br)
-})
-
-test_that("a polygons-only viewer boots without errors", {
-    fx <- lens_fixture()
-    v  <- launch_lens(NULL, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    br <- lens_browser(v$url)
-    on.exit(br$close(), add = TRUE)
-
-    expect_true(browser_wait(br, tiles_loaded))
-    expect_true(pump_until(function() v$connected()))
-    # No transcripts, so no transcripts layer
-    tray_show(br, "layers")
-    expect_true(br$js("!!document.querySelector('[data-section=cells]')"))
-    expect_false(br$js("!!document.querySelector('[data-section=transcripts]')"))
     expect_no_browser_errors(br)
 })
 

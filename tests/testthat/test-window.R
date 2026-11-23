@@ -41,14 +41,13 @@ test_that("a window R did not let in waits with a code; allow(code) gives it the
     expect_null(a$state$grant)
     expect_false(priv$allow_next)
 
-    # Not listened to, and no data without the secret
+    # Not listened to
     ws_say(a, "ready", list(protocol = .lens_protocol))
     ws_say(a, "close")
     pump_for(0.3)
     expect_false(v$connected())
     expect_false(is.null(priv$server))
     expect_null(a$state$grant)
-    expect_identical(http_get(paste0(v$url, tile$url))$status_code, 404L)
 
     expect_message(v$allow(code), NA)
     expect_true(pump_until(function() v$connected()))
@@ -56,10 +55,9 @@ test_that("a window R did not let in waits with a code; allow(code) gives it the
     expect_identical(a$state$grant$data, priv$routes$secret)
     expect_false(identical(a$state$grant$data, first))
     expect_true(pump_until(function() length(ws_msgs(a, "restore")) > 0L))
-    for (u in c(tile$url, tile$file, "session/manifest.json")) {
+    # The data under the new secret; that the old one ends is checked on a move
+    for (u in c(tile$url, tile$file, "session/manifest.json"))
         expect_identical(http_get(lens_data_url(v, u))$status_code, 200L, info = u)
-        expect_identical(http_get(paste0(v$url, "d/", first, "/", u))$status_code, 404L, info = u)
-    }
     a$ws$close()
 })
 

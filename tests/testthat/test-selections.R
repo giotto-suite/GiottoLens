@@ -48,16 +48,15 @@ test_that("saved selections keep the rules, and bring them back as they were", {
     expect_identical(nrow(v$de_results()), 0L)
 })
 
-test_that("a comparison reads normalized values, and saved selections go with the object", {
+# That saved selections go with the object is checked with the rest of its
+# work, in test-launch.R's set_object() test
+test_that("a comparison reads normalized values", {
     fx <- lens_bins_fixture()
     v <- suppressMessages(launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE))
     on.exit(v$close(), add = TRUE)
     v$save_selection("left", lens_cells(fx$xy$cell_ID[1:10]))
     expect_error(v$compare_selections("left"), "no 'normalized' expression; normalize .*available: raw")
     expect_error(v$compare_selections("left", values = "nope"), "no 'nope' expression; available: raw")
-    expect_error(suppressMessages(v$set_object(fx$g, spat_unit = "bin", feat_type = NULL)), "1 saved selection")
-    suppressMessages(v$set_object(fx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE))
-    expect_identical(nrow(v$selections()), 0L)
 })
 
 test_that("saved selections are compared in a job, docked as a volcano plot", {

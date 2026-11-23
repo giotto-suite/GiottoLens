@@ -43,7 +43,7 @@ test_that("set_object() reloads the page onto another object and back, each from
     expect_no_browser_errors(br)
 })
 
-test_that("the start page opens a project's snapshot, and asks before dropping work", {
+test_that("the start page opens a project's snapshot from the path box", {
     bx <- lens_bins_fixture()
     proj <- normalizePath(bx$g@source@path)
     v <- launch_lens(open = FALSE)
@@ -61,23 +61,10 @@ test_that("the start page opens a project's snapshot, and asks before dropping w
     expect_true(browser_wait(br, row_open("fixture")))
     expect_true(browser_wait(br, "window.__giottolens?.state?.cells?.n === 900"))
     expect_identical(normalizePath(lens_priv(v)$project@path), proj)
-
-    # With an annotation, the project button's dialog asks first
-    expect_true(pump_until(function() v$connected()))
-    v$push_polygons("POLYGON((40 -70,60 -70,60 -50,40 -50,40 -70))")
-    expect_true(pump_until(function() length(v$annotations) == 1L))
-    br$js("document.querySelector('[data-panel=tools] [data-act=project]').click()")
-    expect_true(browser_wait(br, row_open("fixture")))
-    expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
-    expect_length(v$annotations, 1L)
-    br$js("document.querySelector('.start-confirm .danger').click()")
-    expect_true(pump_until(function() !length(v$annotations)))
-    expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",
-        "!document.querySelector('.start-overlay')")))
     expect_no_browser_errors(br)
 })
 
-test_that("the page saves the work and opens the save from the start page", {
+test_that("the page saves the work, and the start page asks before dropping work to open the save", {
     bx <- lens_bins_fixture()
     td <- tempfile("lensproj_")
     on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -118,6 +105,8 @@ test_that("the page saves the work and opens the save from the start page", {
         " r?.querySelector('.start-actions .start-btn')?.click(); return !!r; })()")
     expect_true(browser_wait(br, open_save))
     expect_true(browser_wait(br, "!!document.querySelector('.start-confirm')"))
+    # Nothing is dropped until confirmed
+    expect_identical(v$selections()$name, c("top", "bottom"))
     br$js("document.querySelector('.start-confirm .danger').click()")
     expect_true(pump_until(function() identical(v$selections()$name, "top")))
     expect_true(browser_wait(br, paste0("window.__giottolens?.state?.cells?.n === 900 && ",

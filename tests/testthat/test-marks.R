@@ -88,19 +88,7 @@ test_that(".drawn_mark puts the viewer's setting over the launch mark", {
     expect_identical(.mark_text(NULL), "dots")
 })
 
-test_that("a given mark overrides the inferred one", {
-    fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
-        mark = list(shape = "circle"))
-    on.exit(v$close(), add = TRUE)
-    m <- jsonlite::fromJSON(file.path(lens_priv(v)$session,
-        "manifest.json"), simplifyVector = FALSE)
-    expect_identical(m$layers$cells$mark$shape, "circle")
-    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
-    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
-        "circle")
-})
-
+# The mark inferred at launch; a given one is in test-launch.R
 test_that("set_mark checks its arguments, and describe() reports the cells", {
     fx <- lens_bins_fixture()
     v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)

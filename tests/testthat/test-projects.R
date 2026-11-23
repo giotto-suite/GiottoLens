@@ -77,13 +77,12 @@ test_that("open_project() shows the start page, and checkout() a snapshot as sav
     expect_error(v$gobject(), "or viewer\\$checkout\\(name\\) first")
     expect_identical(.recent_projects()$path[[1]], normalizePath(proj))
 
-    n <- nrow(GiottoDisk::snapshotInfo(priv$project))
+    # That a checkout saves no new snapshot is checked below, without a manifest
     v$checkout("fixture")
     expect_true(priv$loaded)
     expect_identical(priv$spat_unit, "bin")
     expect_null(priv$feat_type)
     expect_length(priv$cell_ids, 900L)
-    expect_identical(nrow(GiottoDisk::snapshotInfo(priv$project)), n)
     expect_error(v$checkout("nope"), "no snapshot 'nope'.*fixture")
 })
 

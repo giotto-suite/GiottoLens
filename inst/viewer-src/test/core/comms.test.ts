@@ -241,9 +241,14 @@ describe('catalog across the handshake', () => {
     catalog = await import('../../data/catalog.ts');
   });
 
-  it('a panel built before the page is live gets the catalog on connect', async () => {
+  // A panel as panels/data.ts: load at once, and again on connect. Built
+  // during boot (granted, not live), with or without a task boundary before
+  // initComms(); either way the first ask is refused and the connect asks again
+  it.each([
+    ['a panel built before the page is live gets the catalog on connect', true],
+    ['a panel built in the same task as the connect is not left without it', false],
+  ])('%s', async (_name, boundary) => {
     const got: any[] = [];
-    // A panel as panels/data.ts: load at once, and again on connect
     let sources: any[] = [];
     let note = '';
     const load = async () => {
@@ -255,10 +260,9 @@ describe('catalog across the handshake', () => {
     ws.open();
     ws.say('grant', { data: 'S', key: 'K' });
     await granted;
-    void load();                              // built during boot: granted, not live
+    void load();
     comms.onConnect(() => void load());
-    await tick();
-    expect(note).toBe('R is not connected');
+    if (boundary) await tick();
     comms.initComms();                        // 'ready', then the connect callbacks
     await tick();
     const asks = ws.sent.filter(m => m.type === 'ask');
@@ -266,31 +270,8 @@ describe('catalog across the handshake', () => {
     expect(asks.map(m => m.data.op)).toEqual(['catalog']);
     ws.say('answer', { id: asks[0].id, data: payload });
     await tick();
-    expect(got.length).toBe(1);
-    expect(sources[0].items).toEqual(['a', 'b']);
-  });
-
-  it('a panel built in the same task as the connect is not left without it', async () => {
-    let sources: any[] = [];
-    let note = '';
-    const load = async () => {
-      if (sources.length) return;
-      try { sources = await catalog.loadCatalog(); } catch (e: any) { note = e.message; }
-    };
-    const granted = comms.acquire();
-    const ws = FakeSocket.last;
-    ws.open();
-    ws.say('grant', { data: 'S', key: 'K' });
-    await granted;
-    void load();                              // no task boundary before initComms()
-    comms.onConnect(() => void load());
-    comms.initComms();
-    await tick();
-    const asks = ws.sent.filter(m => m.type === 'ask');
-    expect(asks.map(m => m.data.op)).toEqual(['catalog']);
-    ws.say('answer', { id: asks[0].id, data: payload });
-    await tick();
     expect(note).toBe('R is not connected');   // the first, refused ask
-    expect(sources.length).toBe(1);
+    expect(got).toHaveLength(1);
+    expect(sources[0].items).toEqual(['a', 'b']);
   });
 });

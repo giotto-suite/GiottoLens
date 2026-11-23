@@ -1,4 +1,4 @@
-# Browser: pan and zoom input (Space, middle button, releases outside the page, set_view after a hand zoom)
+# Browser: pan and zoom input (Space, middle button, releases outside the page, zoom to an annotation and set_view after a hand zoom)
 
 test_that("holding Space pans with any tool, and the tool comes back on release", {
     fx <- lens_fixture()
@@ -132,7 +132,7 @@ test_that("a release outside the page ends pans and lassos (no sticky drags)", {
     expect_no_browser_errors(br)
 })
 
-test_that("set_view sets the zoom after the view was zoomed by hand", {
+test_that("zoom to an annotation and set_view both work after the view was zoomed by hand", {
     fx <- lens_fixture()
     v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
@@ -141,16 +141,32 @@ test_that("set_view sets the zoom after the view was zoomed by hand", {
     expect_true(pump_until(function() v$connected()))
     expect_true(browser_wait(br,
         "!!document.querySelector('.r-status.connected')"))
+    v$push_polygons("POLYGON((5 -95,15 -95,15 -85,5 -85,5 -95))")
     zoom <- function() br$js("window.__giottolens.spatial.deck.getViewports()[0].zoom")
-    z0 <- zoom()
-
     # A wheel on the canvas zooms through deck.gl's controller
     r <- canvas_rect(br, centre = TRUE)
-    br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
-        deltaX = 0, deltaY = -500)
-    expect_true(browser_wait(br, sprintf(
-        "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z0)))
+    wheel <- function(dy) {
+        z <- zoom()
+        br$session$Input$dispatchMouseEvent(type = "mouseWheel", x = r[[1]], y = r[[2]],
+            deltaX = 0, deltaY = dy)
+        browser_wait(br, sprintf(
+            "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) > 0.1", z))
+    }
+    z0 <- zoom()
+    expect_true(wheel(-500))
 
+    # Zoom to an annotation: the controller's view state has maxZoomX/maxZoomY,
+    # not maxZoom
+    tray_show(br, "annotations")
+    expect_true(browser_wait(br, "!!document.querySelector('.annot-row-nav')"))
+    br$js("document.querySelector('.annot-row-nav').click()")
+    expect_true(browser_wait(br,
+        "Math.abs(window.__giottolens.spatial.viewState.target[0] - 10) < 1e-6"))
+    expect_true(is.finite(zoom()))
+    expect_gt(zoom(), z0)
+
+    # set_view, again after a hand zoom
+    expect_true(wheel(500))
     v$set_view(zoom = z0 - 1)
     expect_true(browser_wait(br, sprintf(
         "Math.abs(window.__giottolens.spatial.deck.getViewports()[0].zoom - %f) < 1e-6", z0 - 1)))

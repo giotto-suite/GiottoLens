@@ -111,11 +111,11 @@ test_that("Co-expression views build tables and panels", {
         list()), list(set = list(k = 3L)))
 })
 
-test_that("Co-expression modules run", {
+test_that("Co-expression modules run, then run with advanced settings", {
     r <- lens_analysis_rig(analyses = "coexpression", params = c(lens_analysis_params, list(
         cm_source = list(from = "object"),
         cm_genes = list(n = 30),
-        cm_modules = list(n_modules = 6))), network_dir = NULL)
+        cm_modules = list(n_modules = 6))), network_dir = NULL, start = FALSE)
     on.exit(r$done(), add = TRUE)
     a <- r$a
     ist <- c("cm_source", "cm_network", "cm_genes", "cm_modules")
@@ -151,19 +151,10 @@ test_that("Co-expression modules run", {
     a$wait(10)
     expect_identical(unname(st()), c("done", "done", "stale", "stale"))
     expect_identical(nrow(a$history("coexpression")), 1L)
-})
 
-test_that("Co-expression advanced settings run", {
-    r <- lens_analysis_rig(analyses = "coexpression", params = c(lens_analysis_params, list(
-        cm_source = list(from = "object"),
-        cm_genes = list(bin_method = "rank", percentage_rank = 20, null = "covariate",
-            covariate = "libsize", n_groups = 4, adjust_method = "BH", n = 20),
-        cm_modules = list(n_modules = 4, hops = 2, weighted = TRUE,
-            cluster_method = "average"))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    ist <- c("cm_source", "cm_network", "cm_genes", "cm_modules")
-    st <- function() step_status(a, ist)
+    a$set("cm_genes", bin_method = "rank", percentage_rank = 20, null = "covariate",
+        covariate = "libsize", n_groups = 4, adjust_method = "BH")
+    a$set("cm_modules", hops = 2, weighted = TRUE, cluster_method = "average")
     a$run("coexpression")
     a$wait(300)
     expect_true(all(st() == "done"), info = paste(ist, st(), collapse = ", "))

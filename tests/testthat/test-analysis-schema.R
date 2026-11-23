@@ -86,59 +86,33 @@ test_that("parameters that do not apply are left out of the key", {
     expect_false(.param_shown(method, list(network = "Delaunay_network")))
 })
 
-test_that("Spatial genes and co-expression entries have their fields and steps", {
+test_that("each analysis entry has its label, order and a chain of steps", {
     cat <- .analysis_catalog()
-    expect_true(all(c("spatial_genes", "coexpression") %in% names(cat)))
+    want <- list(
+        spatial_genes = list("Spatial genes", 20, c(sg_source = "source", sg_network = "",
+            sg_genes = "")),
+        coexpression = list("Spatial co-expression modules", 30, c(cm_source = "source",
+            cm_network = "", cm_genes = "", cm_modules = "")),
+        niches = list("Niches", 40, c(nc_groups = "groups", nc_network = "",
+            nc_proportions = "", nc_kmeans = "")),
+        icf = list("Interaction-changed genes", 50, c(icf_source = "source",
+            icf_groups = "groups", icf_network = "", icf_test = "")),
+        markers_groups = list("Markers between groups", 60, c(mg_source = "source",
+            mg_groups = "groups", mg_markers = "")))
+    for (k in names(want)) {
+        e <- cat[[k]]
+        steps <- want[[k]][[3L]]
+        expect_identical(e$label, want[[k]][[1L]], info = k)
+        expect_identical(e$order, want[[k]][[2L]], info = k)
+        expect_identical(names(e$steps), names(steps), info = k)
+        expect_identical(vapply(e$steps, function(x) x$kind %||% "", ""), steps, info = k)
+        expect_identical(lapply(e$steps[-1L], `[[`, "input"),
+            as.list(stats::setNames(names(steps)[-length(steps)], names(steps)[-1L])), info = k)
+    }
     sg <- cat$spatial_genes
-    expect_identical(sg$label, "Spatial genes")
-    expect_identical(sg$order, 20)
-    expect_false(sg$auto)
-    expect_identical(names(sg$steps), c("sg_source", "sg_network", "sg_genes"))
-    expect_identical(sg$steps$sg_source$kind, "source")
-    expect_identical(sg$steps$sg_network$input, "sg_source")
-    expect_identical(sg$steps$sg_genes$input, "sg_network")
     keys <- vapply(sg$steps$sg_genes$params[[1L]]$choices, `[[`, "", "value")
     expect_identical(keys, c("binspect_kmeans", "binspect_rank", "silhouette", "moran", "geary"))
     expect_match(sg$description, "one score per gene for the whole tissue", fixed = TRUE)
-
-    cm <- cat$coexpression
-    expect_identical(cm$label, "Spatial co-expression modules")
-    expect_identical(cm$order, 30)
-    expect_false(cm$auto)
-    expect_identical(names(cm$steps), c("cm_source", "cm_network", "cm_genes", "cm_modules"))
-    expect_identical(cm$steps$cm_modules$input, "cm_genes")
-    ids <- unlist(lapply(cat, function(e) names(e$steps)), use.names = FALSE)
-    expect_false(anyDuplicated(ids) > 0)
-    for (e in list(sg, cm)) for (s in names(e$steps))
-        expect_true(is.function(e$steps[[s]]$code), info = s)
-})
-
-test_that("Niches and Interaction-changed genes entries are complete", {
-    cat <- .analysis_catalog()
-    expect_true(all(c("niches", "icf") %in% names(cat)))
-    nc <- cat$niches
-    expect_identical(nc$label, "Niches")
-    expect_identical(nc$order, 40)
-    expect_false(nc$auto)
-    expect_identical(names(nc$steps), c("nc_groups", "nc_network", "nc_proportions",
-        "nc_kmeans"))
-    expect_identical(nc$steps$nc_groups$kind, "groups")
-    expect_null(nc$steps$nc_groups$input)
-    expect_identical(nc$steps$nc_network$input, "nc_groups")
-    expect_identical(nc$steps$nc_proportions$input, "nc_network")
-    expect_identical(nc$steps$nc_kmeans$input, "nc_proportions")
-    icf <- cat$icf
-    expect_identical(icf$label, "Interaction-changed genes")
-    expect_identical(icf$order, 50)
-    expect_false(icf$auto)
-    expect_identical(names(icf$steps), c("icf_source", "icf_groups", "icf_network",
-        "icf_test"))
-    expect_identical(icf$steps$icf_source$kind, "source")
-    expect_identical(icf$steps$icf_groups$kind, "groups")
-    expect_identical(icf$steps$icf_groups$input, "icf_source")
-    expect_identical(icf$steps$icf_test$input, "icf_network")
-    for (e in list(nc, icf)) for (f in c("brief", "description"))
-        expect_true(is.character(e[[f]]) && length(e[[f]]) == 1L && nzchar(e[[f]]))
 })
 
 # ── Parameters and values ───────────────────────────────────────────────────

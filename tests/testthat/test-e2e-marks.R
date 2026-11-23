@@ -74,14 +74,19 @@ test_that("the cell mark is set from R, survives a reload, and resets", {
     expect_no_browser_errors(br)
 })
 
-test_that("segmented cells take a mark when it is turned on", {
+test_that("a polygons-only viewer boots, and its segmented cells take a mark when it is turned on", {
     fx <- lens_fixture()
     v  <- launch_lens(NULL, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
     ids <- "window.__giottolens.spatial.deck.props.layers.map(l => l.id)"
+    expect_true(browser_wait(br, tiles_loaded))
     expect_true(pump_until(function() v$connected(), 20))
+    # No transcripts, so no transcripts layer
+    tray_show(br, "layers")
+    expect_true(br$js("!!document.querySelector('[data-section=cells]')"))
+    expect_false(br$js("!!document.querySelector('[data-section=transcripts]')"))
     # Below outline zoom: dots by default
     v$set_view(x = 50, y = -50, zoom = -3)
     expect_true(browser_wait(br, sprintf("%s.includes('cell-centroids')", ids)))

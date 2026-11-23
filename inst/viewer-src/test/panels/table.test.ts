@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { tableRows, windowFor, colWindowFor, applyPick, ROW_H } from '../../panels/table.ts';
 
-describe('cell table', () => {
+describe('tableRows', () => {
   it('rows are the cells a mask holds, or all', () => {
     expect([...tableRows(null, 4)]).toEqual([0, 1, 2, 3]);
     expect([...tableRows(Uint8Array.from([0, 1, 0, 1, 1]), 5)]).toEqual([1, 3, 4]);
   });
+});
 
+describe('windowFor', () => {
   it('draws the rows in view, scrolled one row at a time', () => {
     const w = windowFor(ROW_H * 10 + 5, ROW_H * 5, 1000);
     expect(w.first).toBe(10);
@@ -28,7 +30,9 @@ describe('cell table', () => {
     const mid = windowFor((cap - view) / 2, view, n, ROW_H, cap);
     expect(Math.abs(mid.first - n / 2)).toBeLessThan(10);
   });
+});
 
+describe('applyPick', () => {
   it('picks replace, toggle and add ranges', () => {
     const rows = Int32Array.from([2, 5, 7, 9]);
     const one = applyPick(null, 10, rows, 1, 'replace', null);
@@ -43,7 +47,9 @@ describe('cell table', () => {
     expect([...range.keys()].filter(i => range[i])).toEqual([5, 7, 9]);
     expect(one[5]).toBe(1);   // inputs are not changed
   });
+});
 
+describe('colWindowFor', () => {
   it('windows the columns in view, past the cell_ID column', () => {
     // 110 px columns after a 150 px cell_ID column, two either side
     expect(colWindowFor(0, 150 + 3 * 110, 100)).toEqual({ first: 0, count: 5 });

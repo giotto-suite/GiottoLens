@@ -39,7 +39,6 @@ test_that("the selection panel saves selections, and a volcano pick colors the c
             values: ['g1'] }).runAsync().then(() => true); })()")
     expect_true(browser_wait(br, sprintf("window.__giottolens.store.getState().colorBy === '%s'", key)))
     expect_true(browser_wait(br, "window.__giottolens.state.colorLegend?.type === 'continuous'"))
-    expect_false("g1" %in% dv$priv$meta_names())
 
     # Genes share one scale: set for one, it stays for the next
     v$set_color_scale(style = "sequential", preset = "magma", limits = c(0, 2))

@@ -1,21 +1,9 @@
 # Markers between groups
 
-test_that("the Markers between groups entry has its fields, prefixed steps and order", {
-    cat <- .analysis_catalog()
-    e <- cat$markers_groups
-    expect_identical(e$id, "markers_groups")
-    expect_identical(e$order, 60)
-    expect_false(e$auto)
-    expect_true(all(startsWith(names(e$steps), "mg_")))
-    expect_identical(e$steps[[1L]]$kind, "source")
-    expect_null(e$steps[[1L]]$input)
-    for (s in names(e$steps)) expect_true(is.function(e$steps[[s]]$code), info = s)
-    expect_true(length(e$inputs) > 0L && length(e$outputs) > 0L)
-    expect_identical(names(e$steps), c("mg_source", "mg_groups", "mg_markers"))
-    expect_identical(e$steps$mg_groups$kind, "groups")
-    types <- function(st) vapply(st$params, `[[`, "", "type")
-    mp <- e$steps$mg_markers
-    expect_identical(unname(types(mp)[vapply(mp$params, `[[`, "", "id") %in%
+test_that("Markers between groups take their two groups as text", {
+    mp <- .analysis_catalog()$markers_groups$steps$mg_markers
+    types <- vapply(mp$params, `[[`, "", "type")
+    expect_identical(unname(types[vapply(mp$params, `[[`, "", "id") %in%
         c("group_1", "group_2")]), c("text", "text"))
 })
 
@@ -92,10 +80,10 @@ test_that("Markers between groups write changed advanced settings into their R c
 })
 
 
-test_that("Markers between groups run each group vs all others and group 1 vs group 2", {
+test_that("Markers between groups run each group vs all others and group 1 vs group 2, then with advanced gini settings", {
     r <- lens_analysis_rig(analyses = "markers_groups", params = c(lens_analysis_params, list(
         mg_source = list(from = "object"),
-        mg_groups = list(column = "object:band"))))
+        mg_groups = list(column = "object:band"))), start = FALSE)
     on.exit(r$done(), add = TRUE)
     a <- r$a
     v <- r
@@ -144,20 +132,11 @@ test_that("Markers between groups run each group vs all others and group 1 vs gr
     a$wait(60)
     expect_identical(a$status$mg_markers$status, "error")
     expect_match(a$status$mg_markers$message, "not a group of the column: Nope", fixed = TRUE)
-})
 
-
-test_that("Markers between groups run with advanced gini settings", {
-    r <- lens_analysis_rig(analyses = "markers_groups", params = c(lens_analysis_params, list(
-        mg_source = list(from = "object"),
-        mg_groups = list(column = "object:band"),
-        mg_markers = list(method = "gini", subset_clusters = "A, B, C",
-            min_expression = 0.3, min_detection = 0.3, min_expression_gini = 0.1,
-            detection_threshold = 0.5, min_length = 10, rank_score = 2, min_feats = 3))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    v <- r
-    a$wait(300)
+    a$set("mg_markers", mode = "one_vs_all", group_1 = "", group_2 = "", method = "gini",
+        subset_clusters = "A, B, C", min_expression = 0.3, min_detection = 0.3,
+        min_expression_gini = 0.1, detection_threshold = 0.5, min_length = 10, rank_score = 2,
+        min_feats = 3)
     a$run("markers_groups")
     a$wait(300)
     expect_identical(a$status$mg_markers$status, "done")

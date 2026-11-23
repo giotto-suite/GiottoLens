@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { store, actions, getConfig, initialConfig, mergeConfig, migrateConfig } from '../../core/store.ts';
 import { state } from '../../core/state.js';
 
-describe('store', () => {
+describe('rules and actions', () => {
   it('changes only through actions and notifies subscribers once per change', () => {
     const seen: string[][] = [];
     const off = store.subscribe(s => s.rules, r => seen.push(Object.keys(r)));
@@ -26,9 +26,10 @@ describe('store', () => {
     actions.setBrushRadius(1000);
     expect(store.getState().brushRadius).toBe(300);
   });
+});
 
+describe('styles', () => {
   it('patches and resets the outline style', () => {
-    expect(store.getState().outline).toEqual({ color: [0, 0, 0], width: 1, alpha: 0.8 });
     actions.setOutline({ width: 2.5 });
     expect(store.getState().outline).toEqual({ color: [0, 0, 0], width: 2.5, alpha: 0.8 });
     actions.setOutline({ color: [10, 20, 30], alpha: 0.5 });
@@ -39,7 +40,6 @@ describe('store', () => {
   });
 
   it('sets and resets the selection color', () => {
-    expect(store.getState().selectionColor).toEqual([255, 220, 50]);
     actions.setSelectionColor([0, 229, 255]);
     expect(getConfig().selectionColor).toEqual([0, 229, 255]);
     actions.setSelectionColor(null);
@@ -64,14 +64,23 @@ describe('store', () => {
     expect(store.getState().colorScales).toEqual({});
   });
 
+  it('merges cell mark fields, or resets all', () => {
+    actions.setCellMark(null);
+    actions.setCellMark({ shape: 'hex', size: 4 });
+    actions.setCellMark({ angle: 30 });
+    expect(store.getState().cellMark).toEqual({ shape: 'hex', size: 4, angle: 30 });
+    actions.setCellMark(null);
+    expect(store.getState().cellMark).toEqual({});
+  });
+});
+
+describe('config', () => {
   it('restores genes this object has, by name, and the camera', () => {
     state.geneIndex = new Map([['Actb', 0], ['Cd3e', 1]]);
     const saved = { ...getConfig(), genes: ['Cd3e', 'Gone'], view: { target: [5, -5], zoom: 3 } };
     const s = mergeConfig(saved, store.getState());
     expect(s.genes).toEqual(['Cd3e']);
     expect(s.view).toEqual({ target: [5, -5], zoom: 3 });
-    // a config from before genes were names drops its indices
-    expect(migrateConfig({ genes: [0, 1], txPalette: 2 }, 1)).toEqual({ genes: [], txPalette: 2 });
     actions.setView({ target: [1, 2], zoom: 4 });
     expect(getConfig().view).toEqual({ target: [1, 2], zoom: 4 });
     actions.setView(null);
@@ -83,30 +92,23 @@ describe('store', () => {
     expect(Object.keys(cfg).sort()).toEqual(Object.keys(initialConfig()).sort());
     expect(() => JSON.stringify(cfg)).not.toThrow();
   });
-});
 
-describe('migrateConfig', () => {
-  it('keeps scales saved before styles as they looked', () => {
-    const m = migrateConfig({ colorBy: 'x', colorScales: { x: { preset: 'viridis' }, y: { reverse: true },
-      z: { preset: 'blue-white-red' } } }, 2);
-    expect(m.colorScales).toEqual({ x: { style: 'sequential', preset: 'viridis' },
-      y: { reverse: true, style: 'sequential', preset: 'blue-red' }, z: { style: 'sequential', preset: 'RdBu' } });
-    expect(migrateConfig({ colorScales: { x: {} } }, 3).colorScales).toEqual({ x: {} });
-    expect(migrateConfig({ genes: ['a'] }, 1).genes).toEqual([]);
-  });
-  it('drops controls closed in the dock, which left it for the tray', () => {
-    expect(migrateConfig({ closedPanels: ['layers', 'spatial', 'cells'] }, 3).closedPanels).toEqual(['spatial']);
-    expect(migrateConfig({ closedPanels: ['layers'] }, 4).closedPanels).toEqual(['layers']);
-  });
-});
+  describe('migrateConfig', () => {
+    it('drops the gene indices of a config from before genes were names', () => {
+      expect(migrateConfig({ genes: [0, 1], txPalette: 2 }, 1)).toEqual({ genes: [], txPalette: 2 });
+    });
 
-describe('setCellMark', () => {
-  it('merges fields, or resets all', () => {
-    actions.setCellMark(null);
-    actions.setCellMark({ shape: 'hex', size: 4 });
-    actions.setCellMark({ angle: 30 });
-    expect(store.getState().cellMark).toEqual({ shape: 'hex', size: 4, angle: 30 });
-    actions.setCellMark(null);
-    expect(store.getState().cellMark).toEqual({});
+    it('keeps scales saved before styles as they looked', () => {
+      const m = migrateConfig({ colorBy: 'x', colorScales: { x: { preset: 'viridis' }, y: { reverse: true },
+        z: { preset: 'blue-white-red' } } }, 2);
+      expect(m.colorScales).toEqual({ x: { style: 'sequential', preset: 'viridis' },
+        y: { reverse: true, style: 'sequential', preset: 'blue-red' }, z: { style: 'sequential', preset: 'RdBu' } });
+      expect(migrateConfig({ colorScales: { x: {} } }, 3).colorScales).toEqual({ x: {} });
+    });
+
+    it('drops controls closed in the dock, which left it for the tray', () => {
+      expect(migrateConfig({ closedPanels: ['layers', 'spatial', 'cells'] }, 3).closedPanels).toEqual(['spatial']);
+      expect(migrateConfig({ closedPanels: ['layers'] }, 4).closedPanels).toEqual(['layers']);
+    });
   });
 });

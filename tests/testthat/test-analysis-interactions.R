@@ -47,7 +47,7 @@ test_that("spatial network settings apply to their method only", {
 
 # ── Runs ────────────────────────────────────────────────────────────────────
 
-test_that("Spatial interactions run only when asked", {
+test_that("Spatial interactions run only when asked; advanced network and proximity settings reach Giotto", {
     r <- lens_analysis_rig(analyses = "interactions", params = c(lens_analysis_params, list(
         groups = list(column = "object:band"),
         proximity = list(number_of_simulations = 50))))
@@ -94,9 +94,30 @@ test_that("Spatial interactions run only when asked", {
     a$wait(30)
     expect_true(all(st()[-1L] == "stale"))
     expect_error(a$run("nope"), "no analysis")
+
+    a$set("spatial_network", method = "Delaunay", maximum_distance_delaunay = 40,
+        minimum_k = 1, dimensions = 1:2)
+    a$set("proximity", seed_number = 7)
+    a$run("interactions")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    expect_match(a$status$spatial_network$summary, "links")
+    code <- a$code("interactions")
+    expect_match(code, paste0("method = \"Delaunay\", delaunay_method = \"delaunayn_geometry\", ",
+        "maximum_distance_delaunay = 40, minimum_k = 1, dimensions = 1:2"), fixed = TRUE)
+    first <- a$status$spatial_network$summary
+    a$set("spatial_network", method = "radius", radius = 25)
+    a$set("proximity", set_seed = FALSE)
+    a$run("interactions")
+    a$wait(300)
+    expect_true(all(st() == "done"))
+    expect_false(identical(a$status$spatial_network$summary, first))
+    code <- a$code("interactions")
+    expect_match(code, "method = \"radius\", radius = 25", fixed = TRUE)
+    expect_match(code, "set_seed = FALSE)", fixed = TRUE)
 })
 
-test_that("History brings back runs; analyses are added and removed", {
+test_that("History brings back runs; analyses are added and removed; interactions follow the Preprocessing cell types", {
     r <- lens_analysis_rig(params = lens_analysis_params)
     on.exit(r$done(), add = TRUE)
     a <- r$a
@@ -134,18 +155,13 @@ test_that("History brings back runs; analyses are added and removed", {
     expect_null(r$panels()$proximity)
     a$add("interactions")
     expect_identical(nrow(a$history("interactions")), 2L)
-})
 
-test_that("Spatial interactions follow the cell types of the Preprocessing tab", {
-    r <- lens_analysis_rig(analyses = "interactions", params = c(lens_analysis_params,
-        list(proximity = list(number_of_simulations = 50))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    a$wait(300)
-    priv <- a$.__enclos_env__$private
+    # Added again, the analysis keeps its values: with no column, the groups
+    # step takes the Preprocessing tab's cell types
+    a$set("groups", column = "")
     st <- function() step_status(a, c("groups", "spatial_network", "proximity"))
     expect_true(all(st() == "stale"))
-    expect_identical(priv$resolve_column("groups"), "analysis:cell_type")
+    expect_identical(a$.__enclos_env__$private$resolve_column("groups"), "analysis:cell_type")
     a$run("interactions")
     a$wait(300)
     expect_true(all(st() == "done"))
@@ -157,32 +173,4 @@ test_that("Spatial interactions follow the cell types of the Preprocessing tab",
     a$wait(300)
     expect_true(all(st() == "done"))
     expect_true(any(grepl("first", r$panels()$proximity$data$values$pair)))
-})
-
-test_that("advanced spatial network and proximity settings reach Giotto", {
-    r <- lens_analysis_rig(analyses = "interactions", params = c(lens_analysis_params, list(
-        groups = list(column = "object:band"),
-        spatial_network = list(method = "Delaunay", maximum_distance_delaunay = 40,
-            minimum_k = 1, dimensions = 1:2),
-        proximity = list(number_of_simulations = 50, seed_number = 7))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    st <- function() step_status(a, c("groups", "spatial_network", "proximity"))
-    a$run("interactions")
-    a$wait(300)
-    expect_true(all(st() == "done"))
-    expect_match(a$status$spatial_network$summary, "links")
-    code <- a$code("interactions")
-    expect_match(code, paste0("method = \"Delaunay\", delaunay_method = \"delaunayn_geometry\", ",
-        "maximum_distance_delaunay = 40, minimum_k = 1, dimensions = 1:2"), fixed = TRUE)
-    first <- a$status$spatial_network$summary
-    a$set("spatial_network", method = "radius", radius = 25)
-    a$set("proximity", set_seed = FALSE)
-    a$run("interactions")
-    a$wait(300)
-    expect_true(all(st() == "done"))
-    expect_false(identical(a$status$spatial_network$summary, first))
-    code <- a$code("interactions")
-    expect_match(code, "method = \"radius\", radius = 25", fixed = TRUE)
-    expect_match(code, "set_seed = FALSE)", fixed = TRUE)
 })

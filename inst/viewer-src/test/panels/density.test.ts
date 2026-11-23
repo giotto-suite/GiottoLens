@@ -49,18 +49,24 @@ describe('density panel', () => {
     expect(at(sel, 3, 0)).toEqual([55, 65, 81, 255]);
   });
 
-  it('turns a rectangle into two ranges and back', () => {
-    const r = boxRule('density', 'x', 'y', { x: [3, 1], y: [0.5, 2] })!;
+  const r = boxRule('density', 'x', 'y', { x: [3, 1], y: [0.5, 2] })!;
+
+  it('boxRule turns a rectangle into two ranges', () => {
     expect(r).toEqual({ source: 'density', kind: 'intersect', params: { parts: [
       { source: 'density', kind: 'range', space: 'x', params: { min: 1, max: 3 } },
       { source: 'density', kind: 'range', space: 'y', params: { min: 0.5, max: 2 } },
     ] } });
+    expect(boxRule('density', 'x', 'y', null)).toBeNull();
+  });
+
+  it('boxFrom turns the rule back, only for its own columns', () => {
     expect(boxFrom(r, 'x', 'y')).toEqual({ x: [1, 3], y: [0.5, 2] });
     expect(boxFrom(r, 'x', 'z')).toBeNull();              // other columns
     expect(boxFrom({ ...r, negate: true }, 'x', 'y')).toBeNull();
     expect(boxFrom({ source: 'density', kind: 'range', space: 'x', params: { min: 0, max: 1 } }, 'x', 'y')).toBeNull();
-    expect(boxRule('density', 'x', 'y', null)).toBeNull();
-    // Float noise from a round trip through pixels is the same rectangle
+  });
+
+  it('sameBox takes float noise from a round trip through pixels as the same rectangle', () => {
     const noisy = boxRule('density', 'x', 'y', { x: [1 + 1e-15, 3], y: [0.5, 2 - 1e-15] });
     expect(sameBox(r, noisy, 'x', 'y')).toBe(true);
     expect(sameBox(r, boxRule('density', 'x', 'y', { x: [1.01, 3], y: [0.5, 2] }), 'x', 'y')).toBe(false);

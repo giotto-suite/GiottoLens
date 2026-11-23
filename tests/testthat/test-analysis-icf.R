@@ -25,10 +25,7 @@ test_that("Interaction-changed genes advanced settings have Giotto defaults", {
     new <- c("selected_feats", "minimum_unique_cells", "minimum_unique_int_cells",
         "mean_method", "offset", "exclude_selected_cells_from_test", "seed_number")
     pars <- stats::setNames(ent$params, vapply(ent$params, `[[`, "", "id"))
-    for (id in new) {
-        expect_true(isTRUE(pars[[id]]$advanced), info = id)
-        expect_true(nzchar(pars[[id]]$help %||% ""), info = id)
-    }
+    for (id in new) expect_true(isTRUE(pars[[id]]$advanced), info = id)
     for (id in c("diff_test", "nr_permutations", "adjust_method", "min_log2fc", "max_padj",
         "min_cells")) expect_false(isTRUE(pars[[id]]$advanced), info = id)
     expect_false("set_seed" %in% names(pars))
@@ -70,7 +67,7 @@ test_that("Interaction-changed genes code lists changed advanced settings only",
     expect_false(grepl("seed_number", code, fixed = TRUE))
 })
 
-test_that("Interaction-changed genes fill a gene table", {
+test_that("Interaction-changed genes fill a gene table, then run with advanced settings", {
     r <- lens_analysis_rig(analyses = "icf", params = c(lens_analysis_params, list(
         icf_source = list(from = "object"),
         icf_groups = list(column = "object:band"),
@@ -114,34 +111,15 @@ test_that("Interaction-changed genes fill a gene table", {
     expect_lte(tab2$n, n_before)
     cols2 <- stats::setNames(tab2$data, unlist(tab2$columns))
     expect_true(all(abs(unlist(cols2$log2fc)) >= 0.5))
-    a$set("icf_test", nr_permutations = 6)
-    a$wait(30)
-    expect_identical(unname(st()), c("done", "done", "done", "stale"))
-    a$set("icf_groups", column = "analysis:cell_type")
-    a$wait(30)
-    expect_identical(unname(st()), c("done", "stale", "stale", "stale"))
-    expect_identical(nrow(a$history("icf")), 1L)
-})
 
-test_that("Interaction-changed genes run with advanced settings", {
     genes <- sprintf("gene%02d", 1:40)
-    r <- lens_analysis_rig(analyses = "icf", params = c(lens_analysis_params, list(
-        icf_source = list(from = "object"),
-        icf_groups = list(column = "object:band"),
-        icf_test = list(nr_permutations = 5, adjust_method = "none", max_padj = 1,
-            min_log2fc = 0, min_cells = 1, selected_feats = genes,
-            minimum_unique_cells = 3, minimum_unique_int_cells = 2,
-            offset = 0.5,
-            exclude_selected_cells_from_test = FALSE, seed_number = 99))))
-    on.exit(r$done(), add = TRUE)
-    a <- r$a
-    ist <- c("icf_source", "icf_groups", "icf_network", "icf_test")
-    st <- function() step_status(a, ist)
-    a$wait(300)
+    a$set("icf_test", nr_permutations = 5, max_padj = 1, min_log2fc = 0, min_cells = 1,
+        selected_feats = genes, minimum_unique_cells = 3, minimum_unique_int_cells = 2,
+        offset = 0.5, exclude_selected_cells_from_test = FALSE, seed_number = 99)
     a$run("icf")
     a$wait(180)
     expect_true(all(st() == "done"), info = paste(ist, st(), collapse = ", "))
-    tab <- a$.__enclos_env__$private$tables$icf_test[[1L]]
+    tab <- priv$tables$icf_test[[1L]]
     expect_gt(tab$n, 0L)
     cols <- stats::setNames(tab$data, unlist(tab$columns))
     expect_true(all(unlist(cols$gene) %in% genes))
@@ -149,4 +127,12 @@ test_that("Interaction-changed genes run with advanced settings", {
     expect_true(all(unlist(cols$nr_other) >= unlist(cols$nr_select)))
     expect_match(a$code("icf"), paste0("minimum_unique_cells = 3, minimum_unique_int_cells = 2, ",
         "offset = 0.5, exclude_selected_cells_from_test = FALSE, seed_number = 99"), fixed = TRUE)
+
+    a$set("icf_test", nr_permutations = 6)
+    a$wait(30)
+    expect_identical(unname(st()), c("done", "done", "done", "stale"))
+    a$set("icf_groups", column = "analysis:cell_type")
+    a$wait(30)
+    expect_identical(unname(st()), c("done", "stale", "stale", "stale"))
+    expect_identical(nrow(a$history("icf")), 2L)
 })

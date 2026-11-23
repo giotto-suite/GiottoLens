@@ -72,6 +72,28 @@ describe('clusters and labels', () => {
   it('sends only non-empty, trimmed labels', () => {
     expect(labelPayload({ '1': ' T cell ', '2': '', '3': '  ' })).toEqual({ '1': 'T cell' });
   });
+
+  it('reports carried-over labels per cluster', () => {
+    const m = model();
+    m.markers = [{ cluster: '1', feat: 'EPCAM', score: 2 }, { cluster: '2', feat: 'DCN', score: 1 }];
+    m.labels = { '1': 'epithelial' };
+    m.inherited = { '1': { from: '3', share: 0.8 } };
+    const rows = clusterRows(m);
+    expect(rows[0].inherited).toEqual({ from: '3', share: 0.8 });
+    expect(rows[1].inherited).toBeUndefined();
+  });
+
+  it("marks suggested rows and carries each cluster's suggestion", () => {
+    const m = model();
+    m.markers = [{ cluster: '1', feat: 'EPCAM', score: 2 }, { cluster: '2', feat: 'DCN', score: 1 }];
+    m.labels = { '1': 'Epithelial', '2': 'stroma' };
+    m.suggested = { '1': { type: 'Epithelial', share: 0.9 } };
+    m.suggestions = [{ cluster: '1', type: 'Epithelial', share: 0.9 }, { cluster: '2', type: 'Fibroblast', share: 0.4 }];
+    const rows = clusterRows(m);
+    expect(rows[0].suggested).toBe(true);
+    expect(rows[1].suggested).toBeUndefined();
+    expect(rows[1].suggestion).toEqual({ cluster: '2', type: 'Fibroblast', share: 0.4 });
+  });
 });
 
 describe('status text', () => {
@@ -86,67 +108,89 @@ describe('status text', () => {
   });
 });
 
-describe('number parameters', () => {
-  const res: Param = { id: 'resolution', label: 'resolution', value: '1', type: 'number',
-    min: 0.001, max: null, integer: false, auto: false, choices: [{ value: '1', label: '1' }] };
-  const pcs: Param = { id: 'k', label: 'k', value: '10', type: 'number',
-    min: 2, integer: true, choices: [] };
-  const nn: Param = { id: 'n_neighbors', label: 'neighbors', value: 'auto', type: 'number',
-    min: 2, integer: true, auto: true, choices: [] };
-  it('takes any value in range, not only the suggestions', () => {
-    expect(numberKey(res, '0.37')).toBe('0.37');
-    expect(numberKey(res, ' 2 ')).toBe('2');
-    expect(numberKey(pcs, '17')).toBe('17');
+describe('parameters', () => {
+  describe('number parameters', () => {
+    const res: Param = { id: 'resolution', label: 'resolution', value: '1', type: 'number',
+      min: 0.001, max: null, integer: false, auto: false, choices: [{ value: '1', label: '1' }] };
+    const pcs: Param = { id: 'k', label: 'k', value: '10', type: 'number',
+      min: 2, integer: true, choices: [] };
+    const nn: Param = { id: 'n_neighbors', label: 'neighbors', value: 'auto', type: 'number',
+      min: 2, integer: true, auto: true, choices: [] };
+    it('takes any value in range, not only the suggestions', () => {
+      expect(numberKey(res, '0.37')).toBe('0.37');
+      expect(numberKey(res, ' 2 ')).toBe('2');
+      expect(numberKey(pcs, '17')).toBe('17');
+    });
+    it('rejects text, out-of-range and fractional values', () => {
+      expect(numberKey(res, 'abc')).toBeNull();
+      expect(numberKey(res, '0')).toBeNull();
+      expect(numberKey(pcs, '1')).toBeNull();
+      expect(numberKey(pcs, '12.5')).toBeNull();
+      expect(numberKey(res, '')).toBeNull();
+    });
+    it('maps an empty box to auto where allowed', () => {
+      expect(numberKey(nn, '')).toBe('auto');
+      expect(numberKey(nn, '25')).toBe('25');
+    });
+    it('applies a typed value and marks the step below stale', () => {
+      const m = model();
+      m.schema!.steps.find(s => s.id === 'umap')!.params.push(structuredClone(pcs));
+      expect(applyParam(m, 'umap', 'k', '17')).toBe(true);
+      expect(m.status.umap.status).toBe('stale');
+      expect(applyParam(m, 'umap', 'k', '1.5')).toBe(false);
+    });
   });
-  it('rejects text, out-of-range and fractional values', () => {
-    expect(numberKey(res, 'abc')).toBeNull();
-    expect(numberKey(res, '0')).toBeNull();
-    expect(numberKey(pcs, '1')).toBeNull();
-    expect(numberKey(pcs, '12.5')).toBeNull();
-    expect(numberKey(res, '')).toBeNull();
-  });
-  it('maps an empty box to auto where allowed', () => {
-    expect(numberKey(nn, '')).toBe('auto');
-    expect(numberKey(nn, '25')).toBe('25');
-  });
-  it('applies a typed value and marks the step below stale', () => {
-    const m = model();
-    m.schema!.steps.find(s => s.id === 'umap')!.params.push(structuredClone(pcs));
-    expect(applyParam(m, 'umap', 'k', '17')).toBe(true);
-    expect(m.status.umap.status).toBe('stale');
-    expect(applyParam(m, 'umap', 'k', '1.5')).toBe(false);
-  });
-});
 
-describe('carried-over labels', () => {
-  it('are reported per cluster', () => {
-    const m = model();
-    m.markers = [{ cluster: '1', feat: 'EPCAM', score: 2 }, { cluster: '2', feat: 'DCN', score: 1 }];
-    m.labels = { '1': 'epithelial' };
-    m.inherited = { '1': { from: '3', share: 0.8 } };
-    const rows = clusterRows(m);
-    expect(rows[0].inherited).toEqual({ from: '3', share: 0.8 });
-    expect(rows[1].inherited).toBeUndefined();
+  describe('PC ranges', () => {
+    const r: Param = { id: 'dimensions_to_use', label: 'PCs', value: '1:10', type: 'range',
+      min: 1, max: 38, integer: true, choices: [] };
+    it('takes from:to with from < to within the PCs', () => {
+      expect(rangeKey(r, '2:15')).toBe('2:15');
+      expect(rangeKey(r, ' 3 : 30 ')).toBe('3:30');
+      expect(rangeKey(r, '0:10')).toBeNull();
+      expect(rangeKey(r, '10:10')).toBeNull();
+      expect(rangeKey(r, '5:39')).toBeNull();
+      expect(rangeKey(r, '10')).toBeNull();
+    });
+    it('applies a range that skips PC 1', () => {
+      const m = model();
+      m.schema!.steps.find(s => s.id === 'umap')!.params.push(structuredClone(r));
+      expect(applyParam(m, 'umap', 'dimensions_to_use', '2:15')).toBe(true);
+      expect(m.status.umap.status).toBe('stale');
+      expect(m.status.leiden.status).toBe('done');
+    });
   });
-});
 
-describe('PC ranges', () => {
-  const r: Param = { id: 'dimensions_to_use', label: 'PCs', value: '1:10', type: 'range',
-    min: 1, max: 38, integer: true, choices: [] };
-  it('takes from:to with from < to within the PCs', () => {
-    expect(rangeKey(r, '2:15')).toBe('2:15');
-    expect(rangeKey(r, ' 3 : 30 ')).toBe('3:30');
-    expect(rangeKey(r, '0:10')).toBeNull();
-    expect(rangeKey(r, '10:10')).toBeNull();
-    expect(rangeKey(r, '5:39')).toBeNull();
-    expect(rangeKey(r, '10')).toBeNull();
+  describe('parameters that apply to one option', () => {
+    const step: Step = { id: 'spatial_network', label: 'net', fun: '', input: null, params: [
+      { id: 'method', label: 'method', value: 'kNN', choices: [{ value: 'kNN', label: 'kNN' }, { value: 'Delaunay', label: 'Delaunay' }] },
+      { id: 'k', label: 'k', value: '20', choices: [], type: 'number', show_if: { method: ['kNN'] } },
+      { id: 'other', label: 'o', value: '1', choices: [], type: 'number' }] };
+    it('hides a parameter when its option is not chosen', () => {
+      expect(paramShown(step, step.params[1])).toBe(true);
+      step.params[0].value = 'Delaunay';
+      expect(paramShown(step, step.params[1])).toBe(false);
+      expect(paramShown(step, step.params[2])).toBe(true);
+    });
+    it('knows which parameters show or hide others', () => {
+      expect(controlsOthers(step, 'method')).toBe(true);
+      expect(controlsOthers(step, 'k')).toBe(false);
+    });
   });
-  it('applies a range that skips PC 1', () => {
-    const m = model();
-    m.schema!.steps.find(s => s.id === 'umap')!.params.push(structuredClone(r));
-    expect(applyParam(m, 'umap', 'dimensions_to_use', '2:15')).toBe(true);
-    expect(m.status.umap.status).toBe('stale');
-    expect(m.status.leiden.status).toBe('done');
+
+  describe('Add analysis dialog', () => {
+    it('sends only the values that differ from the shown ones', () => {
+      const e: CatalogEntry = {
+        id: 'interactions', label: 'Spatial interactions', brief: '', description: '', inputs: [],
+        outputs: [], included: false,
+        steps: [{ id: 'spatial_network', label: 'net', fun: '', input: null, params: [
+          { id: 'k', label: 'k', value: '20', choices: [], type: 'number' },
+          { id: 'method', label: 'm', value: 'kNN', choices: [] }] }],
+      };
+      expect(draftParams(e, { spatial_network: { k: '10', method: 'kNN' } }))
+        .toEqual({ spatial_network: { k: '10' } });
+      expect(draftParams(e, {})).toEqual({});
+    });
   });
 });
 
@@ -158,20 +202,6 @@ describe('slider mapping', () => {
     expect(sliderPos(lg, 1)).toBe(0);
     expect(sliderValue(lg, Math.log10(0.37))).toBe(0.37);
     expect(sliderValue(lg, sliderPos(lg, 6000))).toBe(6000);
-  });
-});
-
-describe('suggested labels', () => {
-  it("mark suggested rows and carry each cluster's suggestion", () => {
-    const m = model();
-    m.markers = [{ cluster: '1', feat: 'EPCAM', score: 2 }, { cluster: '2', feat: 'DCN', score: 1 }];
-    m.labels = { '1': 'Epithelial', '2': 'stroma' };
-    m.suggested = { '1': { type: 'Epithelial', share: 0.9 } };
-    m.suggestions = [{ cluster: '1', type: 'Epithelial', share: 0.9 }, { cluster: '2', type: 'Fibroblast', share: 0.4 }];
-    const rows = clusterRows(m);
-    expect(rows[0].suggested).toBe(true);
-    expect(rows[1].suggested).toBeUndefined();
-    expect(rows[1].suggestion).toEqual({ cluster: '2', type: 'Fibroblast', share: 0.4 });
   });
 });
 
@@ -264,38 +294,6 @@ describe('result tables', () => {
   it('filters on any cell', () => {
     expect(tableRows(t, 'so').map(r => r[0])).toEqual(['SOX9']);
     expect(tableRows(t, '0.5')).toHaveLength(1);
-  });
-});
-
-describe('Add analysis dialog', () => {
-  it('sends only the values that differ from the shown ones', () => {
-    const e: CatalogEntry = {
-      id: 'interactions', label: 'Spatial interactions', brief: '', description: '', inputs: [],
-      outputs: [], included: false,
-      steps: [{ id: 'spatial_network', label: 'net', fun: '', input: null, params: [
-        { id: 'k', label: 'k', value: '20', choices: [], type: 'number' },
-        { id: 'method', label: 'm', value: 'kNN', choices: [] }] }],
-    };
-    expect(draftParams(e, { spatial_network: { k: '10', method: 'kNN' } }))
-      .toEqual({ spatial_network: { k: '10' } });
-    expect(draftParams(e, {})).toEqual({});
-  });
-});
-
-describe('parameters that apply to one option', () => {
-  const step: Step = { id: 'spatial_network', label: 'net', fun: '', input: null, params: [
-    { id: 'method', label: 'method', value: 'kNN', choices: [{ value: 'kNN', label: 'kNN' }, { value: 'Delaunay', label: 'Delaunay' }] },
-    { id: 'k', label: 'k', value: '20', choices: [], type: 'number', show_if: { method: ['kNN'] } },
-    { id: 'other', label: 'o', value: '1', choices: [], type: 'number' }] };
-  it('hides a parameter when its option is not chosen', () => {
-    expect(paramShown(step, step.params[1])).toBe(true);
-    step.params[0].value = 'Delaunay';
-    expect(paramShown(step, step.params[1])).toBe(false);
-    expect(paramShown(step, step.params[2])).toBe(true);
-  });
-  it('knows which parameters show or hide others', () => {
-    expect(controlsOthers(step, 'method')).toBe(true);
-    expect(controlsOthers(step, 'k')).toBe(false);
   });
 });
 
