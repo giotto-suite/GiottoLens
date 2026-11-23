@@ -8,6 +8,7 @@ import { fitZoom, viewportSize, withZoom } from '../ui/dom.js';
 import { primeMask, decodeMask } from '../selection/rules.ts';
 import { listPanels } from '../panels/dock.ts';
 import { listControls } from '../panels/tray.ts';
+import { listDrawer } from '../panels/drawer.ts';
 import { noteRuleSeq, syncRuleSeq } from '../selection/selection.ts';
 import { SCALE_PRESETS, MAX_SCALE_COLORS } from '../render/colors.ts';
 import { isItemKey, parseItemKey, needItems, primeItem, scaleKey, itemColumn } from '../data/items.ts';
@@ -36,7 +37,7 @@ function viewInfo(vs) {
 export function initRemote() {
   onMessage('get_state', () => ({
     config: { ...getConfig(), annotations: undefined, layout: undefined },
-    panels: [...listPanels(), ...listControls()],
+    panels: [...listPanels(), ...listControls(), ...listDrawer()],
     view: spatialView()?.viewState ? viewInfo(spatialView().viewState) : null,
     n_cells: state.cells?.n ?? 0,
     selected: store.getState().selection.count,

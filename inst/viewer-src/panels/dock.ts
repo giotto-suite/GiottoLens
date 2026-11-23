@@ -8,10 +8,10 @@
 // layout is config (store `layout`): it is saved through R and restored after
 // a reload. Charts (scatter, histogram, density, table) are rebuilt from metadata;
 // pushed panels from the payload R keeps and sends again on reconnect.
-// The spatial view and the Analysis panel are one per viewer, with their kind
-// as id, and can be closed and opened again from a "+" menu. The controls
-// (cells, layers, ...) are not docked: they are the tray's (panels/tray.ts,
-// adr/0027). A group's tab bar splits it, leaving an empty pane beside it
+// The spatial view is one per viewer, with its kind as id, and can be closed
+// and opened again from a "+" menu. The controls (cells, layers, ...) are not
+// docked: they are the tray's (panels/tray.ts, adr/0027); nor is the Analysis
+// panel, the left tray's (panels/drawer.ts, adr/0032). A group's tab bar splits it, leaving an empty pane beside it
 // that lists what can be shown there; a pane emptied by closing or moving its
 // last panel goes, as dockview does by default.
 // Why dockview-core 4, and why R holds the saved config: adr/0009.
@@ -38,12 +38,11 @@ import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createTablePanel } from './table.ts';
 import { setTrayHidden, trayHidden, metadataNote } from './tray.ts';
+import { setDrawerHidden } from './drawer.ts';
 import { moduleView } from './modules.ts';
 import { createSpatialPanel } from '../spatial/view.ts';
 // @ts-ignore: plain JS module
 import { abortAllTiles } from '../data/schedule.js';
-// @ts-ignore: plain JS module
-import { createAnalysisPanel } from './analysis.js';
 
 // The built-in panels: the views, which the "+" menus offer. A chart
 // (`meta`) shows a note until metadata arrives and is rebuilt when it
@@ -63,9 +62,6 @@ const TYPES = {
   histogram:   { create: createHistogramPanel, meta: true },
   density:     { create: createDensityPanel, meta: true },
   table:       { create: createTablePanel, meta: true },
-  // The object's analysis (viewer$analysis()): opened from "+" or when R starts one
-  analysis:    { create: createAnalysisPanel, single: true,
-                 available: () => !!state.cells && !!state.manifest?.catalog },
 } satisfies Record<string, PanelType>;
 export type PanelKind = keyof typeof TYPES | 'spec';
 type BuiltinKind = keyof typeof TYPES;
@@ -256,9 +252,8 @@ function newId(kind: string): string {
   for (let i = 2; ; i++) if (!dock.getPanel(`${kind}-${i}`)) return `${kind}-${i}`;
 }
 
-// A built-in panel brought forward (opened if closed), as R asks when it
-// gives the panel something new: an analysis started
-export function showBuiltin(kind: BuiltinKind): void {
+// A built-in panel brought forward (opened if closed), as a module's view is
+function showBuiltin(kind: BuiltinKind): void {
   if (!dock || !available(kind)) return;
   if (!dock.getPanel(kind)) {
     actions.setPanelClosed(kind, false);
@@ -274,8 +269,6 @@ function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): 
     const open = dock.getPanel(kind);
     if (open) { open.api.setActive(); return; }
   }
-  // Opened from "+" with no place given, the Analysis panel goes where it opens from R
-  if (kind === 'analysis' && !position) { placeAnalysis(); return; }
   const p = dock.addPanel({ id: isSingle(kind) ? kind : newId(kind), component: kind, title: kind,
     ...(position && { position }) });
   // A view opened again in a group of its own gets its usual width; in a pane
@@ -341,13 +334,9 @@ function dropUnavailable(): void {
 }
 
 // Where a pushed panel goes without a `ref`: next to the active chart, else
-// the last one active, else any chart, never beside the spatial view, or in the Analysis panel's group
+// the last one active, else any chart, never beside the spatial view
 let lastChart: string | null = null;
-const isChart = (p?: IDockviewPanel | null) => {
-  const kind = p ? views.get(p.id)?.kind : undefined;
-  return !!p && !isSingle(kind) && kind !== 'analysis' &&
-    !p.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
-};
+const isChart = (p?: IDockviewPanel | null) => !!p && !isSingle(views.get(p.id)?.kind);
 function chartRef(): IDockviewPanel | undefined {
   if (!dock) return undefined;
   if (isChart(dock.activePanel)) return dock.activePanel!;
@@ -446,7 +435,7 @@ export function focusView(id: string | null): void {
   dock.maximizeGroup(p);
 }
 
-// The bottom bar's panels toggle (ui/selbar.js): the spatial view alone, the tray's column
+// The bottom bar's panels toggle (ui/selbar.js): the spatial view alone, both trays
 // hidden too, or everything back. With a module on, the data area keeps the
 // module's view alone and the toggle hides or shows the tray.
 export function panelsShown(): boolean {
@@ -462,6 +451,7 @@ export function togglePanels(): void {
   const relayout = () => { if (dockHost) dock?.layout(dockHost.clientWidth, dockHost.clientHeight); };
   if (!show) focusView('spatial');
   setTrayHidden(!show);
+  setDrawerHidden(!show);
   relayout();
   if (show) focusView(moduleView());
 }
@@ -501,10 +491,8 @@ export function pushPanel(p: PanelPayload): void {
   if (p.ref && !ref) reportError(new Error(`no panel '${p.ref}'; placed next to the charts`), 'push_panel');
   ref ??= chartRef();
   const where = p.where ?? 'tab';
-  // A tab next to the Analysis panel goes beside its group instead
-  const beside = where === 'tab' && !!ref && ref.group.panels.some(q => views.get(q.id)?.kind === 'analysis');
   const position: AddPanelOptions['position'] = !ref ? { direction: 'left' }
-    : { referencePanel: ref, direction: beside ? 'right' : where === 'tab' ? 'within' : where };
+    : { referencePanel: ref, direction: where === 'tab' ? 'within' : where };
   const title = p.title ?? (typeof p.spec?.title === 'string' ? p.spec.title : null) ?? p.id;
   dock.addPanel({ id: p.id, component: 'spec', title, ...(position && { position }) });
 }
@@ -527,15 +515,3 @@ export function listPanels(): { id: string; kind: string; title: string; group: 
 
 // For tests and the browser console: a panel's handle (its Vega view, ...)
 export const panelHandle = (id: string): PanelHandle | null => views.get(id)?.panel ?? null;
-
-// Where the Analysis panel opens: at the dock's left edge, left of the
-// spatial view, a third of the page wide; kept where the user or a restored
-// layout put it
-function placeAnalysis(): void {
-  if (!dock || dock.getPanel('analysis')) return;
-  const view = dock.getPanel('spatial');
-  const position: AddPanelOptions['position'] = view ? { referencePanel: view, direction: 'left' }
-    : { direction: 'left' };
-  const p = dock.addPanel({ id: 'analysis', component: 'analysis', title: 'analysis', position });
-  p.group.api.setSize({ width: Math.round(window.innerWidth / 3) });
-}

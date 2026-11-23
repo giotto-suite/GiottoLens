@@ -15,6 +15,7 @@ import { store } from '../core/store.ts';
 import { state } from '../core/state.js';
 import { railFlyout, type Flyout } from '../ui/flyout.ts';
 import { createDataPanel } from './data.ts';
+import { toggleDrawer, openDrawer, drawerAvailable } from './drawer.ts';
 
 // The Data panel is a flyout from the rail, not a tray control: it fetches
 // from the object, as opening a project or a save does, and its queue and
@@ -31,6 +32,7 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
     <button class="tool-btn" data-act="info" title="about the object shown: its snapshot and what it holds (viewer$object_info())"><i data-lucide="info"></i></button>
     <button class="tool-btn" data-act="save" title="save the work in the viewer (viewer$save())"><i data-lucide="save"></i></button>
     <button class="tool-btn" data-act="data" title="data: pull what the object holds into the metadata (viewer$pull())"><i data-lucide="database"></i></button>
+    <button class="tool-btn" data-act="analysis" title="analysis: run Giotto's steps on the object, in the left tray (viewer$analysis())"><i data-lucide="monitor-play"></i></button>
     <button class="tool-btn" data-act="modules" title="modules: a mode for one task (registration)"><i data-lucide="blocks"></i></button>
     <button class="tool-btn jobs-btn" data-act="jobs" title="jobs"><i data-lucide="activity"></i></button>
     <button class="tool-btn" data-act="preferences" title="preferences: defaults for every viewer"><i data-lucide="settings"></i></button>`;
@@ -42,6 +44,12 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
   const dataBtn = bar.querySelector('[data-act=data]') as HTMLElement;
   if (state.cells && state.manifest?.catalog) dataFly = railFlyout(dataBtn, 'data', 'data', createDataPanel);
   else dataBtn.style.display = 'none';
+  // The Analysis panel opens in the left tray; the button is lit while it is open
+  const anBtn = bar.querySelector('[data-act=analysis]') as HTMLElement;
+  if (!drawerAvailable('analysis')) anBtn.style.display = 'none';
+  anBtn.addEventListener('click', () => toggleDrawer('analysis'));
+  const offDrawer = store.subscribe(s => s.drawer, () => anBtn.classList.toggle('active', openDrawer() === 'analysis'),
+    { fireImmediately: true });
   const mods = bar.querySelector('[data-act=modules]') as HTMLElement;
   mods.addEventListener('click', () => openModulesMenu(mods));
   // Lit while a module is on
@@ -52,7 +60,7 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
   const closeInfo = infoButton(bar.querySelector('[data-act=info]') as HTMLElement);
   const closeSave = saveForm(bar.querySelector('[data-act=save]') as HTMLElement);
 
-  return { destroy() { off.abort(); closeSave(); offJobs(); closeInfo(); offModule(); dataFly?.destroy(); dataFly = null; } };
+  return { destroy() { off.abort(); closeSave(); offJobs(); closeInfo(); offModule(); offDrawer(); dataFly?.destroy(); dataFly = null; } };
 }
 
 // Save the viewer's work (adr/0026): a name and a description, beside the

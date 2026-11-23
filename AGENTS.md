@@ -96,7 +96,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               data.ts (the Data panel, a flyout from the tools rail: what to pull from the object, through askR()),
               saved.ts (saved selections, the selection panel's lower section;
               saved-model.ts its helpers),
-              analysis.js + analysis-model.ts (the Analysis panel),
+              analysis.js + analysis-model.ts (the Analysis panel, in the left tray: drawer.ts),
               picker.ts (the popover a field picks a column or an item with),
               register.ts, annotations.ts (the annotations' list)
   test/       vitest (+ fixtures/)
@@ -510,15 +510,21 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
   pair, Escape the open one.
 
-### Panels (adr/0009, adr/0016, adr/0023, adr/0027, adr/0030, adr/0031)
+### Panels (adr/0009, adr/0016, adr/0023, adr/0027, adr/0030, adr/0031, adr/0032)
 
 - Views dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the controls are in the tray
   (`panels/tray.ts`), and the selection bar is outside both. Docked kinds are listed once in
   `TYPES` and are what the `+` menus offer: charts (`meta`) need metadata and can repeat;
   `single` panels are one per viewer with their kind as id and are left closed after a reload
-  once closed (`closedPanels`). `spatial` and `analysis` are single and closable.
-  `placeFixed()` adds the view to a layout without it. Keep `.lens_builtin_panels` in R in step with `TYPES` and `CONTROLS`. A
+  once closed (`closedPanels`). `spatial` is single and closable.
+  `placeFixed()` adds the view to a layout without it. Keep `.lens_builtin_panels` in R in step with `TYPES`, `CONTROLS` and `DRAWERS`. A
   pushed panel without `ref` goes next to the charts, never beside a single panel.
+- The left tray (`panels/drawer.ts`, `#drawer`, adr/0032) holds one workbench panel at a time
+  (`DRAWERS`: the Analysis panel), between the tools rail and the dock. The rail's analysis
+  button, R's `analysis()` (`showDrawer()`) and `remove_panel()` (`closeDrawer()`) open and
+  close it; its right edge drags (`sash()` from `tray.ts`). Store `drawer`, `drawerWidth`;
+  `panels()` lists it with group `"drawer"`. The panels toggle hides it with the right tray
+  (`setDrawerHidden()`); modules leave it.
 - A group's tab bar splits it (`splitGroup()`): the new pane is a group with no panels, kept
   in the saved layout, whose watermark (`Empty`) lists the `+` menu's kinds and closes it.
   Picked there, a single panel open elsewhere moves in (`showIn()`). A group emptied by a

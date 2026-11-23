@@ -132,7 +132,7 @@ const HIDDEN: RGBA = [160, 160, 160, 120];
 // polygon fill opacity of a colored cell, and of an uncolored one
 export const DEFAULT_FILL_ALPHA = 0.9;
 export const UNCOLORED_FILL = 20;
-const CONTINUOUS_FILL = 110;
+const NA_FILL = 110;   // a cell with no value: fainter than any colored one
 
 // t in [0, 1] to a color, linearly between evenly spaced stops
 export function continuousColor(t: number, stops: [number, number, number][] = SCALE_PRESETS[DEFAULT_SCALE]): RGBA {
@@ -179,17 +179,25 @@ export function cellColorBuffer(n: number, col: MetaColumn | null,
     for (let i = 0; i < n; i++) {
       const c = v[i];
       if (c >= 0) { out.set(rgba[c], i * 4); fill[i] = fa[c]; }
-      else { out.set(NA, i * 4); fill[i] = CONTINUOUS_FILL; }
+      else { out.set(NA, i * 4); fill[i] = NA_FILL; }
     }
     return { colors: out, fill, legend: { type: 'categorical', column: col.name, items } };
   }
   const { min, max } = col;
   const { lo, hi, mid, style } = scaleRange(col as { values: Float64Array; min: number; max: number }, scale);
   const stops = scaleStops(scale);
+  // The fill opacity preference, as for categories: polygons at it, centroids
+  // at twice it
+  const fa = Math.round(prefs().fill_opacity * 255);
+  const dot = Math.min(255, Math.round(prefs().fill_opacity * 510));
   for (let i = 0; i < n; i++) {
     const x = v[i];
-    out.set(x === x ? continuousColor(scalePosition(x, lo, hi, style, mid), stops) : NA, i * 4);
-    fill[i] = CONTINUOUS_FILL;
+    if (x === x) {
+      const c = continuousColor(scalePosition(x, lo, hi, style, mid), stops);
+      c[3] = dot;
+      out.set(c, i * 4);
+      fill[i] = fa;
+    } else { out.set(NA, i * 4); fill[i] = NA_FILL; }
   }
   return { colors: out, fill, legend: { type: 'continuous', column: col.name, min, max, lo, hi, mid, style,
     stops, scale } };

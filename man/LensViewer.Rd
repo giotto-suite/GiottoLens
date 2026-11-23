@@ -1501,9 +1501,9 @@ the table of comparison \code{id}
 \subsection{\code{LensViewer$analysis()}}{
   The analysis of the object shown (adr/0021): a
 \link{LensAnalysis}, made by the first call and kept until another
-object is shown. The viewer's Analysis panel shows it, and opens
-when it is made here; opening the panel from the viewer's "+" menu
-makes it too. Nothing runs until a step is run or a parameter set.
+object is shown. The viewer's Analysis panel, in the left tray,
+shows it, and opens when it is made here; opening the panel from
+the tools rail's analysis button makes it too. Nothing runs until a step is run or a parameter set.
 Arguments given to a later call apply to the analysis there is.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
@@ -1605,8 +1605,9 @@ chart}
 \subsection{\code{LensViewer$remove_panel()}}{
   Close a docked panel, one pushed with \code{push_panel()}
 or a built-in one (\code{"scatter"}, \code{"histogram"}, ...), or hide a
-control in the tray (\code{"layers"}, \code{"selection"}, ...). The viewer's \code{+}
-menu adds built-in panels back, the tray's rail a control; a
+control in the tray (\code{"layers"}, \code{"selection"}, ...), or close the
+left tray (\code{"analysis"}). The viewer's \code{+} menu adds built-in panels
+back, the tray's rail a control, the tools rail the left tray; a
 hidden control stays hidden after a page reload.
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
@@ -1628,8 +1629,8 @@ hidden control stays hidden after a page reload.
 \subsection{\code{LensViewer$panels()}}{
   The panels: id, kind (a chart: \code{"scatter"},
 \code{"histogram"}, \code{"density"}, \code{"table"}, or \code{"spec"} for a pushed
-one; \code{"spatial"}, \code{"analysis"}; a control shown in the
-tray: \code{"layers"}, \code{"selection"}, \code{"register"},
+one; \code{"spatial"}; \code{"analysis"} in the left tray, group \code{"drawer"};
+a control shown in the tray: \code{"layers"}, \code{"selection"}, \code{"register"},
 \code{"annotations"}), title,
 the group of tabs it is in (\code{"tray"} for a control), and whether
 it is in view (not behind another tab, nor hidden by the panels

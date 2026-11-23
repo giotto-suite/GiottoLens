@@ -1,5 +1,11 @@
 # GiottoLens (development version)
 
+* Cells colored by a continuous column take the `fill_opacity` preference, as categories do;
+  before, they were drawn at a fixed lower opacity no control changed.
+* The Analysis panel opens in a left tray beside the tools rail, from its analysis button,
+  instead of as a dock pane; its width drags from its right edge and is kept. `panels()` lists
+  it with group `"drawer"`, and `remove_panel("analysis")` closes it (adr/0032).
+
 * The left rail has no `+`: panels are added from a pane's `+` or an empty pane's list.
 * The Data panel opens from a button on the left rail, beside the page's other actions, as a
   flyout that stays open until closed; it left the tray.

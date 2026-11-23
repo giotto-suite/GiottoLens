@@ -74,6 +74,8 @@ export interface Config {
   trayWidth: number | null;     // px, the tray's column as dragged; null: TRAY_WIDTH
   traySizes: Record<string, number>;   // the controls' shares of the tray's height as dragged; unset: 1
   trayCollapsed: boolean;       // the tray folded to its rail (its arrow)
+  drawer: string | null;        // the panel open in the left tray (panels/drawer.ts, adr/0032); null: closed
+  drawerWidth: number | null;   // px, the left tray as dragged; null: DRAWER_WIDTH
   layerSections: Record<string, boolean>;   // the layers panel's sections opened or closed by hand (panels/layers.ts)
   registration: Registration | null;  // an image being registered (data/registration.ts)
   view: SavedView | null;       // the camera; null: fitted to the data
@@ -129,6 +131,8 @@ export const initialConfig = (): Config => ({
   trayWidth: null,
   traySizes: {},
   trayCollapsed: false,
+  drawer: null,
+  drawerWidth: null,
   layerSections: {},
   registration: null,
   view: null,
@@ -333,6 +337,8 @@ export const actions = {
   setTrayWidth(width: number | null) { set({ trayWidth: width }); },
   setTraySizes(sizes: Record<string, number>) { set({ traySizes: sizes }); },
   setTrayCollapsed(on: boolean) { set({ trayCollapsed: on }); },
+  setDrawer(id: string | null) { set({ drawer: id }); },
+  setDrawerWidth(width: number | null) { set({ drawerWidth: width }); },
   setLayerSection(id: string, open: boolean) {
     if (get().layerSections[id] !== open) set(s => ({ layerSections: { ...s.layerSections, [id]: open } }));
   },
