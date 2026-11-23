@@ -197,6 +197,7 @@ export function initTray(el0: HTMLElement): void {
     rail.append(b);
   }
   createIcons({ icons, root: rail });
+  selectionBadge(rail.querySelector('[data-tray=selection]') as HTMLElement);
   empty = el('div', 'panel-note tray-empty', 'No controls shown: pick one on the rail');
   column.append(empty);
   host.append(edgeSash(), rail, column);
@@ -204,6 +205,22 @@ export function initTray(el0: HTMLElement): void {
   store.subscribe(s => s.traySizes, placeControls);
   store.subscribe(s => s.trayCollapsed, setOpen);
   placeControls();
+}
+
+// The selection button: the number of rules on, so a selection made with the
+// control hidden is not forgotten; the cells they select in the title
+function selectionBadge(b: HTMLElement): void {
+  const badge = el('span', 'rail-badge selection-badge');
+  b.append(badge);
+  const sync = () => {
+    const { rules, selection } = store.getState();
+    const n = Object.keys(rules).length;
+    badge.textContent = n ? String(n) : '';
+    b.title = n ? `selection: ${n} rule${n === 1 ? '' : 's'}, ${selection.count.toLocaleString()} cells` : 'selection';
+  };
+  store.subscribe(s => s.rules, sync);
+  store.subscribe(s => s.selection.version, sync);
+  sync();
 }
 
 // The column shown or not; the arrow points the way a click moves it

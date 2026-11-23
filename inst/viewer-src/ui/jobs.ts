@@ -59,7 +59,7 @@ export function elapsed(ms: number): string {
 // The tools bar's button: a badge with the number of running jobs, a pulse
 // while any runs, and the popover. Returns what removes it.
 export function jobsButton(button: HTMLElement): () => void {
-  const badge = Object.assign(document.createElement('span'), { className: 'jobs-badge' });
+  const badge = Object.assign(document.createElement('span'), { className: 'rail-badge jobs-badge' });
   button.append(badge);
   const pop = Object.assign(document.createElement('div'), { className: 'jobs-popover' });
   let ticker: ReturnType<typeof setInterval> | undefined;
