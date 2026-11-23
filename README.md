@@ -43,7 +43,7 @@ forward (for example R on an HPC node).
 ```r
 # What the viewer shows: a snapshot of a GiottoDisk project
 viewer$save("tumor_regions")        # the work in the viewer, with the snapshot shown
-viewer$saves(); viewer$open_save("tumor_regions")
+viewer$saves(); viewer$open_save("tumor_regions"); viewer$delete_save("old_try")
 viewer$set_object(g)                # another object; refuses to drop work not saved without discard = TRUE
 g <- viewer$gobject()               # the object shown, loaded from its snapshot
 viewer$checkout("clustered")        # another snapshot of the project

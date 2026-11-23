@@ -226,7 +226,13 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   `ids` rules, panels with `_idx`) only when the cell fingerprint matches.
 - `close()` keeps work not saved in the project (a working bundle of an ended viewer, listed
   by `saves(sessions = TRUE)`, opened by `open_save()` and then removed); `close(discard =
-  TRUE)` deletes it. A bundle is opened only by a name `.lens_saves()` lists, never a path.
+  TRUE)` deletes it. A bundle is opened or deleted only by a name `.lens_saves()` lists, never
+  a path; `.lens_saves()` skips links. The start page deletes through `ask` `delete_save`
+  (`delete_save_in()`), refused for the work of a viewer still running (`find_bundle()`).
+- `bundle.json` of a working bundle names its `user`, `host` and `pid`; `heartbeat()`
+  rewrites it every `.heartbeat_s` from the autosave loop, and `.session_live()` takes a
+  bundle from another machine as live while its file is fresh (adr/0033). `updated` is when
+  the work was last written (`written_at`), not the beat.
 - Bundles are JSON and parquet; never `saveRDS()`/`qs2` into one. Read a bundle's files only
   through `.bundle_file()` (a regular file inside it, no link): copies land in the project.
 

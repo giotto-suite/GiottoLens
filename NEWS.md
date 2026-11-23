@@ -1,5 +1,13 @@
 # GiottoLens (development version)
 
+* A project's start page has three tabs: Objects (its snapshots), Saves, and Recovered (work
+  not saved that viewers left), each with its count. It opens on Saves when the project has
+  any.
+* The start page deletes saves (Delete) and work not saved that a viewer left (Discard),
+  after asking, one at a time or ticked and deleted together; `viewer$delete_save()` takes
+  several names. Work another user's viewer left says whose it is and is listed only when
+  asked; work of a viewer still running on another machine can no longer be opened or
+  deleted (adr/0033).
 * Cells colored by a continuous column take the `fill_opacity` preference, as categories do;
   before, they were drawn at a fixed lower opacity no control changed.
 * The Analysis panel opens in a left tray beside the tools rail, from its analysis button,
