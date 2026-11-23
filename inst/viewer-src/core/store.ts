@@ -69,12 +69,15 @@ export interface Config {
   brushRadius: number;          // screen pixels
   layout: object | null;        // the docked panels (dockview's toJSON(); panels/dock.ts)
   closedPanels: string[];       // single dock panels closed by hand: a restore leaves them out
-  trayActive: string | null;    // the control the tray shows, picked last (panels/tray.ts); null: the first
+  module: string | null;        // the module on (panels/modules.ts, adr/0031); null: none
+  trayShown: Record<string, string[]>;   // the controls the tray shows, by module ('' without one); unset: its default (panels/tray.ts)
+  trayWidth: number | null;     // px, the tray's column as dragged; null: TRAY_WIDTH
+  traySizes: Record<string, number>;   // the controls' shares of the tray's height as dragged; unset: 1
   trayCollapsed: boolean;       // the tray folded to its rail (its arrow)
   layerSections: Record<string, boolean>;   // the layers panel's sections opened or closed by hand (panels/layers.ts)
   registration: Registration | null;  // an image being registered (data/registration.ts)
   view: SavedView | null;       // the camera; null: fitted to the data
-  theme: Theme;                 // the page's colours (ui/theme.ts)
+  theme: Theme | null;          // the page's colours (ui/theme.ts); null: the theme preference
 }
 
 export interface Runtime {
@@ -121,19 +124,22 @@ export const initialConfig = (): Config => ({
   brushRadius: 30,
   layout: null,
   closedPanels: [],
-  trayActive: null,
+  module: null,
+  trayShown: {},
+  trayWidth: null,
+  traySizes: {},
   trayCollapsed: false,
   layerSections: {},
   registration: null,
   view: null,
-  theme: 'dark',
+  theme: null,
 });
 
 // Saved through R and restored after a reload (core/persist.ts). Rules and
 // the combine mode are left out: R restores those itself, since it evaluates
 // them. Bump CONFIG_VERSION and add a step to `migrate` when a saved field
 // changes meaning.
-const CONFIG_VERSION = 4;
+const CONFIG_VERSION = 7;
 const UNSAVED: (keyof Config)[] = ['rules', 'combine'];
 type Saved = Partial<Config>;
 
@@ -172,7 +178,11 @@ export function mergeConfig(saved: unknown, current: LensState): LensState {
 // style; one saved before keeps its look: sequential, blue-red when it named
 // no preset, and the 7-color blue-white-red as RdBu. 4: the controls left
 // the dock for the tray (adr/0027), which shows one at a time; their closed
-// state goes.
+// state goes. 5: the theme follows the preference unless set (null); a saved
+// "dark" was the default, so it follows too, and a "light" was set_theme().
+// 6: the tray shows several controls (adr/0030); the one it showed is the list.
+// 7: the tray keeps the controls shown per module (adr/0031); the list is the
+// page's own, without a module.
 const DOCKED_CONTROLS = ['cells', 'transcripts', 'data', 'regions', 'images', 'register', 'annotations', 'layers'];
 export function migrateConfig(saved: unknown, version: number): Saved {
   const s = { ...((saved ?? {}) as Saved) };
@@ -187,6 +197,17 @@ export function migrateConfig(saved: unknown, version: number): Saved {
   }
   if (version < 4 && s.closedPanels)
     s.closedPanels = s.closedPanels.filter(id => !DOCKED_CONTROLS.includes(id));
+  if (version < 5 && s.theme === 'dark') s.theme = null;
+  if (version < 6) {
+    const old = s as Saved & { trayActive?: string | null };
+    (s as { trayShown?: unknown }).trayShown = old.trayActive ? [old.trayActive] : null;
+    delete old.trayActive;
+  }
+  if (version < 7 && 'trayShown' in s) {
+    const list = (s as { trayShown?: unknown }).trayShown;
+    if (Array.isArray(list)) s.trayShown = { '': list as string[] };
+    else delete s.trayShown;
+  }
   return s;
 }
 
@@ -225,7 +246,7 @@ export const actions = {
   setSelectionColor(color: [number, number, number] | null) {
     set({ selectionColor: color ?? prefSelection(prefs()) });
   },
-  setTheme(theme: Theme) { set({ theme }); },
+  setTheme(theme: Theme | null) { set({ theme }); },
   setImage(name: string, patch: Partial<ImageVis>) {
     set(s => ({ images: { ...s.images, [name]: { ...s.images[name], ...patch } } }));
   },
@@ -307,7 +328,10 @@ export const actions = {
     const ids = get().closedPanels.filter(x => x !== id);
     set({ closedPanels: closed ? [...ids, id] : ids });
   },
-  setTrayActive(kind: string) { set({ trayActive: kind }); },
+  setModule(module: string | null) { set({ module }); },
+  setTrayShown(module: string, kinds: string[]) { set(s => ({ trayShown: { ...s.trayShown, [module]: kinds } })); },
+  setTrayWidth(width: number | null) { set({ trayWidth: width }); },
+  setTraySizes(sizes: Record<string, number>) { set({ traySizes: sizes }); },
   setTrayCollapsed(on: boolean) { set({ trayCollapsed: on }); },
   setLayerSection(id: string, open: boolean) {
     if (get().layerSections[id] !== open) set(s => ({ layerSections: { ...s.layerSections, [id]: open } }));

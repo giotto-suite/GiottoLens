@@ -21,6 +21,7 @@
     cat_palette = list(type = "choice", default = "default",
         choices = c("default", "vivid", "okabe_ito")),
     tx_palette = list(type = "choice", default = "default", choices = c("default", "vivid")),
+    theme = list(type = "choice", default = "dark", choices = c("dark", "light")),
     background = list(type = "color", default = "#0d1117"),
     outline_color = list(type = "color", default = "#000000"),
     selection_color = list(type = "color", default = "#ffdc32"),
@@ -146,6 +147,8 @@
 #' * `cat_palette`: colors of categories, `"default"`, `"vivid"` or
 #'   `"okabe_ito"`.
 #' * `tx_palette`: transcript colors, `"default"` or `"vivid"`.
+#' * `theme`: the panels and controls, `"dark"` or `"light"`; the spatial view
+#'   and scatter plots stay dark (see [LensViewer] `$set_theme()`).
 #' * `background`: color behind the cells, `"#rrggbb"`; unset, the theme's.
 #' * `outline_color`, `outline_width`, `outline_opacity`: cell outlines.
 #' * `selection_color`: the color selected cells draw in, `"#rrggbb"` (see

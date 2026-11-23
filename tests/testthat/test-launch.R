@@ -89,6 +89,15 @@ test_that("set_selection_color checks its argument before sending", {
     expect_error(v$set_selection_color(), "no viewer connected")
 })
 
+test_that("set_module checks its argument before sending", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_module("nope"), "one of: registration")
+    expect_error(v$set_module(c("registration", "registration")), "one of: registration")
+    expect_error(v$set_module("registration"), "no viewer connected")
+})
+
 test_that("set_theme checks its argument before sending", {
     fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)

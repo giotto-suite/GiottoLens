@@ -1,5 +1,27 @@
 # GiottoLens (development version)
 
+* The left rail has no `+`: panels are added from a pane's `+` or an empty pane's list.
+* The Data panel opens from a button on the left rail, beside the page's other actions, as a
+  flyout that stays open until closed; it left the tray.
+* Modules: modes for one task, entered from the left rail's modules button or with
+  `viewer$set_module()`. Registration is the first: while it is on, the tray offers only the
+  register control and the data area shows only the spatial view; leaving puts the tray and
+  the panes back as they were. Starting a registration enters it (adr/0031).
+* Annotations and saved selections are renamed by double-clicking their name in the
+  annotations panel or the saved selections list; the name box over the spatial view is
+  gone. `viewer$rename_selection()` renames a saved selection from R.
+* The tray shows several controls at once: each rail button shows or hides its control,
+  and the ones shown stack in the tray (adr/0030).
+* The divider between the tray's rail and its controls, and those between its controls, drag to resize them, and the
+  sizes are kept. Every divider between panes lights up as soon as the pointer is on it.
+* The tray's rail of icons is on the tray's left side, next to the dock, instead of at the
+  page's right edge.
+* The light theme is a preference, `theme`, set in the Preferences dialog or with
+  `lens_preferences(theme = "light")`. `viewer$set_theme()` still sets one object's, and
+  `set_theme()` with no argument goes back to the preference.
+* With a giotto object shown, panels waiting for metadata point to the Data panel, which
+  their note opens, as well as to `viewer$push_metadata()`.
+
 * Each panel group's tab bar has buttons that split it to the right or below. The new pane
   lists the views it can show; picking one already open, such as the spatial view, moves it
   there.

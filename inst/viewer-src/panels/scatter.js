@@ -31,8 +31,9 @@ export function createScatterPanel(body, ctx) {
     { key: 'color', label: 'color', value: colorDef,
       options: [{ value: '', label: 'as spatial' }, ...cols.map(c => c.name)] },
   ], [
-    { icon: 'hand', title: 'pan', toggle: 'mode', active: true, onClick: () => setMode('pan') },
-    { icon: 'lasso', title: 'lasso (Shift adds, Alt or Ctrl/Cmd subtracts)', toggle: 'mode', onClick: () => setMode('lasso') },
+    { icon: 'hand', title: 'pan', toggle: 'mode', value: 'pan', active: true, onClick: () => setMode('pan') },
+    { icon: 'lasso', title: 'lasso (Shift adds, Alt or Ctrl/Cmd subtracts)', toggle: 'mode', value: 'lasso',
+      onClick: () => setMode('lasso') },
     { icon: 'maximize-2', title: 'zoom to fit', onClick: () => homeVS && deck?.setProps({ viewState: { ...homeVS } }) },
   ]);
   const area = chartArea(body);
@@ -43,7 +44,7 @@ export function createScatterPanel(body, ctx) {
     mode = m;
     deck?.setProps({ controller: m === 'lasso' ? { dragPan: false, doubleClickZoom: false } : { doubleClickZoom: false } });
     if (m !== 'lasso') clearLasso();
-    body.querySelectorAll('[data-toggle="mode"]').forEach(b => b.classList.toggle('active', b.title === m));
+    body.querySelectorAll('[data-toggle="mode"]').forEach(b => b.classList.toggle('active', b.dataset.value === m));
   }
 
   function recolor() {

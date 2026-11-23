@@ -15,7 +15,6 @@ import { updateScalebar, fitZoom, dragPan, viewportSize } from '../ui/dom.js';
 // @ts-ignore: plain JS module
 import { attachInput, updateRulerLabel, updateTxConnector } from '../ui/input.js';
 // @ts-ignore: plain JS module
-import { attachAnnotPopup } from '../ui/annotations.js';
 // @ts-ignore: plain JS module
 import { hideCellTooltip } from '../ui/tooltip.js';
 import { attachRegistration, onMainView } from '../ui/registration.ts';
@@ -64,9 +63,6 @@ const TEMPLATE = `
   <div class="tx-lasso-panel" data-el="txPanel">
     <div class="tx-lasso-hdr"><span class="tx-lasso-title" data-el="txTitle"></span><button class="tx-lasso-close" data-el="txClose">×</button></div>
     <div class="tx-lasso-results" data-el="txResults"></div>
-  </div>
-  <div class="annot-popup" data-el="annotPopup">
-    <input class="annot-name" data-el="annotName" type="text" placeholder="name…" autocomplete="off" spellcheck="false">
   </div>`;
 
 // The camera is saved with the config, a moment after it stops moving
@@ -143,7 +139,6 @@ export function createSpatialPanel(body: HTMLElement, _ctx: PanelCtx): PanelHand
   });
 
   attachInput(view);
-  attachAnnotPopup(view);
   const detachReg = attachRegistration(view);
 
   // Started at its first size; resizes (dragging a sash, the panels toggle)

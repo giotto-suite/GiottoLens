@@ -18,14 +18,15 @@ import { cellColorBuffer, columnScale } from './render/colors.ts';
 import { initRenderScheduler, requestRender } from './render/schedule.js';
 import { initAnnotations, generateAnnotId, nextAnnotName } from './ui/annotations.js';
 import { initReleaseGuard } from './ui/release.js';
-import { initSelectionBar, initRStatus } from './ui/selbar.js';
+import { initSelectionBar, initRStatus, initPanelsToggle } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
 import { initDock, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
   showBuiltin } from './panels/dock.ts';
-import { initTray, placeControls, refreshControls, showControl, hideControl } from './panels/tray.ts';
+import { initTray, refreshControls, showControl, hideControl } from './panels/tray.ts';
 import { initToolsRail } from './panels/tools.ts';
+import { initModules, applyModule } from './panels/modules.ts';
 import { initSaved, savedList } from './panels/saved.ts';
 import { initAnalysis, analysisModel } from './panels/analysis.js';
 import { spatialView } from './spatial/current.ts';
@@ -106,7 +107,7 @@ async function addImage(entry) {
   state.images.set(img.entry.name, img);
   setImageDefaults(img, true);
   initRegistration();
-  placeControls();
+  applyModule();   // the tray's controls, and a module that needed an image
   refreshControls(['layers', 'register']);
   return { name: img.entry.name, rgb: img.rgb };
 }
@@ -171,8 +172,19 @@ async function main() {
   store.subscribe(s => s.layers, () => { invalidateTx(); updateTiles(spatialView()?.viewState); });
   store.subscribe(s => [s.genes, s.txPalette, s.colorAll], invalidateTx,
     { equalityFn: (a, b) => a.every((v, i) => v === b[i]) });
-  applyTheme(store.getState().theme);
-  store.subscribe(s => s.theme, t => { applyTheme(t); refreshCharts(); });
+  // The config's theme when set (set_theme()), else the preference
+  let theme = null;
+  const themeNow = () => {
+    const t = store.getState().theme ?? prefs().theme;
+    if (t === theme) return;
+    const first = theme === null;
+    theme = t;
+    applyTheme(t);
+    if (!first) refreshCharts();
+  };
+  themeNow();
+  store.subscribe(s => s.theme, themeNow);
+  onPrefs(themeNow);
 
   initAnnotations();
   initReleaseGuard();
@@ -184,7 +196,8 @@ async function main() {
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
-  // After the dock: its panels toggle follows the layout (its width is CSS's)
+  initModules();
+  initPanelsToggle();
   initToolsRail(document.getElementById('tools-rail'));
 
   // ── R → viewer messages ───────────────────────────────────────────────────
@@ -226,7 +239,7 @@ async function main() {
 
   // Before R can ask about images
   await imagesLoaded;
-  placeControls();   // the images' section and the register panel, now that images are open
+  applyModule();   // the images' section, the register panel and a saved module, now that images are open
   refreshControls(['layers']);
   initRegistration();
 

@@ -1,5 +1,5 @@
-// The annotation name popup over the spatial view, and the annotations sent
-// to R. The list is a panel (panels/annotations.ts).
+// Annotation names and ids, and the annotations sent to R. The list, where a
+// name is edited, is a panel (panels/annotations.ts).
 import { store, actions } from '../core/store.ts';
 import { sendToR, onMessage } from '../core/comms.js';
 
@@ -18,45 +18,11 @@ export function nextAnnotName(names) {
   return `annotation_${n + 1}`;
 }
 
-function nameProblem(id, name) {
+// What is wrong with `name` for annotation `id`, or null
+export function nameProblem(id, name) {
   if (!name) return 'a name is needed';
   if (store.getState().annotations.some(a => a.id !== id && a.name === name)) return 'name taken';
   return null;
-}
-
-// The selected annotation's name, edited in a view's popup. A new name is
-// taken on Enter or leaving the box; an empty or taken one reverts.
-export function attachAnnotPopup(view) {
-  const { annotPopup: $popup, annotName: $name } = view.el;
-  const unsub = store.subscribe(s => s.selectedAnnotId, id => {
-    const annot = id && store.getState().annotations.find(a => a.id === id);
-    $name.classList.remove('invalid');
-    $name.title = '';
-    if (annot) {
-      $name.value = annot.name;
-      $popup.classList.add('visible');
-    } else {
-      $popup.classList.remove('visible');
-    }
-  }, { fireImmediately: true });
-  view.signal.addEventListener('abort', unsub);
-
-  $name.addEventListener('input', () => {
-    const id = store.getState().selectedAnnotId;
-    const problem = id && nameProblem(id, $name.value.trim());
-    $name.classList.toggle('invalid', !!problem);
-    $name.title = problem || '';
-  });
-  $name.addEventListener('change', () => {
-    const id = store.getState().selectedAnnotId;
-    const annot = id && store.getState().annotations.find(a => a.id === id);
-    if (!annot) return;
-    const name = $name.value.trim();
-    if (nameProblem(id, name)) $name.value = annot.name;
-    else if (name !== annot.name) actions.renameAnnotation(id, name);
-    $name.classList.remove('invalid');
-    $name.title = '';
-  });
 }
 
 // The annotations R holds (drawn in an earlier page, or opened from a save)

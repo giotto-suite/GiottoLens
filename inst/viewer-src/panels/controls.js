@@ -3,7 +3,7 @@
 import { createIcons, icons } from 'lucide';
 
 // fields: [{ key, label, options: [value | { value, label }], value }]
-// buttons: [{ icon, title, onClick, toggle?: group name, active? }]
+// buttons: [{ icon, title, onClick, toggle?: group name, value?: its value in the group, active? }]
 // The fields go in the bar along the top. The buttons are view tools and go in
 // a vertical stack over the chart's lower right (`els.tools`), so a narrow pane's
 // bar does not wrap onto a second row. The stack is the body's, not the chart
@@ -39,6 +39,7 @@ export function buildControlBar(body, fields, buttons = []) {
     btn.className = 'tool-btn' + (b.active ? ' active' : '');
     btn.title = b.title;
     if (b.toggle) btn.dataset.toggle = b.toggle;
+    if (b.value) btn.dataset.value = b.value;
     const i = document.createElement('i');
     i.setAttribute('data-lucide', b.icon);
     btn.appendChild(i);
@@ -53,7 +54,7 @@ export function buildControlBar(body, fields, buttons = []) {
   if (buttons.length) {
     body.appendChild(tools);
     els.tools = tools;
-    createIcons({ icons, nodes: tools.querySelectorAll('[data-lucide]') });
+    createIcons({ icons, root: tools });   // lucide has no `nodes`: without a root it scans the page
   }
   return els;
 }

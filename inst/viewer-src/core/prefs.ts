@@ -15,6 +15,7 @@ export interface Prefs {
   gene_style: 'default' | 'divergent' | 'sequential';
   cat_palette: 'default' | 'vivid' | 'okabe_ito';
   tx_palette: 'default' | 'vivid';
+  theme: 'dark' | 'light';
   background: string;
   outline_color: string;
   selection_color: string;
@@ -34,7 +35,7 @@ export type PrefName = keyof Prefs;
 export const BUILTIN: Prefs = {
   seq_palette: 'viridis', div_palette: 'blue-white-red', scale_style: 'divergent',
   gene_style: 'default', cat_palette: 'default',
-  tx_palette: 'default', background: '#0d1117', outline_color: '#000000', selection_color: '#ffdc32', outline_width: 1,
+  tx_palette: 'default', theme: 'dark', background: '#0d1117', outline_color: '#000000', selection_color: '#ffdc32', outline_width: 1,
   outline_opacity: 0.8, fill_opacity: 0.9, expr_values: 'normalized', de_values: 'normalized',
   color_by: '', threads: 4, history: 10, network_dir: '',
 };

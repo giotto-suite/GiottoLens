@@ -713,7 +713,7 @@ function openCatalog() {
     });
     foot.append(cancel, go);
     detail.append(foot);
-    createIcons({ icons, nodes: dlg.querySelectorAll('[data-lucide]') });
+    createIcons({ icons, root: dlg });
   };
   show();
   document.body.append(bg);
@@ -792,7 +792,7 @@ export function createAnalysisPanel(body, ctx) {
     if (tab && !tab.auto) root.append(runBar(tab));
     for (const s of tab ? pipelineSteps(model, tab.id) : [])
       root.append(stepSection(s, send, tab && !tab.auto));
-    createIcons({ icons, nodes: root.querySelectorAll('[data-lucide]') });
+    createIcons({ icons, root });
     root.scrollTop = top;
     if (helpWas) {
       const b = [...root.querySelectorAll('.an-qmark')].find(x => x.dataset.helpKey === helpWas);

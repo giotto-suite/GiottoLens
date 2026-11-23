@@ -7,6 +7,7 @@
 // compare_selections() tests two of them (a job; its results dock as a
 // volcano plot).
 import { createIcons, icons } from 'lucide';
+import { editName } from '../ui/rename.ts';
 import { store } from '../core/store.ts';
 // @ts-ignore: plain JS module
 import { askR, onMessage } from '../core/comms.js';
@@ -59,11 +60,13 @@ export function createSavedSection(): { el: HTMLElement; destroy(): void } {
   save.addEventListener('click', doSave);
   name.addEventListener('keydown', e => { if (e.key === 'Enter' && !save.disabled) doSave(); });
 
+  let editing = false;   // a name is being edited: the list waits
   function render() {
+    if (editing) return;
     name.placeholder = nextName(saved);
     save.disabled = !Object.keys(store.getState().rules).length;
-    // Rows as the annotations panel's: a click brings the rules back, ×
-    // removes it
+    // Rows as the annotations panel's: a click brings the rules back, a
+    // double-click on the name renames it, × removes it
     list.replaceChildren(...saved.map(s => {
       const row = el('div', 'annot-row rg-item');
       row.dataset.saved = s.name;
@@ -75,13 +78,27 @@ export function createSavedSection(): { el: HTMLElement; destroy(): void } {
       del.addEventListener('click', e => { e.stopPropagation(); void act({ action: 'remove', name: s.name }); });
       row.addEventListener('click', () => void act({ action: 'restore', name: s.name }));
       const rules = s.rules.length === 1 ? '1 rule' : `${s.rules.length} rules`;
-      row.append(el('span', 'annot-name-text', s.name), el('span', 'rg-n', `${rules} · ${s.n.toLocaleString()}`), del);
+      const text = el('span', 'annot-name-text', s.name);
+      text.title = 'double-click to rename';
+      row.append(text, el('span', 'rg-n', `${rules} · ${s.n.toLocaleString()}`), del);
       return row;
     }));
     createIcons({ icons, root: list });
     if (!saved.length) list.append(el('div', 'rg-empty', 'none saved yet'));
   }
 
+  // On the list, which outlives its rows: a restore can redraw them between
+  // the two clicks
+  list.addEventListener('dblclick', e => {
+    const text = (e.target as Element).closest('.annot-name-text') as HTMLElement | null;
+    const old = (text?.closest('.rg-item') as HTMLElement | null)?.dataset.saved;
+    if (!text || old == null) return;
+    const problem = (n: string) => !n ? 'a name is needed'
+      : saved.some(s => s.name === n && s.name !== old) ? 'name taken' : null;
+    editing = true;
+    editName(text, old, problem, n => void act({ action: 'rename', name: old, to: n }),
+      () => { editing = false; render(); });
+  });
   mounted.add(render);
   const unsub = store.subscribe(s => s.rules, render);
   render();

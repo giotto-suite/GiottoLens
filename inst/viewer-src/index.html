@@ -116,20 +116,12 @@
     .tx-gene-bar { height: 100%; background: #fbbf24; border-radius: 2px; }
     .tx-gene-count { color: var(--fg-2); width: 36px; text-align: right; flex-shrink: 0; }
 
-    .annot-popup {
-      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-      background: rgba(17,24,39,0.92); border: 1px solid var(--bg-2); border-radius: 6px;
-      padding: 10px 12px; display: none; flex-direction: column; gap: 6px;
-      pointer-events: all; z-index: 10; min-width: 160px;
+    /* A name edited in place in a list (ui/rename.ts) */
+    .name-edit {
+      flex: 1; min-width: 0; padding: 1px 4px; background: var(--bg-2); border: 1px solid var(--fg-4);
+      border-radius: 3px; color: var(--fg-0); font-size: 11px; font-family: monospace; outline: none;
     }
-    .annot-popup.visible { display: flex; }
-    .annot-name {
-      width: 100%; padding: 4px 8px; background: var(--bg-2);
-      border: 1px solid var(--bg-3); border-radius: 4px;
-      color: var(--fg-0); font-size: 12px; font-family: monospace; outline: none;
-    }
-    .annot-name:focus { border-color: var(--fg-4); }
-    .annot-name.invalid { border-color: #ef4444; }
+    .name-edit.invalid { border-color: #ef4444; }
 
     /* The transcripts panel (panels/transcripts.ts) */
     .gene-head { flex-shrink: 0; border-bottom: 1px solid var(--bg-2); }
@@ -378,7 +370,7 @@
     .rg-list { margin: 0 -12px 4px; }
     .rg-n { color: var(--fg-4); font: 10px monospace; white-space: nowrap; }
     .rg-del:hover { color: #f87171; }
-    .rg-empty { color: var(--fg-4); font-size: 10px; margin-bottom: 4px; }
+    .rg-empty { color: var(--fg-4); font-size: 10px; margin-bottom: 4px; padding: 0 12px; }   /* in .rg-list, padded as its rows */
     .rg-status:empty { display: none; }
     .rg-status { font-size: 10px; color: var(--fg-2); overflow-wrap: anywhere; }
     .rg-status.rg-error { color: #f87171; }
@@ -416,7 +408,13 @@
     .filter-clear:disabled, .meta-sel-apply:disabled { opacity: 0.4; cursor: default; }
     .filter-note { color: var(--fg-3); font: 10px monospace; }
     .filter-note:empty { display: none; }
-    .table-hint { margin-left: auto; color: var(--fg-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .table-bar .table-help { margin-left: auto; padding: 2px; background: none; border: none; color: var(--fg-4);
+      display: inline-flex; align-items: center; }
+    .table-bar .table-help:hover { color: var(--fg-1); }
+    .table-help svg { width: 13px; height: 13px; }
+    .table-help-note { display: none; flex-shrink: 0; padding: 5px 10px; font-size: 11px; color: var(--fg-2);
+      background: var(--bg-1); border-bottom: 1px solid var(--bg-2); }
+    .table-help-note.visible { display: block; }
     .table-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
     .table-inner { position: relative; min-width: 100%; }
     .table-rows { position: absolute; left: 0; right: 0; }
@@ -590,7 +588,8 @@
       display: flex; flex-direction: column; overflow: hidden;
     }
     /* The spatial view (spatial/view.ts), always in the dark colours */
-    .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--view-bg, var(--bg-1)); color: var(--fg-1); }
+    /* The data canvases' dark (--bg-0, as the scatter's), apart from the chrome's --bg-1 */
+    .spatial-pane { position: absolute; inset: 0; overflow: hidden; background: var(--view-bg, var(--bg-0)); color: var(--fg-1); }
     .tx-connector { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9; }
     /* The dock and the tray beside it */
     #workarea { flex: 1; min-height: 0; display: flex; }
@@ -613,12 +612,18 @@
       --dv-tabs-and-actions-container-font-size: 11px;
       --dv-drag-over-background-color: rgba(59, 130, 246, 0.25);
       --dv-paneview-active-outline-color: var(--accent);
+      /* A divider between panes lights up when the pointer is on it, as a hint that it drags */
+      --dv-active-sash-color: var(--accent);
+      --dv-active-sash-transition-delay: 0s;
+      --dv-active-sash-transition-duration: 0s;
       font-family: monospace;
     }
     .lens-dock .dv-tab { padding: 0 8px; }
     .lens-dock .dv-default-tab-action { padding: 2px; }
     .stats-pane-body { position: absolute; inset: 0; overflow: auto; display: flex; flex-direction: column; color: var(--fg-1); }
     .panel-note { margin: auto; padding: 16px; color: var(--fg-4); font-size: 11px; text-align: center; }
+    .note-link { background: none; border: none; padding: 0; font: inherit; color: var(--fg-2); text-decoration: underline; cursor: pointer; }
+    .note-link:hover { color: var(--fg-0); }
     .dock-actions { position: relative; height: 100%; display: flex; align-items: center; padding: 0 6px; }
     .dock-add { background: none; border: none; color: var(--fg-3); font: 14px monospace; cursor: pointer; padding: 0 4px; }
     .dock-add:hover { color: var(--fg-1); }
@@ -631,6 +636,7 @@
     }
     .dock-menu.open { display: flex; }
     .dock-menu-float { position: fixed; }
+    .dock-menu button:disabled { opacity: 0.4; cursor: default; }
     .dock-menu button, .dock-empty button {
       background: none; border: none; color: var(--fg-2); font: 11px monospace; text-align: left;
       padding: 4px 10px; cursor: pointer;
@@ -647,9 +653,11 @@
     .stats-ctrl-sel:focus { border-color: var(--fg-4); }
     .stats-chart-area { flex: 1; overflow: hidden; min-height: 0; }
     /* The tools rail (panels/tools.ts): the page's own actions, a column of
-       icons at the left edge, as the tray's rail is at the right */
+       icons at the left edge */
     #tools-rail { flex-shrink: 0; width: 36px; background: var(--bg-1); border-right: 1px solid var(--bg-2); }
-    .tools-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; }
+    .tools-bar { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; }
+    /* Preferences sit apart, at the rail's foot */
+    .tools-bar [data-act=preferences] { margin-top: auto; }
     .tools-bar .tool-btn { width: 30px; height: 30px; }
     /* The jobs button and its popover (ui/jobs.ts) */
     .jobs-btn { position: relative; }
@@ -677,6 +685,15 @@
     :root[data-theme="light"] .job-row.state-error .job-msg { color: #b91c1c; }
     /* The info button's popover (ui/info.ts) */
     .info-popover { width: 320px; max-height: 75vh; }
+    /* A flyout from the tools rail (ui/flyout.ts): beside it, down to the bottom bar */
+    .flyout { position: fixed; z-index: 900; width: 320px; bottom: 36px; display: flex; flex-direction: column;
+      background: var(--bg-1); border: 1px solid var(--bg-3); border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.45); }
+    .flyout-head { flex-shrink: 0; height: 26px; display: flex; align-items: center; padding: 0 4px 0 10px;
+      border-bottom: 1px solid var(--bg-2); color: var(--fg-2); font: 11px monospace; }
+    .flyout-title { flex: 1; }
+    .flyout-close { background: none; border: none; color: var(--fg-3); font-size: 14px; cursor: pointer; padding: 0 6px; }
+    .flyout-close:hover { color: var(--fg-0); }
+    .flyout-body { position: relative; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; color: var(--fg-1); }
     .info-title { display: flex; align-items: center; gap: 6px; color: var(--fg-0); font-size: 12px; margin: 2px 0 4px; overflow-wrap: anywhere; }
     .info-desc { color: var(--fg-1); margin: 2px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
     .info-tags { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0 4px; }
@@ -702,16 +719,23 @@
     .info-detail { margin-left: 4px; color: var(--fg-3); font-size: 10px; }
 
     /* The tray (panels/tray.ts): the controls' sections, a fixed width, and
-       the rail that shows and hides them at the page's edge */
-    #tray { flex-shrink: 0; display: flex; background: var(--bg-0); border-left: 1px solid var(--bg-2); }
+       the rail that shows and hides them, on the tray's left side */
+    /* The tray is page chrome, as the rails are (--bg-1); the views it acts on keep --bg-0 */
+    #tray { position: relative; flex-shrink: 0; display: flex; background: var(--bg-1); border-left: 1px solid var(--bg-2); }
+    /* The tray's dividers (panels/tray.ts sash()): lit at once under the pointer, as the dock's */
+    .lens-sash { position: absolute; z-index: 20; touch-action: none; }
+    .lens-sash:hover, .lens-sash.dragging { background: var(--accent); }
+    .lens-sash-col { top: 0; bottom: 0; left: 35px; width: 4px; cursor: col-resize; }   /* on the rail's right border (36 px) */
+    #tray:not(.open) .lens-sash-col { display: none; }
+    .lens-sash-row { left: 0; right: 0; top: -2px; height: 4px; cursor: row-resize; }
     .tray-sections { display: none; width: var(--tray-width); flex-direction: column; overflow-y: auto; }
     #tray.open .tray-sections { display: flex; }
     .tray-rail { width: 36px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0;
-      background: var(--bg-1); border-left: 1px solid var(--bg-2); }
+      background: var(--bg-1); border-right: 1px solid var(--bg-2); }
     .tray-rail .tool-btn { width: 30px; height: 30px; }
-    .tray-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .tray-section { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .tray-head { flex-shrink: 0; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px;
-      background: var(--bg-1); color: var(--fg-2); font: 11px monospace; }
+      background: var(--bg-0); border-bottom: 1px solid var(--bg-2); color: var(--fg-2); font: 11px monospace; }
     .tray-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tray-rail-sep { width: 20px; height: 1px; margin: 2px 0; background: var(--bg-3); }
     /* The layers panel (panels/layers.ts): a collapsible section per layer */
@@ -733,6 +757,9 @@
        in a list that scrolls, the saved selections */
     .selection-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px 6px; font-size: 12px; }
     .selection-panel .ctl-actions { margin-top: 0; margin-bottom: 6px; }
+    /* The combine mode's symbol, before the rules (ui/selbar.js) */
+    #sel-mode { display: flex; align-items: center; margin-left: 4px; color: var(--fg-2); }
+    #sel-mode svg { width: 14px; height: 14px; stroke-width: 1.75; }
     .sel-top { flex-shrink: 0; }
     .sel-head { flex-shrink: 0; margin-top: 4px; }
     .sel-rules { flex: 1; min-height: 72px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
@@ -748,7 +775,9 @@
     .rule-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rule-n { margin-left: auto; white-space: nowrap; }
     .rule-empty { color: var(--fg-4); font-size: 10px; padding: 4px 0; }
-    .selection-panel .rg { flex-shrink: 0; max-height: 40%; }
+    /* Out to the panel's edges, padded back, so the rows flush with them (.rg-list) fit
+       inside its scroll box rather than overflowing it sideways */
+    .selection-panel .rg { flex-shrink: 0; max-height: 40%; margin: 0 -12px; padding: 0 12px; }
     .tray-body { position: relative; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; color: var(--fg-1); }
 
     /* The selection bar (ui/selbar.js) */
@@ -850,6 +879,7 @@
        of the panels */
     body.empty #workarea, body.empty .selbar-sel { display: none; }
     body.empty #status { margin-left: auto; }
+    body.empty #btn-panels { display: none; }
     .start-host { position: relative; flex: 1; inset: auto; }
 
     /* The start page (ui/start.ts): in place of the view, or as a dialog */
@@ -931,10 +961,12 @@
       <span class="r-status" id="r-status" title="R: connecting"></span>
       <button class="tool-btn" id="btn-close" title="stop the viewer (viewer$close())" disabled><i data-lucide="power"></i></button>
       <div class="selbar-sel">
+        <span id="sel-mode"></span>
         <button id="sel-rules" style="display:none"></button>
         <span id="sel-count"></span>
       </div>
       <div id="status">initializing…</div>
+      <button class="tool-btn" id="btn-panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
     </div>
   </div>
 

@@ -19,6 +19,7 @@ import { evaluate, encodeMask, primeMask, countMask, type Rule } from '../select
 import { metaColumn, metaValue, onColumnsLoaded, pinColumns } from '../data/meta.ts';
 import type { PanelCtx, PanelHandle } from './dock.ts';
 import { filterButton } from './filter.ts';
+import { createIcons, icons } from 'lucide';
 
 export const ROW_H = 20;            // px
 const MAX_H = 8_000_000;            // px: browsers cap an element's height near 2^25
@@ -103,18 +104,27 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
 
   const count = el('span', { className: 'table-count' });
   const clear = el('button', { className: 'table-clear', textContent: 'clear picks' });
-  const hint  = el('span', { className: 'table-hint', textContent: 'click a row; ⌘/ctrl toggles, shift adds a range' });
+  // How picking works, behind an info button at the bar's end: shown on hover
+  // (its title) and, clicked, in a note under the bar until the next click
+  const HELP = 'click a row to pick it; ⌘/ctrl toggles a row, shift adds a range';
+  const help = el('button', { className: 'table-help', title: HELP });
+  help.innerHTML = '<i data-lucide="info"></i>';
+  createIcons({ icons, root: help });
+  const helpNote = el('div', { className: 'table-help-note', textContent: HELP });
+  const off = new AbortController();
+  help.addEventListener('click', e => { e.stopPropagation(); helpNote.classList.toggle('visible'); });
+  document.addEventListener('click', () => helpNote.classList.remove('visible'), { signal: off.signal });
   const bar = el('div', { className: 'table-bar' });
   // The metadata filter: a rule of its own, which narrows the rows (panels/filter.ts)
   const filter = filterButton();
-  bar.append(filter.button, count, clear, hint);
+  bar.append(filter.button, count, clear, help);
   const scroll = el('div', { className: 'table-scroll' });
   const inner  = el('div', { className: 'table-inner' });
   const head   = el('div', { className: 'table-row table-header' });
   const rowsEl = el('div', { className: 'table-rows' });
   inner.append(head, rowsEl);
   scroll.append(inner);
-  body.append(bar, scroll);
+  body.append(bar, helpNote, scroll);
 
   let columns: string[] = [];
   let inView: string[] = [];              // columns in view, pinned while shown
@@ -227,7 +237,7 @@ export function createTablePanel(body: HTMLElement, ctx: PanelCtx): PanelHandle 
   render();
 
   return {
-    destroy: () => { unsub.forEach(f => f()); resize.disconnect(); clearTimeout(idTimer); filter.destroy(); },
+    destroy: () => { unsub.forEach(f => f()); resize.disconnect(); clearTimeout(idTimer); filter.destroy(); off.abort(); },
     show: refresh,
   };
 }

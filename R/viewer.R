@@ -1140,13 +1140,33 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Enter a module, a mode for one task: the tray offers
+        #'   its controls only and the data area shows its view alone, until
+        #'   it is left (adr/0031). `"registration"`: the register control and
+        #'   the spatial view, split into the image's pane and the data's while
+        #'   placing points; it needs an image. `register_image()` enters it
+        #'   too. Part of the saved config (`state()$config$module`).
+        #' @param module A module's name, or `NULL` to leave the one on
+        set_module = function(module = NULL) {
+            if (!is.null(module) && (!is.character(module) || length(module) != 1L || !module %in% .lens_modules))
+                stop("[LensViewer] `module` must be NULL or one of: ", paste(.lens_modules, collapse = ", "),
+                    call. = FALSE)
+            private$request("set_module", list(module = module))
+            invisible(self)
+        },
+
         #' @description Show the viewer's panels and controls dark or light.
         #'   The spatial view and scatter plots stay dark in both: their
         #'   colors (the selection, uncolored cells, image channels) are
         #'   chosen for a dark background. Part of the saved config
-        #'   (`state()$config$theme`).
-        #' @param theme `"dark"` (the default) or `"light"`
-        set_theme = function(theme) {
+        #'   (`state()$config$theme`, `NULL` while it follows the preference).
+        #' @param theme `"dark"` or `"light"`; `NULL` goes back to the `theme`
+        #'   preference (see [lens_preferences()]), dark unless set
+        set_theme = function(theme = NULL) {
+            if (is.null(theme)) {
+                private$request("set_theme", list(reset = TRUE))
+                return(invisible(self))
+            }
             if (!is.character(theme) || length(theme) != 1L || !theme %in% c("dark", "light"))
                 stop("[LensViewer] `theme` must be \"dark\" or \"light\"", call. = FALSE)
             private$request("set_theme", list(theme = theme))
@@ -1534,6 +1554,20 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(self)
         },
 
+        #' @description Rename a saved selection. Its place in the list stays.
+        #' @param name Its name
+        #' @param new_name The new name; no other saved selection may have it
+        rename_selection = function(name, new_name) {
+            site <- "LensViewer$rename_selection"
+            private$saved_get(name, site)
+            new_name <- .check_selection_name(new_name, site)
+            if (!identical(new_name, name) && !is.null(private$saved_sel[[new_name]]))
+                stop("[", site, "] a saved selection is already named '", new_name, "'", call. = FALSE)
+            names(private$saved_sel)[names(private$saved_sel) == name] <- new_name
+            private$send_saved()
+            invisible(self)
+        },
+
         #' @description Bring back a saved selection: its rules replace the
         #'   selection's, each under its own source (a lasso as the spatial
         #'   view's, a histogram range as that histogram's), with its combine
@@ -1725,7 +1759,7 @@ LensViewer <- R6::R6Class("LensViewer",
         #' @description The panels: id, kind (a chart: `"scatter"`,
         #'   `"histogram"`, `"density"`, `"table"`, or `"spec"` for a pushed
         #'   one; `"spatial"`, `"analysis"`; a control shown in the
-        #'   tray: `"layers"`, `"selection"`, `"data"`, `"register"`,
+        #'   tray: `"layers"`, `"selection"`, `"register"`,
         #'   `"annotations"`), title,
         #'   the group of tabs it is in (`"tray"` for a control), and whether
         #'   it is in view (not behind another tab, nor hidden by the panels
@@ -2560,7 +2594,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     NULL
                 },
                 # Saved selections (the selection panel): save, remove,
-                # restore; and compare, which no page control sends at
+                # rename (to `to`), restore; and compare, which no page control sends at
                 # present. A compare is answered when its job ends, with the
                 # result's id.
                 selection = {
@@ -2568,6 +2602,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     switch(str1(dat$action) %||% "",
                         save    = list(data = list(cells = length(self$save_selection(name)))),
                         remove  = { self$remove_selection(name); list(data = list()) },
+                        rename  = { self$rename_selection(name, str1(dat$to) %||% ""); list(data = list()) },
                         restore = { self$restore_selection(name); list(data = list()) },
                         compare = {
                             b <- str1(dat$b)
@@ -3556,6 +3591,9 @@ print.lens_description <- function(x, ...) {
 # letters, digits, `_`, `.`, `-`. The built-in panels' ids (the kinds below,
 # and scatter-2, ... for charts added in the viewer) are the viewer's, so
 # push_panel() cannot take them. Keep in step with TYPES in panels/dock.ts.
+# The modules (panels/modules.ts MODULES)
+.lens_modules <- "registration"
+
 .lens_builtin_panels <- c("spatial", "tools", "scatter", "histogram", "density", "table", "cells",
     "transcripts", "selection", "data", "analysis", "images", "register", "annotations",
     "layers")

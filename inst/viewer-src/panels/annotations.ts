@@ -1,6 +1,6 @@
 // The annotations panel: the drawn and pushed shapes (store `annotations`),
-// each selectable (its name is edited in the popup over the spatial view,
-// ui/annotations.js), zoomed to, used to select the cells inside it (as a
+// each selectable, renamed by a double-click on its name (ui/rename.ts),
+// zoomed to, used to select the cells inside it (as a
 // lasso stroke of the same ring), or deleted. A note until there are any.
 import { store, actions, type Annotation } from '../core/store.ts';
 // @ts-ignore: plain JS module
@@ -11,6 +11,9 @@ import { createIcons, icons } from 'lucide';
 import type { PanelHandle } from './dock.ts';
 import { spatialView } from '../spatial/current.ts';
 import { lassoSpatial, strokeOp } from '../selection/selection.ts';
+import { editName } from '../ui/rename.ts';
+// @ts-ignore: plain JS module
+import { nameProblem } from '../ui/annotations.js';
 
 // Clamped to the fitted view's maxZoom: once the controller has moved the
 // camera its view state carries maxZoomX/maxZoomY and no maxZoom
@@ -32,7 +35,9 @@ export function createAnnotationsPanel(body: HTMLElement): PanelHandle {
   const list = Object.assign(document.createElement('div'), { className: 'annot-list' });
   body.append(note, list);
 
+  let editing = false;   // a name is being edited: the list waits
   function render() {
+    if (editing) return;
     const { annotations, selectedAnnotId } = store.getState();
     note.style.display = annotations.length ? 'none' : '';
     list.replaceChildren(...annotations.map(a => {
@@ -40,7 +45,7 @@ export function createAnnotationsPanel(body: HTMLElement): PanelHandle {
         className: 'annot-row' + (a.id === selectedAnnotId ? ' selected' : '') });
       row.dataset.id = a.id;
       row.innerHTML =
-        `<span class="annot-name-text">${escapeHtml(a.name)}</span>` +
+        `<span class="annot-name-text" title="double-click to rename">${escapeHtml(a.name)}</span>` +
         `<button class="annot-row-btn annot-row-sel" title="select the cells inside (Shift adds, Alt or Ctrl/Cmd subtracts)"><i data-lucide="square-dashed-mouse-pointer"></i></button>` +
         `<button class="annot-row-btn annot-row-nav" title="zoom to"><i data-lucide="locate"></i></button>` +
         `<button class="annot-row-btn annot-row-del" title="delete"><i data-lucide="x"></i></button>`;
@@ -59,9 +64,22 @@ export function createAnnotationsPanel(body: HTMLElement): PanelHandle {
     }));
     createIcons({ icons, root: list });
   }
+  // Picking a row only moves the highlight, so a double-click's two clicks
+  // land on the same row
+  const highlight = (id: string | null) =>
+    list.querySelectorAll<HTMLElement>('.annot-row').forEach(r => r.classList.toggle('selected', r.dataset.id === id));
+  list.addEventListener('dblclick', e => {
+    const text = (e.target as Element).closest('.annot-name-text') as HTMLElement | null;
+    const id = (text?.closest('.annot-row') as HTMLElement | null)?.dataset.id;
+    const a = id && store.getState().annotations.find(x => x.id === id);
+    if (!text || !a) return;
+    editing = true;
+    editName(text, a.name, n => nameProblem(a.id, n), n => actions.renameAnnotation(a.id, n),
+      () => { editing = false; render(); });
+  });
   render();
-  const unsub = store.subscribe(s => [s.annotations, s.selectedAnnotId], render,
-    { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] });
+  const unsubList = store.subscribe(s => s.annotations, render);
+  const unsubSel = store.subscribe(s => s.selectedAnnotId, highlight);
 
-  return { destroy: unsub };
+  return { destroy: () => { unsubList(); unsubSel(); } };
 }

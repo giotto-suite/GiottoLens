@@ -75,7 +75,8 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               landmarks.ts (registration pairs)
   spatial/    view.ts (the spatial view panel: its DOM, Deck and camera), current.ts
               (spatialView(): the open view, or null)
-  ui/         input.js (a view's tools), annotations.js (name popup, sync to R), tooltip.js,
+  ui/         input.js (a view's tools), annotations.js (names, sync to R), rename.ts (a name edited
+              in place in a list, on a double-click), flyout.ts (a panel beside the tools rail), tooltip.js,
               rules.js (rule labels), selbar.js (selection bar), release.js, dom.js, registration.ts
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
               jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
@@ -92,7 +93,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               opacity and the layer's settings, from cells.ts (colour by, legend,
               outlines), transcripts.ts (genes), images.ts, and the annotations' names
               and outlines), selection.ts,
-              data.ts (the Data panel: what to pull from the object, through askR()),
+              data.ts (the Data panel, a flyout from the tools rail: what to pull from the object, through askR()),
               saved.ts (saved selections, the selection panel's lower section;
               saved-model.ts its helpers),
               analysis.js + analysis-model.ts (the Analysis panel),
@@ -378,7 +379,9 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - Colors read `prefs()` when they draw (`render/colors.ts`: `defaultPreset()`,
   `categoryPalette()`, fill opacity). Config fields that start from a preference
   (`outline`, `txPalette`) take a new preference only while they hold the old one (`onPrefs`
-  in `main.js`). The background applies only when set.
+  in `main.js`). The background applies only when set. The config's `theme` is `null` while
+  it follows the `theme` preference, and set only by `set_theme()`: a saved value would
+  otherwise win over the preference on every reload.
 
 ### Continuous color scales
 
@@ -405,7 +408,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   (adr/0019), and `open_save` (adr/0026); the Data panel's `catalog`, `pull`, the item cache's
   `item` and the tools bar's `save`, answered only to a page showing the current load
   (`.lens_object_ops`). The cell table's: `cell_ids` (also refused to a page on an
-  earlier load). The saved selections' `selection` (save, remove, restore; compare, answered
+  earlier load). The saved selections' `selection` (save, remove, rename, restore; compare, answered
   when its job ends, has no page control at present) is too. An ask is never queued while disconnected.
 - A tab sends `ready` once its handlers are registered; R then sends the saved config
   (`restore`, always, `null` the first time), metadata, rules and pushed panels, in that order.
@@ -507,7 +510,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   pointer is over one of its points; a drag starts after 4 px. Delete removes the open or last
   pair, Escape the open one.
 
-### Panels (adr/0009, adr/0016, adr/0023, adr/0027)
+### Panels (adr/0009, adr/0016, adr/0023, adr/0027, adr/0030, adr/0031)
 
 - Views dock (`panels/dock.ts`, dockview-core 4.13.1, pinned); the controls are in the tray
   (`panels/tray.ts`), and the selection bar is outside both. Docked kinds are listed once in
@@ -520,23 +523,36 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   in the saved layout, whose watermark (`Empty`) lists the `+` menu's kinds and closes it.
   Picked there, a single panel open elsewhere moves in (`showIn()`). A group emptied by a
   close or a drag is removed, as dockview does.
-- The tray is a fixed-width column (`TRAY_WIDTH`) beside the dock, with a rail of icons at
-  the page's edge. Controls are listed once in `CONTROLS`, in rail order; never let one be
-  docked or dragged. The tray shows one control, the last picked (`trayActive`, else the
-  first this launch has: `activeControl()`); one built keeps its DOM when another is picked
-  and catches up in `show()`. A click on the active one, or the rail's arrow, folds the tray
-  (`trayCollapsed`). A layer's settings go in its section of the layers panel (`SECTIONS` in
+- The tray is a column beside the dock (`TRAY_WIDTH` until the divider right of the rail is dragged: `trayWidth`), with a rail of icons on
+  its left side, between it and the dock; folded, the rail is at the page's edge. Controls are listed once in `CONTROLS`, in rail order; never let one be
+  docked or dragged. Each rail button shows or hides its control; those shown (`trayShown`,
+  null until one is picked: the first this launch has; `shownControls()`) stack in rail order and share the
+  height (`traySizes` once a divider between them is dragged; `sash()`). One built keeps its DOM while hidden and catches up in `show()`. With every one
+  hidden the tray stays open with a note; the rail's arrow folds it (`trayCollapsed`). A layer's settings go in its section of the layers panel (`SECTIONS` in
   `panels/layers.ts`), not a control of their own; collapsed sections keep their DOM, and
-  which are open is `layerSections`. `remove_panel()` of the control shown folds the tray
-  (`hideControl()`); R's asks to bring one forward go through `showControl()`. `panels()`
-  lists the control shown, with group `"tray"`, while the tray is open.
+  which are open is `layerSections`. `remove_panel()` of a control hides it
+  (`hideControl()`); R's asks to bring one forward go
+  through `showControl()`, which adds it to those shown. `panels()` lists the controls
+  shown, with group `"tray"`, while the tray is open.
 - The tools rail (`panels/tools.ts`, `#tools-rail`, 36 px) is the page's own actions, fixed at
-  the left edge outside the dock, as the tray's rail is at the right; it keeps
+  the left edge outside the dock. The Data panel is a flyout from it (`ui/flyout.ts`
+  `railFlyout()`, `showData()`), not a tray control: it stays open until its button, × or
+  Escape, and keeps its contents while closed, so a queue or a pull outlasts it; it keeps
   `data-panel="tools"` for the tests, and is not listed by `panels()`. A saved layout with the
   old tools panel loses it on restore (`dropUnavailable()`).
+- Modules (`panels/modules.ts`, adr/0031) are modes for one task, each one entry in `MODULES`
+  (controls, view, `available`, `enter`/`exit`); keep `.lens_modules` in R in step. One is on
+  at a time (store `module`): the tray's rail offers its controls only (`offered()`), the
+  controls shown are kept per module (`trayShown[module]`, `''` without one), and its view's
+  pane is maximized (`focusView()`, which gives the pane its width back on leaving).
+  `applyModule()` applies the store's module, also once images open. The tools rail's
+  modules button, the tray's leave button and R's `set_module()` enter and leave one; landmark
+  mode enters registration. The panels toggle (the bottom bar's right end, `initPanelsToggle()`) is `focusView('spatial')` with the tray hidden:
+  focus before the dock widens, let go after it narrows.
 - The selection bar (`ui/selbar.js`, static markup with ids in `index.html`, outside the
   dock) shows R's connection with the stop button (`close`; also on the start page,
-  `initRStatus()`), the page's selection count (a fixed minimum width) and the status line.
+  `initRStatus()`), the combine mode's symbol (`#sel-mode`), the page's selection count (a
+  fixed minimum width) and the status line.
   Keep buttons out of it after the count, since they would move as the count changes. The
   actions on the selection (combine mode, invert, clear), its rules as cards and the saved
   selections are the selection panel's, a control in the tray (`panels/selection.ts`,
@@ -569,12 +585,12 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 
 `LensViewer` public methods: `select()`, `set_selection()`, `rules()`, `state()`, `describe()`,
 `wait_for_selection()`, `subset()`, `view_bounds()`, `set_view()`, `zoom_to()`, `color_by()`,
-`set_layer()`, `set_mark()`, `set_outline()`, `set_annotation_style()`, `set_selection_color()`, `set_theme()`, `set_image()`, `add_image()`,
+`set_layer()`, `set_mark()`, `set_outline()`, `set_annotation_style()`, `set_selection_color()`, `set_theme()`, `set_module()`, `set_image()`, `add_image()`,
 `register_image()`, `clear_registration()`,
 `registered_image()`, `add_registered_image()`, `show_genes()`, `push_metadata()`, `catalog()`, `pull()`,
 `push_panel()`, `remove_panel()`, `jobs()`, `cancel_job()`, `save()`, `saves()`, `open_save()`,
 `delete_save()`, `save_selection()`, `selections()`,
-`restore_selection()`, `remove_selection()`, `compare_selections()`, `de_results()`,
+`restore_selection()`, `rename_selection()`, `remove_selection()`, `compare_selections()`, `de_results()`,
 `panels()`, `push_polygons()`,
 `analysis()`, `screenshot()`, `log()`, `on()`, `send()`, `close()`. Rule builders: `lens_polygon()`,
 `lens_bbox()`, `lens_range()`, `lens_categories()`, `lens_compare()`, `lens_cells()`,
