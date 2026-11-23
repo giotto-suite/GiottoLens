@@ -46,5 +46,5 @@ as bitmasks plus the rules.
 ## References
 
 `selection/rules.ts`, `selection/geometry.ts` (`ringTester`), `R/rules.R`;
-`tests/testthat/test-e2e.R` ("selections do not depend on what is loaded, and match R");
+`tests/testthat/test-e2e-selection.R` ("selections do not depend on what is loaded, and match R");
 design.Rmd "Selection rules".

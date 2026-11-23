@@ -113,3 +113,33 @@ test_that("a given mark is written for polygon cells too", {
     # The fixture's cells are 10 apart
     expect_equal(m$layers$cells$mark$size, 10, tolerance = 1e-5)
 })
+
+test_that("an untiled store is read as one tile, up to the cap", {
+    bx <- lens_bins_fixture()
+    fx <- lens_fixture()
+    gp <- fx$gpolygons
+    gp@spatVector <- suppressMessages(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(),
+        GiottoDisk::storeRead(gp@spatVector, output = "terra")))
+    st <- .store_tiles(gp@spatVector)
+    expect_identical(nrow(st), 1L)
+    expect_identical(st$n, 100L)
+    expect_true(file.exists(file.path(gp@spatVector@path, st$file)))
+    expect_silent(.check_tile_store(gp, "giottoPolygon", "polygons"))
+    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = 50L),
+        expect_error(.check_tile_store(gp, "giottoPolygon", "polygons"),
+            "untiled store of 100 geometries"))
+    cells <- .build_cells(gp@spatVector)
+    expect_identical(nrow(cells$table), 100L)
+    expect_identical(cells$tiles$n, 100L)
+})
+
+test_that("the untiled cap is per layer kind", {
+    fx <- lens_fixture()
+    gp <- fx$gpolygons
+    gp@spatVector <- suppressMessages(GiottoDisk::storeWrite(GiottoDisk::parquetGeomStore(),
+        GiottoDisk::storeRead(gp@spatVector, output = "terra")))
+    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = c(points = 10)),
+        expect_silent(.check_tile_store(gp, "giottoPolygon", "polygons")))
+    GiottoUtils::gwith_options(list(GiottoLens.untiled_max = c(polygons = 10)),
+        expect_error(.check_tile_store(gp, "giottoPolygon", "polygons"), "up to 10 "))
+})

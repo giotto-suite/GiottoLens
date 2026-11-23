@@ -101,4 +101,4 @@ One browser window shows the viewer at a time, and R decides which.
 `R/protocol.R`;
 `inst/viewer-src/core/comms.js` (`acquire`, `onGate`, `takeLaunchKey`), `core/base.ts` (`dataUrl`),
 `ui/gate.ts`; `tests/testthat/test-window.R`, `test-server.R`,
-`inst/viewer-src/test/gate.test.ts`; `SECURITY.md`.
+`inst/viewer-src/test/core/comms.test.ts`; `SECURITY.md`.

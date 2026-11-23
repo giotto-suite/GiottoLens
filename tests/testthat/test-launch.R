@@ -1,3 +1,5 @@
+# ── Launch inputs and deprecation ────────────────────────────────────────────
+
 test_that("launch inputs are checked up front", {
     expect_error(.resolve_layers(NULL, NULL, "rna", "cell"), "nothing to show")
     expect_error(.resolve_layers(data.frame(), NULL, "rna", "cell"), "must be a giottoPoints")
@@ -9,6 +11,28 @@ test_that("launch inputs are checked up front", {
         "feat_type 'protein' not found; available: rna")
     expect_null(.pick_layer(list(rna = 1), NULL, "feat_type"))
 })
+
+test_that("layer launches are deprecated, once per session", {
+    fx <- lens_fixture()
+    .lens_warned$layers <- NULL
+    on.exit(.lens_warned$layers <- TRUE, add = TRUE)
+    expect_warning(.resolve_object(fx$gpoints, fx$gpolygons), "deprecated")
+    expect_no_warning(.resolve_object(fx$gpoints, fx$gpolygons))
+})
+
+test_that("a viewer starts without an object and refuses what needs one", {
+    v <- launch_lens(open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    m <- jsonlite::fromJSON(rawToChar(http_get(lens_data_url(v, "session/manifest.json"))$content))
+    expect_true(m$empty)
+    expect_identical(m$load, 1L)
+    expect_error(v$push_metadata(data.frame(cell_ID = "a", x = 1)), "no object loaded")
+    expect_error(v$select(lens_range("x", 0, 1)), "no object loaded")
+    expect_error(v$state(), "no object loaded")
+    expect_output(print(v), "object: +none")
+})
+
+# ── Serving ──────────────────────────────────────────────────────────────────
 
 test_that("the viewer serves its bundle, session files and data ranges on localhost", {
     fx <- lens_fixture()
@@ -46,149 +70,26 @@ test_that("the viewer serves its bundle, session files and data ranges on localh
 
     expect_identical(http_get(lens_data_url(v, "data/transcripts/../x"))$status_code, 404L)
 
-    # Nothing is served without this launch's token in the path
+    # Nothing is served without this launch's token in the path, nor data
+    # without the data secret (adr/0028); the other forms of a wrong path are
+    # in test-server.R, on the app
     other <- sub("/lens/[^/]+/", "/lens/AAAAAAAAAAAAAAAAAAAAAAAA/", v$url)
     data <- sub(v$url, "", lens_data_url(v), fixed = TRUE)
-    for (p in c("", paste0(data, c("session/manifest.json", tile$url, tile$file)))) {
+    for (p in c("", paste0(data, c("session/manifest.json", tile$url, tile$file))))
         expect_identical(http_get(paste0(other, p))$status_code, 404L, info = p)
-        expect_identical(http_get(paste0(base, "/lens/", p))$status_code, 404L, info = p)
-    }
     expect_identical(http_get(paste0(base, "/other"))$status_code, 404L)
-
-    # No data is served without the data secret in the path (adr/0028)
-    for (p in c("session/manifest.json", tile$url, tile$file)) {
-        expect_identical(http_get(paste0(v$url, p))$status_code, 404L, info = p)
-        expect_identical(http_get(paste0(v$url, "d/", p))$status_code, 404L, info = p)
+    for (p in c("session/manifest.json", tile$url, tile$file))
         expect_identical(http_get(paste0(v$url, "d/AAAAAAAAAAAAAAAAAAAAAAAA/", p))$status_code,
             404L, info = p)
-    }
 })
 
-test_that("set_outline checks its arguments before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_outline(width = 0), "must be one number in \\[0.01, 20\\]")
-    expect_error(v$set_outline(width = 0.009), "must be one number in \\[0.01, 20\\]")
-    expect_error(v$set_outline(width = c(1, 2)), "must be one number")
-    expect_error(v$set_outline(color = c("red", "blue")), "one color name or hex string")
-    expect_error(v$set_outline(color = "notacolour"), "invalid color name")
-    expect_error(v$set_outline(alpha = 1.5), "must be one number in \\[0, 1\\]")
-    expect_error(v$set_outline(color = "black", width = 2), "no viewer connected")
-    expect_error(v$set_outline(width = 0.01), "no viewer connected")
-})
+# ── Connect and protocol on a live socket ────────────────────────────────────
 
-test_that("set_selection_color checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_selection_color(c("red", "blue")), "one color name or hex string")
-    expect_error(v$set_selection_color(1), "one color name or hex string")
-    expect_error(v$set_selection_color("notacolour"), "invalid color name")
-    expect_error(v$set_selection_color("red"), "no viewer connected")
-    expect_error(v$set_selection_color(), "no viewer connected")
-})
-
-test_that("set_module checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_module("nope"), "one of: registration")
-    expect_error(v$set_module(c("registration", "registration")), "one of: registration")
-    expect_error(v$set_module("registration"), "no viewer connected")
-})
-
-test_that("set_theme checks its argument before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_theme("blue"), "must be \"dark\" or \"light\"")
-    expect_error(v$set_theme(c("dark", "light")), "must be \"dark\" or \"light\"")
-    expect_error(v$set_theme("light"), "no viewer connected")
-})
-
-test_that("set_column_type switches numeric columns and keeps the setting", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_column_type("score"), "no metadata pushed yet")
-    suppressMessages(v$push_metadata(fx$meta))
-    priv <- v$.__enclos_env__$private
-    kind <- function(name) Filter(function(cl) cl$name == name, priv$cached_meta$columns)[[1]]$kind
-    expect_identical(kind("score"), "continuous")
-    v$set_column_type("score", "categorical")
-    expect_identical(kind("score"), "categorical")
-    expect_true(is.factor(priv$meta_column("score")))
-    # one file per column; the previous payload's are kept
-    files <- list.files(priv$meta_dir())
-    expect_true(all(basename(vapply(priv$cached_meta$columns, `[[`, "", "url")) %in% files))
-    suppressMessages(v$push_metadata(fx$meta))
-    expect_identical(kind("score"), "categorical")
-    v$set_column_type("score", "continuous")
-    expect_identical(kind("score"), "continuous")
-    expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
-    # Text whose values are numbers goes to continuous, not the other way
-    suppressMessages(v$push_metadata(data.frame(cell_ID = fx$meta$cell_ID,
-        txt = as.character(seq_along(fx$meta$cell_ID)))))
-    expect_true(priv$meta_entry("txt")$number_text)
-    expect_error(v$set_column_type("txt", "categorical"), "is not numeric")
-    v$set_column_type("txt", "continuous")
-    expect_identical(kind("txt"), "continuous")
-    expect_identical(priv$meta_column("txt"), as.double(match(priv$cell_ids, fx$meta$cell_ID)))
-    expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
-    expect_error(v$set_column_type("score", "other"), "should be one of")
-})
-
-test_that("a type given to push_metadata() replaces a kept one", {
-    fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    priv <- v$.__enclos_env__$private
-    kind <- function(name) priv$meta_entry(name)$kind
-    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
-    expect_identical(kind("array_row"), "continuous")
-    v$set_column_type("array_row", "categorical")
-    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
-    expect_identical(kind("array_row"), "categorical")
-    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin",
-        cols = list(array_row = "continuous", "array_col")))
-    expect_identical(kind("array_row"), "continuous")
-    expect_null(priv$col_types$array_row)
-})
-
-test_that("set_color_scale checks its arguments before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_color_scale(column = c("a", "b")), "one column name")
-    expect_error(v$set_color_scale(preset = c("viridis", "magma")), "one preset name")
-    expect_error(v$set_color_scale(colors = "red"), "2 to 9 colors")
-    expect_error(v$set_color_scale(colors = rep("red", 10)), "2 to 9 colors")
-    expect_error(v$set_color_scale(colors = c("red", "notacolour")), "invalid color name")
-    expect_error(v$set_color_scale(reverse = NA), "TRUE or FALSE")
-    expect_error(v$set_color_scale(style = "rainbow"), "should be one of")
-    expect_error(v$set_color_scale(midpoint = c(1, 2)), "`midpoint` must be one number")
-    expect_error(v$set_color_scale(limits = c(2, 1)), "low < high")
-    expect_error(v$set_color_scale(limits = 1), "low < high")
-    expect_error(v$set_color_scale(preset = "viridis"), "no viewer connected")
-})
-
-test_that("style_categories checks its arguments before sending", {
-    fx <- lens_fixture()
-    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$style_categories(column = c("a", "b")), "one column name")
-    expect_error(v$style_categories(show = c(A = NA)), "TRUE/FALSE")
-    expect_error(v$style_categories(alpha = c(A = 2)), "must be in \\[0, 1\\]")
-    expect_error(v$style_categories(alpha = c(0.1, 0.2)), "at most one unnamed value")
-    expect_error(v$style_categories(colors = "red"), "named by category")
-    expect_error(v$style_categories(colors = c(A = "notacolour")), "invalid color name")
-    expect_error(v$style_categories(alpha = c(0.2, A = 1)), "no viewer connected")
-})
-
+# Parsing, mask decoding and annotation rows are in test-protocol.R; this is
+# what only a live socket shows: the gate, the connect order, r_seq and on()
 test_that("WebSocket needs the token, rejects foreign origins, and tracks its window", {
-    fx <- lens_fixture()
     skip_if_not_installed("websocket")
+    fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
 
@@ -213,29 +114,21 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
     expect_identical(a$state$msgs[[4]]$data$seq, 0L)
     expect_true(v$connected())
 
-    ids <- get("private", v$.__enclos_env__)$cell_ids
-    mask <- .encode_mask(match(c("cell_001", "cell_002"), ids), length(ids))
-    a$ws$send(sprintf('{"type":"cell_selection","data":{"mask":"%s","rules":[]}}', mask))
-    expect_true(pump_until(function() length(v$selection) == 2L))
-    expect_setequal(v$selection, c("cell_001", "cell_002"))
-    a$ws$send('{"type":1,"data":{}}')
-    expect_warning(pump_until(function() FALSE, timeout = 0.3), "invalid message")
-
+    ids <- lens_priv(v)$cell_ids
     got <- NULL
     v$on("annotations_update", function(d) got <<- d)
     expect_error(v$on("bogus", identity), "must be one of")
     a$ws$send('{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}')
     expect_true(pump_until(function() !is.null(got)))
-    expect_identical(v$annotations, list(q = "{}"))
+    # The page's names are taken
     sq <- "POLYGON((0 0,1 0,1 1,0 1,0 0))"
     expect_error(v$push_polygons(sq, names = "q"), "must be unique; taken or repeated: q")
     expect_error(v$push_polygons(c(sq, sq), names = c("r", "r")), "repeated: r")
 
     expect_warning(v$set_selection(c("cell_010", "nope")), "1 ID")
     expect_identical(v$selection, "cell_010")
-    got_sel <- function(st) Filter(function(m) m$type == "set_rule", st$msgs)
-    expect_true(pump_until(function() length(got_sel(a$state)) > 0L))
-    sent <- got_sel(a$state)[[1]]$data
+    expect_true(pump_until(function() length(ws_msgs(a, "set_rule")) > 0L))
+    sent <- ws_msgs(a, "set_rule")[[1]]$data
     expect_identical(sent$rule$kind, "ids")
     expect_identical(sent$combine, "or")
     expect_identical(ids[.decode_mask(sent$rule$params$mask, length(ids))], "cell_010")
@@ -245,7 +138,7 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
     sel_msg <- function(id, seq) sprintf('{"type":"cell_selection","data":{"mask":"%s","rules":[]%s}}',
         .encode_mask(match(id, ids), length(ids)), if (is.null(seq)) "" else sprintf(',"r_seq":%d', seq))
     a$ws$send(sel_msg("cell_001", sent$seq - 1L))
-    pump_until(function() FALSE, timeout = 0.3)
+    pump_for(0.3)
     expect_identical(v$selection, "cell_010")
     expect_identical(v$rules()$source, "r")
     a$ws$send(sel_msg("cell_001", sent$seq))
@@ -257,9 +150,11 @@ test_that("WebSocket needs the token, rejects foreign origins, and tracks its wi
     expect_true(pump_until(function() !v$connected()))
 })
 
+# ── Config and pushed panels ─────────────────────────────────────────────────
+
 test_that("R keeps the page's config and pushed panels for the next page", {
-    fx <- lens_fixture()
     skip_if_not_installed("websocket")
+    fx <- lens_fixture()
     v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
     on.exit(v$close(), add = TRUE)
 
@@ -274,13 +169,13 @@ test_that("R keeps the page's config and pushed panels for the next page", {
         expect_error(v$push_panel(list(mark = "bar"), id = id), "built-in", info = id)
     expect_error(v$push_panel(list(mark = "bar"), id = "a b"), "letters")
     expect_error(v$push_panel(list(mark = "bar"), where = "left"), "should be one of")
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     work <- priv$work
     expect_length(list.files(file.path(work, "panels")), 1L)
 
     a <- ws_client(ws_url(v))
-    expect_true(pump_until(function() length(Filter(function(m) m$type == "push_panel", a$state$msgs)) == 2L))
-    pushed <- Filter(function(m) m$type == "push_panel", a$state$msgs)
+    expect_true(pump_until(function() length(ws_msgs(a, "push_panel")) == 2L))
+    pushed <- ws_msgs(a, "push_panel")
     expect_identical(vapply(pushed, function(m) m$data$id, ""), c("panel-1", "big"))
     expect_true(all(vapply(pushed, function(m) isTRUE(m$data$restore), NA)))
     expect_identical(pushed[[2]]$data$where, "below")
@@ -289,7 +184,7 @@ test_that("R keeps the page's config and pushed panels for the next page", {
 
     # The page's config comes back verbatim to the next page
     cfg <- '{"state":{"layers":{"poly":{"show":false,"alpha":0.3}},"images":{},"genes":[]},"version":1}'
-    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    ws_say(a, "config", list(json = cfg))
     # Closed in the page: R drops it and its file
     a$ws$send('{"type":"panel_closed","data":{"id":"big"}}')
     expect_true(pump_until(function() identical(names(priv$pushed), "panel-1")))
@@ -302,16 +197,18 @@ test_that("R keeps the page's config and pushed panels for the next page", {
     expect_identical(b$state$msgs[[2]]$data$config, cfg)
     expect_identical(b$state$msgs[[2]]$data$panels, list("panel-1"))
     v$remove_panel("panel-1")
-    expect_true(pump_until(function() any(vapply(b$state$msgs, function(m) m$type == "remove_panel", NA))))
+    expect_true(pump_until(function() length(ws_msgs(b, "remove_panel")) > 0L))
     b$ws$close()
     expect_true(pump_until(function() !v$connected()))
     expect_identical(nrow(v$panels()), 0L)
 })
 
+# ── Relaunch and close ───────────────────────────────────────────────────────
+
 test_that("relaunching on a port closes the old viewer and close() cleans up", {
     fx <- lens_fixture()
     v1 <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    session1 <- get("private", v1$.__enclos_env__)$session
+    session1 <- lens_priv(v1)$session
     expect_true(file.exists(file.path(session1, "manifest.json")))
     expect_message(v2 <- launch_lens(fx$gpoints, NULL, port = v1$port, open = FALSE),
         "closing the viewer already on port")
@@ -319,119 +216,27 @@ test_that("relaunching on a port closes the old viewer and close() cleans up", {
     expect_false(dir.exists(session1))
     expect_identical(v2$port, v1$port)
     v2$close()
-    expect_false(dir.exists(get("private", v2$.__enclos_env__)$session))
+    expect_false(dir.exists(lens_priv(v2)$session))
 })
 
-test_that("the viewer opens in RStudio's pane, else the browser", {
-    opened <- NULL
-    pane <- function(url) opened <<- url
-    local_browse <- function(url) opened <<- paste("browser:", url)
-    old <- options(browser = local_browse, GiottoLens.viewer = NULL)
-    on.exit(options(old), add = TRUE)
+# ── Cells from spatial locations ─────────────────────────────────────────────
 
-    expect_identical(.open_viewer("u", ide = "rstudio", pane = pane), "pane")
-    expect_identical(opened, "u")
-    expect_identical(.open_viewer("u", ide = "rstudio-server", pane = pane), "pane")
-    expect_identical(.open_viewer("u", ide = "positron", pane = pane), "browser")
-    expect_identical(.open_viewer("u", ide = "none", pane = pane), "browser")
-    expect_identical(.open_viewer("u", ide = "rstudio", pane = NULL), "browser")
-    options(GiottoLens.viewer = "browser")
-    expect_identical(.open_viewer("u", ide = "rstudio", pane = pane), "browser")
-    expect_identical(opened, "browser: u")
-    # Positron's browseURL() shows its pane: the system's browser is opened instead
-    sys <- function(url) opened <<- paste("system:", url)
-    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys, local = TRUE), "system")
-    expect_identical(opened, "system: u")
-    expect_identical(.open_viewer("u", ide = "none", pane = pane, system = sys, local = TRUE), "browser")
-    expect_identical(opened, "browser: u")
-    # R on another machine: the system's browser there is not the user's
-    expect_identical(.open_viewer("u", ide = "positron", pane = pane, system = sys, local = FALSE), "browser")
-    expect_identical(opened, "browser: u")
-})
-
-test_that("an open that runs a command gets the launch page, another the URL", {
-    opened <- NULL
-    pane <- function(url) opened <<- url
-    sys <- function(url) opened <<- url
-    launch <- function(command) if (command) "page" else "url"
-    old <- options(browser = function(url) opened <<- url, GiottoLens.viewer = NULL)
-    on.exit(options(old), add = TRUE)
-
-    .open_viewer("u", ide = "rstudio", pane = pane, launch = launch)
-    expect_identical(opened, "url")
-    .open_viewer("u", ide = "positron", pane = pane, launch = launch)
-    expect_identical(opened, "url")
-    .open_viewer("u", ide = "none", pane = pane, launch = launch)
-    expect_identical(opened, "url")
-    options(GiottoLens.viewer = "browser")
-    .open_viewer("u", ide = "positron", pane = pane, system = sys, local = TRUE, launch = launch)
-    expect_identical(opened, "page")
-
-    # `options(browser =)` a command: browseURL() runs it with what it opens
-    skip_on_os("windows")
-    out <- withr::local_tempfile()
-    script <- withr::local_tempfile(fileext = ".sh")
-    writeLines(c("#!/bin/sh", paste0("printf %s \"$1\" > ", shQuote(out))), script)
-    Sys.chmod(script, "0700")
-    options(browser = script, GiottoLens.viewer = NULL)
-    .open_viewer("u", ide = "none", pane = pane, launch = launch)
-    expect_true(pump_until(function() file.exists(out) && length(readLines(out, warn = FALSE))))
-    expect_identical(readLines(out, warn = FALSE), "page")
-})
-
-test_that(".local_session() is FALSE over SSH, in Positron Server and without a display", {
-    env <- function(...) {
-        set <- c(character(), ...)
-        function(x) {
-            out <- set[x]
-            out[is.na(out)] <- ""
-            unname(out)
-        }
-    }
-    yes <- function(cmd) TRUE
-    expect_true(.local_session(env(), "Darwin"))
-    expect_true(.local_session(env(), "Windows"))
-    expect_false(.local_session(env(SSH_CONNECTION = "10.0.0.1 50000 10.0.0.2 22"), "Darwin"))
-    expect_false(.local_session(env(SSH_TTY = "/dev/pts/0"), "Linux", yes))
-    expect_false(.local_session(env(POSITRON_MODE = "server"), "Darwin"))
-    expect_false(.local_session(env(), "Linux", yes))
-    expect_true(.local_session(env(DISPLAY = ":0"), "Linux", yes))
-    expect_true(.local_session(env(WAYLAND_DISPLAY = "wayland-0"), "Linux", yes))
-    expect_false(.local_session(env(DISPLAY = ":0"), "Linux", function(cmd) FALSE))
-})
-
-test_that(".ide reads the IDE from the environment", {
-    old <- Sys.getenv(c("POSITRON", "RSTUDIO", "RSTUDIO_PROGRAM_MODE"), unset = NA)
-    on.exit(for (k in names(old))
-        if (is.na(old[[k]])) Sys.unsetenv(k) else do.call(Sys.setenv, as.list(old[k])), add = TRUE)
-    Sys.unsetenv(c("POSITRON", "RSTUDIO", "RSTUDIO_PROGRAM_MODE"))
-    expect_identical(.ide(), "none")
-    Sys.setenv(RSTUDIO = "1", RSTUDIO_PROGRAM_MODE = "desktop")
-    expect_identical(.ide(), "rstudio")
-    Sys.setenv(RSTUDIO_PROGRAM_MODE = "server")
-    expect_identical(.ide(), "rstudio-server")
-    Sys.setenv(POSITRON = "1")
-    expect_identical(.ide(), "positron")
-})
-
-test_that("without the Origin check the token alone admits a socket", {
-    req <- list(PATH_INFO = "/lens/abc/ws", HTTP_HOST = "127.0.0.1:1",
-        HTTP_ORIGIN = "https://rstudio.example.org")
-    expect_false(.ws_allowed(req, "abc"))
-    expect_true(.ws_allowed(req, "abc", check_origin = FALSE))
-    expect_false(.ws_allowed(modifyList(req, list(PATH_INFO = "/lens/x/ws")), "abc", check_origin = FALSE))
-})
-
-test_that("a spatial unit without polygons launches from its spatial locations", {
+# The mark inferred from the grid (squares) is checked in test-marks.R, by
+# describe()
+test_that("a spatial unit without polygons launches from its spatial locations, with a given mark", {
     fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
+        "circle")
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
+        mark = list(shape = "circle"))
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     expect_setequal(priv$cell_ids, fx$xy$cell_ID)
 
+    # The given shape over the grid's size and angle
     m <- jsonlite::fromJSON(file.path(priv$session, "manifest.json"), simplifyVector = FALSE)
     expect_false(m$layers$cells$geometry)
-    expect_identical(m$layers$cells$mark$shape, "square")
+    expect_identical(m$layers$cells$mark$shape, "circle")
     expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
     expect_equal(m$layers$cells$mark$angle, 10, tolerance = 1e-6)
     expect_null(m$layers$transcripts)
@@ -442,91 +247,101 @@ test_that("a spatial unit without polygons launches from its spatial locations",
     expect_setequal(v$selection, fx$meta$cell_ID[fx$meta$half == "left"])
 })
 
-test_that("a given mark overrides the inferred one", {
-    fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE,
-        mark = list(shape = "circle"))
-    on.exit(v$close(), add = TRUE)
-    m <- jsonlite::fromJSON(file.path(get("private", v$.__enclos_env__)$session,
-        "manifest.json"), simplifyVector = FALSE)
-    expect_identical(m$layers$cells$mark$shape, "circle")
-    expect_equal(m$layers$cells$mark$size, 2, tolerance = 1e-6)
-    expect_error(launch_lens(fx$g, spat_unit = "bin", open = FALSE, mark = list(shape = "star")),
-        "circle")
-})
-
 test_that("an unknown spat_unit lists units with polygons or locations", {
     fx <- lens_bins_fixture()
     expect_error(launch_lens(fx$g, spat_unit = "cell", feat_type = NULL, open = FALSE),
         "available: bin")
 })
 
-test_that("set_mark checks its arguments, and describe() reports the cells", {
-    fx <- lens_bins_fixture()
-    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    expect_error(v$set_mark(shape = "star"), "\\[set_mark\\] mark shape")
-    expect_error(v$set_mark(size = 0), "\\[set_mark\\] mark size")
-    expect_error(v$set_mark(show = NA), "\\[set_mark\\] show")
-    d <- v$describe()
-    expect_identical(d$cells$source, "locations")
-    expect_identical(d$cells$mark$shape, "square")
-    expect_output(print(d), "900 from spatial locations, drawn as squares 2 across at 10 degrees")
+# ── Styling argument checks ──────────────────────────────────────────────────
 
-    fx2 <- lens_fixture()
-    p <- launch_lens(fx2$gpoints, open = FALSE)
-    on.exit(p$close(), add = TRUE)
-    expect_error(p$set_mark(size = 1), "no cells")
-    expect_null(p$describe()$cells)
-})
-
-test_that("a viewer starts without an object and refuses what needs one", {
-    v <- launch_lens(open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    m <- jsonlite::fromJSON(rawToChar(http_get(lens_data_url(v, "session/manifest.json"))$content))
-    expect_true(m$empty)
-    expect_identical(m$load, 1L)
-    expect_error(v$push_metadata(data.frame(cell_ID = "a", x = 1)), "no object loaded")
-    expect_error(v$select(lens_range("x", 0, 1)), "no object loaded")
-    expect_error(v$state(), "no object loaded")
-    expect_output(print(v), "object: +none")
-})
-
-test_that("layer launches are deprecated, once per session", {
+test_that("the styling methods check their arguments before sending", {
     fx <- lens_fixture()
-    .lens_warned$layers <- NULL
-    on.exit(.lens_warned$layers <- TRUE, add = TRUE)
-    expect_warning(.resolve_object(fx$gpoints, fx$gpolygons), "deprecated")
-    expect_no_warning(.resolve_object(fx$gpoints, fx$gpolygons))
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    # A call and the error it gives; the last of each method's rows passes
+    # the checks and finds no viewer to send to
+    cases <- list(
+        list(quote(v$set_outline(width = 0)), "must be one number in \\[0.01, 20\\]"),
+        list(quote(v$set_outline(width = 0.009)), "must be one number in \\[0.01, 20\\]"),
+        list(quote(v$set_outline(width = c(1, 2))), "must be one number"),
+        list(quote(v$set_outline(color = c("red", "blue"))), "one color name or hex string"),
+        list(quote(v$set_outline(color = "notacolour")), "invalid color name"),
+        list(quote(v$set_outline(alpha = 1.5)), "must be one number in \\[0, 1\\]"),
+        list(quote(v$set_outline(color = "black", width = 2)), "no viewer connected"),
+        list(quote(v$set_outline(width = 0.01)), "no viewer connected"),
+
+        list(quote(v$set_selection_color(c("red", "blue"))), "one color name or hex string"),
+        list(quote(v$set_selection_color(1)), "one color name or hex string"),
+        list(quote(v$set_selection_color("notacolour")), "invalid color name"),
+        list(quote(v$set_selection_color("red")), "no viewer connected"),
+        list(quote(v$set_selection_color()), "no viewer connected"),
+
+        list(quote(v$set_module("nope")), "one of: registration"),
+        list(quote(v$set_module(c("registration", "registration"))), "one of: registration"),
+        list(quote(v$set_module("registration")), "no viewer connected"),
+
+        list(quote(v$set_theme("blue")), "must be \"dark\" or \"light\""),
+        list(quote(v$set_theme(c("dark", "light"))), "must be \"dark\" or \"light\""),
+        list(quote(v$set_theme("light")), "no viewer connected"),
+
+        list(quote(v$set_color_scale(column = c("a", "b"))), "one column name"),
+        list(quote(v$set_color_scale(preset = c("viridis", "magma"))), "one preset name"),
+        list(quote(v$set_color_scale(colors = "red")), "2 to 9 colors"),
+        list(quote(v$set_color_scale(colors = rep("red", 10))), "2 to 9 colors"),
+        list(quote(v$set_color_scale(colors = c("red", "notacolour"))), "invalid color name"),
+        list(quote(v$set_color_scale(reverse = NA)), "TRUE or FALSE"),
+        list(quote(v$set_color_scale(style = "rainbow")), "should be one of"),
+        list(quote(v$set_color_scale(midpoint = c(1, 2))), "`midpoint` must be one number"),
+        list(quote(v$set_color_scale(limits = c(2, 1))), "low < high"),
+        list(quote(v$set_color_scale(limits = 1)), "low < high"),
+        list(quote(v$set_color_scale(preset = "viridis")), "no viewer connected"),
+
+        list(quote(v$style_categories(column = c("a", "b"))), "one column name"),
+        list(quote(v$style_categories(show = c(A = NA))), "TRUE/FALSE"),
+        list(quote(v$style_categories(alpha = c(A = 2))), "must be in \\[0, 1\\]"),
+        list(quote(v$style_categories(alpha = c(0.1, 0.2))), "at most one unnamed value"),
+        list(quote(v$style_categories(colors = "red")), "named by category"),
+        list(quote(v$style_categories(colors = c(A = "notacolour"))), "invalid color name"),
+        list(quote(v$style_categories(alpha = c(0.2, A = 1))), "no viewer connected")
+    )
+    for (cs in cases)
+        expect_error(eval(cs[[1L]]), cs[[2L]], info = deparse(cs[[1L]]))
 })
+
+# ── set_object() ─────────────────────────────────────────────────────────────
 
 test_that("set_object() serves another object from a clean slate", {
+    skip_if_not_installed("websocket")
     fx <- lens_image_fixture()
     bx <- lens_bins_fixture()
-    skip_if_not_installed("websocket")
     v <- launch_lens(fx$g, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     manifest <- function() jsonlite::fromJSON(rawToChar(
         http_get(lens_data_url(v, "session/manifest.json"))$content), simplifyVector = FALSE)
     status <- function(u) http_get(lens_data_url(v, u))$status_code
     tile <- manifest()$layers$cells$tiles[[1]]
     expect_identical(c(status(tile$url), status(tile$file)), c(200L, 200L))
 
+    # Added with no tab open: a tab would be asked to open it
+    v$add_image(fx$image_file, name = "post")
     a <- ws_client(ws_url(v), load = 1L)
     expect_true(pump_until(function() length(a$state$msgs) > 1))
     v$push_metadata(fx$meta)
     v$select(lens_categories("leiden_clus", "a"))
+    v$save_selection("s", lens_cells("cell_001"))
     expect_message(v$push_panel(list(mark = "bar"), data = data.frame(a = 1:3)), NA)
     cfg <- '{"state":{"genes":["Actb"]},"version":2}'
     annot <- '{"type":"annotations_update","data":{"annotations":[{"name":"q","geojson":"{}"}]}}'
-    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    ws_say(a, "config", list(json = cfg))
     a$ws$send(annot)
     expect_true(pump_until(function() identical(priv$config_json, cfg) && length(v$annotations) == 1L))
 
     # With work on the object, nothing changes unless it is discarded
     expect_error(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL),
-        "work not saved: 1 rule, 1 annotation, 1 pushed panel; save it with save\\(name\\), or pass `discard = TRUE`")
+        paste("work not saved: 1 rule, 1 annotation, 1 saved selection, 1 pushed panel, 1 added image;",
+            "save it with save\\(name\\), or pass `discard = TRUE`"))
     expect_identical(manifest()$load, 1L)
     expect_identical(v$rules()$source, "r")
     expect_identical(priv$config_json, cfg)
@@ -535,7 +350,7 @@ test_that("set_object() serves another object from a clean slate", {
     # Another object: a new manifest and stores, the tab told to reload, and
     # nothing of the first object
     expect_no_warning(v$set_object(bx$g, spat_unit = "bin", feat_type = NULL, discard = TRUE))
-    expect_true(pump_until(function() any(vapply(a$state$msgs, function(m) m$type == "reload", NA))))
+    expect_true(pump_until(function() length(ws_msgs(a, "reload")) > 0L))
     expect_identical(manifest()$load, 2L)
     expect_identical(c(status(tile$url), status(tile$file)), c(404L, 404L))
     expect_identical(nrow(v$rules()), 0L)
@@ -545,12 +360,17 @@ test_that("set_object() serves another object from a clean slate", {
     expect_length(v$annotations, 0L)
     expect_length(list.files(file.path(priv$work, "metadata")), 0L)
     expect_length(list.files(file.path(priv$work, "panels")), 0L)
+    expect_null(v$selection)
+    expect_identical(nrow(v$selections()), 0L)
+    expect_length(priv$added_images, 0L)
+    expect_false(file.exists(file.path(priv$session, "images_added.json")))
+    expect_length(priv$routes$images, 0L)
     expect_output(print(v), "900 cells")
 
     # Until it reloads, what the old tab says about its object is ignored
-    a$ws$send(jsonlite::toJSON(list(type = "config", data = list(json = cfg)), auto_unbox = TRUE))
+    ws_say(a, "config", list(json = cfg))
     a$ws$send(annot)
-    pump_until(function() FALSE, timeout = 0.3)
+    pump_for(0.3)
     expect_null(priv$config_json)
     expect_length(v$annotations, 0L)
     # A tab that reconnects with the old load is told to reload
@@ -581,14 +401,16 @@ test_that("R evaluates rules on the cells of the object shown", {
     expect_length(v$selection, sum(bx$xy$sdimx >= 0 & bx$xy$sdimx <= 100 &
         bx$xy$sdimy >= -100 & bx$xy$sdimy <= 0))
     expect_true(all(startsWith(v$selection, "bin_")))
-    expect_length(list.files(get("private", v$.__enclos_env__)$session, "^cells-"), 1L)
+    expect_length(list.files(lens_priv(v)$session, "^cells-"), 1L)
 })
+
+# ── Page asks ────────────────────────────────────────────────────────────────
 
 test_that("the cell table asks for the IDs of cell indices, and nothing else", {
     fx <- lens_bins_fixture()
     v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
     on.exit(v$close(), add = TRUE)
-    priv <- v$.__enclos_env__$private
+    priv <- lens_priv(v)
     ask <- function(cells) priv$ask(list(op = "cell_ids", cells = cells), NULL)
     expect_identical(unlist(ask(list(0, 899, 5))$data$ids), priv$cell_ids[c(1, 900, 6)])
     expect_match(ask(list(900))$error, "cell indices")

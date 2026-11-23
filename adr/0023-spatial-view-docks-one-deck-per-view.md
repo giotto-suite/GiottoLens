@@ -93,5 +93,5 @@ both are empty.
 
 `inst/viewer-src/spatial/view.ts`, `spatial/current.ts`, `panels/dock.ts` (`TYPES`,
 `placeFixed()`, `toolsGroup()`, `holdTools()`, `togglePanels()`), `panels/tools.ts`,
-`ui/selbar.js`; `tests/testthat/test-e2e.R` ("the spatial view docks: …"); adr/0009,
+`ui/selbar.js`; `tests/testthat/test-e2e-layout.R` ("the spatial view docks: …"); adr/0009,
 adr/0016.

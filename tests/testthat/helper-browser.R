@@ -37,7 +37,7 @@ browser_wait <- function(br, cond_js, timeout = 30) {
 # Drag the mouse along a closed path given in canvas pixel coordinates.
 # `modifiers`: CDP bitmask, Alt 1, Ctrl 2, Meta 4, Shift 8
 browser_drag <- function(br, pts, modifiers = 0L) {
-    off <- br$js("(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left, r.top]; })()")
+    off <- canvas_rect(br)
     send <- function(type, p) br$session$Input$dispatchMouseEvent(
         type = type, x = off[[1]] + p[[1]], y = off[[2]] + p[[2]], modifiers = modifiers,
         button = "left", buttons = if (type == "mouseReleased") 0L else 1L, clickCount = 1L)
@@ -95,4 +95,42 @@ module_available <- function(br, kind) {
     br$js(sprintf("(() => { document.querySelector('[data-panel=tools] [data-act=modules]').click();
       const m = document.querySelector('.modules-menu [data-module=%s]'); const on = !!m && !m.disabled;
       document.body.click(); return on; })()", kind))
+}
+
+# The status line once the first tiles are in
+tiles_loaded <- "/tile\\(s\\) loaded/.test(document.getElementById('status').textContent)"
+
+# Even-odd point-in-polygon, the same test the viewer runs
+pip <- function(ring, x, y) {
+    inside <- logical(length(x))
+    n <- nrow(ring)
+    j <- n
+    for (i in seq_len(n)) {
+        xi <- ring[i, 1]; yi <- ring[i, 2]; xj <- ring[j, 1]; yj <- ring[j, 2]
+        hit <- ((yi > y) != (yj > y)) & (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+        inside <- xor(inside, hit)
+        j <- i
+    }
+    inside
+}
+
+expect_no_browser_errors <- function(br) expect_identical(br$errors(), character())
+
+# The spatial canvas's top-left corner in page pixels, or its centre, as the
+# page returns it (a list; unlist() for a vector)
+canvas_rect <- function(br, centre = FALSE) {
+    br$js(if (centre)
+        "(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+    else
+        "(() => { const r = window.__giottolens.spatial.canvas.getBoundingClientRect(); return [r.left, r.top]; })()")
+}
+
+# Pick a tool of the spatial view's toolbar by its mode
+set_tool <- function(br, mode)
+    invisible(br$js(sprintf("document.querySelector('.tool-btn[data-mode=\"%s\"]').click()", mode)))
+
+# Reload the page; the short sleep lets the old page go before waiting on the new
+browser_reload <- function(br) {
+    br$js("location.reload()")
+    Sys.sleep(0.3)
 }

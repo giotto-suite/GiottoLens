@@ -37,4 +37,4 @@ and fall back to hyparquet for layouts it does not cover.
 ## References
 
 `data/point-decode.ts`, `data/tx-decode.ts`, `data/tx-worker.ts`;
-`test/point-decode.test.ts`; design.Rmd "Reading tiles".
+`test/data/point-decode.test.ts`; design.Rmd "Reading tiles".

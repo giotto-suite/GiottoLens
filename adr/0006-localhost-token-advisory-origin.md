@@ -51,4 +51,4 @@ pages on the WebSocket, and is switched off behind RStudio Server's proxy.
 ## References
 
 `R/server.R` (`.lens_app`, `.lens_root`, `.ws_allowed`, `.origin_allowed`), `R/viewer.R`
-(`.ide`, `check_origin`); `tests/testthat/test-launch.R`; `SECURITY.md`.
+(`.ide`, `check_origin`); `tests/testthat/test-open.R`, `test-server.R`; `SECURITY.md`.

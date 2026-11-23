@@ -9,7 +9,6 @@ lens_analysis_fixture <- local({
         testthat::skip_if_not_installed("GiottoDisk")
         testthat::skip_if_not_installed("Giotto")
         if (!is.null(fx)) return(fx)
-        sw <- function(...) suppressMessages(suppressWarnings(...))
         grid <- expand.grid(col = 0:29, row = 0:19)
         ids <- sprintf("c%03d", seq_len(nrow(grid)))
         type <- c("A", "B", "C")[1L + (grid$col %/% 10L)]
@@ -44,7 +43,7 @@ lens_analysis_viewer <- function(params = lens_analysis_params, ...) {
     fx <- lens_analysis_fixture()
     v <- suppressMessages(launch_lens(fx$g, feat_type = NULL, open = FALSE))
     a <- v$analysis(params = params, ...)
-    list(v = v, a = a, fx = fx, priv = get("private", v$.__enclos_env__),
+    list(v = v, a = a, fx = fx, priv = lens_priv(v),
         done = function() suppressMessages(v$close()))
 }
 
@@ -57,7 +56,7 @@ lens_analysis_rig <- function(..., g = NULL, start = TRUE) {
     testthat::skip_if_not_installed("websocket")
     fx <- lens_analysis_fixture()
     v <- suppressMessages(launch_lens(g %||% fx$g, feat_type = NULL, open = FALSE))
-    priv <- get("private", v$.__enclos_env__)
+    priv <- lens_priv(v)
     cl <- ws_client(ws_url(v), load = priv$load_seq)
     pump_until(function() v$connected())
     a <- suppressMessages(v$analysis(...))
@@ -78,3 +77,35 @@ lens_analysis_rig <- function(..., g = NULL, start = TRUE) {
             suppressMessages(v$close())
         })
 }
+
+# ── Finders and checks ──────────────────────────────────────────────────────
+
+# The status of steps `ids` of analysis `a`, named by step
+step_status <- function(a, ids) vapply(a$status[ids], `[[`, "", "status")
+
+# Parameter `id` of `step` (anything with `params`: a catalog step)
+.par <- function(step, id) Find(function(q) identical(q$id, id), step$params)
+
+# Parameter `id` of step `step` in schema `sch`, as the analysis sends it
+.schema_par <- function(sch, step, id) .par(Find(function(x) identical(x$id, step), sch$steps), id)
+
+# The ids of the advanced parameters of `step`
+.adv_ids <- function(step)
+    vapply(Filter(function(q) isTRUE(q$advanced), step$params), `[[`, "", "id")
+
+# The R values of a step's defaults
+.default_p <- function(st) {
+    p <- list()
+    for (par in st$params) p[par$id] <- list(.param_r(par, par$default))
+    p
+}
+
+# Result table `id` of analysis `a`
+.table_of <- function(a, id) {
+    tabs <- unlist(a$.__enclos_env__$private$tables, recursive = FALSE)
+    Find(function(x) identical(x$id, id), tabs)
+}
+
+# The fields a Vega-Lite spec encodes: x, y, color and the tooltip's
+.spec_fields <- function(spec) c(spec$encoding$x$field, spec$encoding$y$field,
+    spec$encoding$color$field, vapply(spec$encoding$tooltip, `[[`, "", "field"))

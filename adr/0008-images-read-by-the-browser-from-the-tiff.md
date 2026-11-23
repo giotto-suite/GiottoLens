@@ -28,7 +28,7 @@ an own worker pool that also runs geotiff's decoders.
   resolution with three images loads in 0.62 s. A dense tile takes about 128 ms to decode,
   so decoding has to stay in workers.
 - Pixels match GDAL's decode of the same bytes to within 1 on about 1% of pixels (lossy
-  wavelet rounding); lossless codestreams decode exactly (`test/images.test.ts`).
+  wavelet rounding); lossless codestreams decode exactly (`test/data/images.test.ts`).
 - Image tiles go through R's main thread like `data/` (adr/0004): a busy R stalls them.
 - Only page 1 of a file, single-channel or 8-bit RGB pages (told apart by their TIFF tags),
   and levels that halve with one tile size.

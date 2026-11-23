@@ -145,3 +145,52 @@ test_that(".parse_col_types maps aliases and rejects unknown types", {
         c(a = "categorical", b = "continuous", c = NA_character_))
     expect_error(.parse_col_types(list(a = "nope")), "unknown column type")
 })
+
+test_that("set_column_type switches numeric columns and keeps the setting", {
+    fx <- lens_fixture()
+    v <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_column_type("score"), "no metadata pushed yet")
+    suppressMessages(v$push_metadata(fx$meta))
+    priv <- lens_priv(v)
+    kind <- function(name) Filter(function(cl) cl$name == name, priv$cached_meta$columns)[[1]]$kind
+    expect_identical(kind("score"), "continuous")
+    v$set_column_type("score", "categorical")
+    expect_identical(kind("score"), "categorical")
+    expect_true(is.factor(priv$meta_column("score")))
+    # one file per column; the previous payload's are kept
+    files <- list.files(priv$meta_dir())
+    expect_true(all(basename(vapply(priv$cached_meta$columns, `[[`, "", "url")) %in% files))
+    suppressMessages(v$push_metadata(fx$meta))
+    expect_identical(kind("score"), "categorical")
+    v$set_column_type("score", "continuous")
+    expect_identical(kind("score"), "continuous")
+    expect_error(v$set_column_type("leiden_clus", "continuous"), "is not numeric")
+    # Text whose values are numbers goes to continuous, not the other way
+    suppressMessages(v$push_metadata(data.frame(cell_ID = fx$meta$cell_ID,
+        txt = as.character(seq_along(fx$meta$cell_ID)))))
+    expect_true(priv$meta_entry("txt")$number_text)
+    expect_error(v$set_column_type("txt", "categorical"), "is not numeric")
+    v$set_column_type("txt", "continuous")
+    expect_identical(kind("txt"), "continuous")
+    expect_identical(priv$meta_column("txt"), as.double(match(priv$cell_ids, fx$meta$cell_ID)))
+    expect_error(v$set_column_type("nope"), "no metadata column 'nope'")
+    expect_error(v$set_column_type("score", "other"), "should be one of")
+})
+
+test_that("a type given to push_metadata() replaces a kept one", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    priv <- lens_priv(v)
+    kind <- function(name) priv$meta_entry(name)$kind
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
+    expect_identical(kind("array_row"), "continuous")
+    v$set_column_type("array_row", "categorical")
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin"))
+    expect_identical(kind("array_row"), "categorical")
+    suppressMessages(v$push_metadata(fx$g, spat_unit = "bin",
+        cols = list(array_row = "continuous", "array_col")))
+    expect_identical(kind("array_row"), "continuous")
+    expect_null(priv$col_types$array_row)
+})

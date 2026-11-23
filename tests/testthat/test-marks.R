@@ -87,3 +87,23 @@ test_that(".drawn_mark puts the viewer's setting over the launch mark", {
     expect_identical(.mark_text(segmented$mark), "circles 10 across")
     expect_identical(.mark_text(NULL), "dots")
 })
+
+# The mark inferred at launch; a given one is in test-launch.R
+test_that("set_mark checks its arguments, and describe() reports the cells", {
+    fx <- lens_bins_fixture()
+    v  <- launch_lens(fx$g, spat_unit = "bin", feat_type = NULL, open = FALSE)
+    on.exit(v$close(), add = TRUE)
+    expect_error(v$set_mark(shape = "star"), "\\[set_mark\\] mark shape")
+    expect_error(v$set_mark(size = 0), "\\[set_mark\\] mark size")
+    expect_error(v$set_mark(show = NA), "\\[set_mark\\] show")
+    d <- v$describe()
+    expect_identical(d$cells$source, "locations")
+    expect_identical(d$cells$mark$shape, "square")
+    expect_output(print(d), "900 from spatial locations, drawn as squares 2 across at 10 degrees")
+
+    fx2 <- lens_fixture()
+    p <- launch_lens(fx2$gpoints, open = FALSE)
+    on.exit(p$close(), add = TRUE)
+    expect_error(p$set_mark(size = 1), "no cells")
+    expect_null(p$describe()$cells)
+})

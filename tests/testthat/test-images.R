@@ -162,18 +162,3 @@ test_that("a 10x Xenium image is read with Giotto's Xenium reader, in microns", 
     file.copy(xen$file, loose)
     expect_error(.xenium_image_file(loose, "dapi"), "no experiment.xenium in the folder of")
 })
-
-test_that("added images belong to the object shown", {
-    fx <- lens_image_fixture()
-    v  <- launch_lens(fx$gpoints, fx$gpolygons, open = FALSE)
-    on.exit(v$close(), add = TRUE)
-    priv <- v$.__enclos_env__$private
-    v$add_image(fx$image_file, name = "post")
-    expect_error(v$set_object(fx$gpoints, fx$gpolygons), "1 added image")
-    v$set_object(fx$gpoints, fx$gpolygons, discard = TRUE)
-    expect_length(priv$added_images, 0L)
-    expect_false(file.exists(file.path(priv$session, "images_added.json")))
-    expect_length(priv$routes$images, 0L)
-    v$add_image(fx$image_file, name = "post")
-    expect_identical(names(priv$routes$images), "0")
-})

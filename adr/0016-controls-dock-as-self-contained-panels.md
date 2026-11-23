@@ -56,4 +56,4 @@ chart pushed from R without `ref` goes next to the charts, never among the contr
 ## References
 
 `inst/viewer-src/panels/dock.ts`, `panels/cells.ts`, `panels/layers.ts`; adr/0009;
-`tests/testthat/test-e2e.R` ("the controls dock in their own column").
+`tests/testthat/test-e2e-layout.R` ("the controls dock in their own column").

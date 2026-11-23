@@ -58,4 +58,4 @@ from it wherever it came from, as the histogram's is.
 
 ## References
 
-`panels/density.ts`, `test/density.test.ts`; design.Rmd "Panels"; adr/0009.
+`panels/density.ts`, `test/panels/density.test.ts`; design.Rmd "Panels"; adr/0009.
