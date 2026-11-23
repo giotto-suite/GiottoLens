@@ -22,10 +22,10 @@ import { initSelectionBar, initRStatus, initPanelsToggle } from './ui/selbar.js'
 import { initJobs } from './ui/jobs.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
-import { initDock, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle,
-  showBuiltin } from './panels/dock.ts';
+import { initDock, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
 import { initTray, refreshControls, showControl, hideControl } from './panels/tray.ts';
 import { initToolsRail } from './panels/tools.ts';
+import { initDrawer, showDrawer, closeDrawer } from './panels/drawer.ts';
 import { initModules, applyModule } from './panels/modules.ts';
 import { initSaved, savedList } from './panels/saved.ts';
 import { initAnalysis, analysisModel } from './panels/analysis.js';
@@ -193,6 +193,7 @@ async function main() {
   initSaved(() => showControl('selection'));
   // The tray beside the dock, so the dock lays out at its own width
   initTray(document.getElementById('tray'));
+  initDrawer(document.getElementById('drawer'));
   // The spatial view is a panel: the dock builds it (spatial/view.ts), and it
   // fits itself to the data once laid out
   initDock(document.getElementById('dock'));
@@ -221,11 +222,11 @@ async function main() {
   });
 
   // Analysis: the panel opens when R starts one (viewer$analysis())
-  initAnalysis({ place: () => showBuiltin('analysis') });
+  initAnalysis({ place: () => showDrawer('analysis') });
   onMessage('add_image', ({ entry }) => addImage(entry));
 
   onMessage('push_panel', pushPanel);
-  onMessage('remove_panel', ({ id }) => { removePanel(id) || hideControl(id); });
+  onMessage('remove_panel', ({ id }) => { removePanel(id) || hideControl(id) || closeDrawer(id); });
 
   // R refuses taken names; one taken here since R last heard gets a default
   onMessage('push_polygons', ({ polygons }) => {

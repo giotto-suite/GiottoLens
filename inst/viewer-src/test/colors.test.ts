@@ -4,6 +4,7 @@ import {
   medianOf, DIVERGENT_PRESETS, SEQUENTIAL_PRESETS, sliderToValue, valueToSlider, dragHandle, autoHandle, barColors,
 } from '../render/colors.ts';
 import { migrateConfig } from '../core/store.ts';
+import { applyPrefs, BUILTIN } from '../core/prefs.ts';
 
 describe('cellColorBuffer', () => {
   it('fills the default colour without a column', () => {
@@ -23,6 +24,17 @@ describe('cellColorBuffer', () => {
     const { colors, fill } = cellColorBuffer(1, col);
     expect(colors[3]).toBe(255);
     expect(fill[0]).toBe(230);
+  });
+  it('gives a continuous scale the fill opacity preference, as categories have', () => {
+    const col = { name: 'x', kind: 'continuous' as const, values: Float64Array.from([0, 1, NaN]), min: 0, max: 1 };
+    let { colors, fill } = cellColorBuffer(3, col);
+    expect([colors[3], fill[0], fill[1]]).toEqual([255, 230, 230]);
+    expect([...colors.slice(8, 12)]).toEqual([80, 80, 80, 180]);
+    expect(fill[2]).toBe(110);
+    applyPrefs({ defaults: BUILTIN, set: { fill_opacity: 0.4 } });
+    ({ colors, fill } = cellColorBuffer(3, col));
+    expect([colors[3], fill[0]]).toEqual([204, 102]);
+    applyPrefs({ defaults: BUILTIN, set: {} });
   });
   it('applies per-category color, visibility and opacity', () => {
     const col = { name: 'c', kind: 'categorical' as const, levels: ['a', 'b', 'c'], values: Int32Array.from([0, 1, 2, -1]), min: 0, max: 0 };

@@ -107,7 +107,7 @@ export function showTray(): void {
 // A divider: `begin()` on a press takes the sizes it starts from and returns
 // what follows the pointer (its travel in px from the press, along `dir`) and
 // what runs on release
-function sash(dir: 'col' | 'row', begin: () => { move(d: number): void; end(): void } | null): HTMLElement {
+export function sash(dir: 'col' | 'row', begin: () => { move(d: number): void; end(): void } | null): HTMLElement {
   const s = el('div', `lens-sash lens-sash-${dir}`);
   s.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;

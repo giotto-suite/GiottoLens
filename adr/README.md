@@ -82,3 +82,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0029](0029-saved-selections-are-rule-sets.md) | Saved selections are rule sets, restored editable | Proposed | 2026-11-20 |
 | [0030](0030-tray-shows-several-controls.md) | The tray shows several controls at once, stacked, and its dividers drag | Proposed | 2026-11-22 |
 | [0031](0031-modules-are-modes-for-one-task.md) | Modules are modes for one task: their controls in the tray, their view alone | Proposed | 2026-11-22 |
+| [0032](0032-analysis-in-a-left-tray.md) | The Analysis panel is a left tray beside the tools rail, not a dock pane | Proposed | 2026-11-23 |

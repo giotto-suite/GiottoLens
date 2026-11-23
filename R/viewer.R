@@ -1632,9 +1632,9 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description The analysis of the object shown (adr/0021): a
         #'   [LensAnalysis], made by the first call and kept until another
-        #'   object is shown. The viewer's Analysis panel shows it, and opens
-        #'   when it is made here; opening the panel from the viewer's "+" menu
-        #'   makes it too. Nothing runs until a step is run or a parameter set.
+        #'   object is shown. The viewer's Analysis panel, in the left tray,
+        #'   shows it, and opens when it is made here; opening the panel from
+        #'   the tools rail's analysis button makes it too. Nothing runs until a step is run or a parameter set.
         #'   Arguments given to a later call apply to the analysis there is.
         #' @param params Parameter values: a list by step of lists by
         #'   parameter, e.g. `list(filter = list(min_det_feats_per_cell = 20))`.
@@ -1744,8 +1744,9 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description Close a docked panel, one pushed with `push_panel()`
         #'   or a built-in one (`"scatter"`, `"histogram"`, ...), or hide a
-        #'   control in the tray (`"layers"`, `"selection"`, ...). The viewer's `+`
-        #'   menu adds built-in panels back, the tray's rail a control; a
+        #'   control in the tray (`"layers"`, `"selection"`, ...), or close the
+        #'   left tray (`"analysis"`). The viewer's `+` menu adds built-in panels
+        #'   back, the tray's rail a control, the tools rail the left tray; a
         #'   hidden control stays hidden after a page reload.
         #' @param id Panel id (see `panels()`)
         remove_panel = function(id) {
@@ -1758,8 +1759,8 @@ LensViewer <- R6::R6Class("LensViewer",
 
         #' @description The panels: id, kind (a chart: `"scatter"`,
         #'   `"histogram"`, `"density"`, `"table"`, or `"spec"` for a pushed
-        #'   one; `"spatial"`, `"analysis"`; a control shown in the
-        #'   tray: `"layers"`, `"selection"`, `"register"`,
+        #'   one; `"spatial"`; `"analysis"` in the left tray, group `"drawer"`;
+        #'   a control shown in the tray: `"layers"`, `"selection"`, `"register"`,
         #'   `"annotations"`), title,
         #'   the group of tabs it is in (`"tray"` for a control), and whether
         #'   it is in view (not behind another tab, nor hidden by the panels

@@ -733,8 +733,8 @@ function runBar(tab) {
 export function createAnalysisPanel(body, ctx) {
   const root = el('div', 'an-root');
   body.append(root);
-  // Opened from "+" before R has an analysis: R starts one, which runs nothing
-  // until asked, and sends its schema
+  // Opened from the rail before R has an analysis: R starts one, which runs
+  // nothing until asked, and sends its schema
   if (!model.schema) {
     root.append(el('div', 'panel-note', 'waiting for R…'));
     if (isConnected()) sendToR('analysis_open', {});
@@ -827,8 +827,8 @@ function applyColor() {
   }
 }
 
-// `place()` brings the dock panel forward; called when a schema arrives that
-// R sent unasked (viewer$analysis() from R)
+// `place()` opens the panel in the left tray (panels/drawer.ts); called when a
+// schema arrives that R sent unasked (viewer$analysis() from R)
 export function initAnalysis({ place }) {
   ensurePanel = place;
   let online = null;
