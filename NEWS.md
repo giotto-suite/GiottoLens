@@ -1,5 +1,8 @@
 # GiottoLens (development version)
 
+* A new viewer opens with the spatial view, the scatter and, below it, the table; the
+  histogram and density charts are added from a pane's `+`. A layout already saved keeps its
+  panels.
 * A project's start page has three tabs: Objects (its snapshots), Saves, and Recovered (work
   not saved that viewers left), each with its count. It opens on Saves when the project has
   any.

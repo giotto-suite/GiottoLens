@@ -57,6 +57,19 @@ dock_tab <- function(br, title) {
             buttons = if (type == "mousePressed") 1L else 0L, clickCount = 1L)
 }
 
+# Open built-in view `kind` as a tab in the pane of panel `ref`, from that
+# pane's "+" menu, as a user does, and wait for it: the default layout has
+# the spatial view, scatter and table only
+dock_add <- function(br, kind, ref = "scatter") {
+    if (!browser_wait(br, sprintf("!!document.querySelector('[data-panel=%s]')", ref), 10))
+        stop("no panel '", ref, "'", call. = FALSE)
+    # A panel's content is drawn outside its group; its tab is in it
+    br$js(sprintf("[...document.querySelectorAll('.dv-tab')].find(t => t.textContent === '%s').closest('.dv-groupview').querySelector('.dock-add').click()", ref))
+    br$js(sprintf("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === '%s')?.click()", kind))
+    if (!browser_wait(br, sprintf("!!document.querySelector('[data-panel=%s]')", kind), 10))
+        stop("could not add '", kind, "'", call. = FALSE)
+}
+
 # Show a control in the tray (panels/tray.ts) by its rail button, or for a
 # module's control (register) by entering the module from the tools rail's
 # modules menu, unless it is shown, and wait for it. `section`: a section of the layers panel (cells,

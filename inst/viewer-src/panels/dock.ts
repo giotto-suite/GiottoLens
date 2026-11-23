@@ -278,19 +278,18 @@ function addBuiltin(kind: BuiltinKind, position?: AddPanelOptions['position']): 
     queueMicrotask(() => p.group.api.setSize({ width: viewWidth() }));
 }
 
-// The spatial view at the left, the charts beside it
+// The spatial view at the left, the scatter beside it and the table below
+// that; other charts are added from a pane's +
 function defaultLayout(host: HTMLElement): void {
   if (!dock) return;
   const view = available('spatial');
   if (view) dock.addPanel({ id: 'spatial', component: 'spatial', title: 'spatial' });
-  // Scatter above histogram, or as tabs when the dock is short
   dock.addPanel({ id: 'scatter', component: 'scatter', title: 'scatter',
     ...(view && { position: { referencePanel: 'spatial', direction: 'right' } }) });
+  // Tabs when the dock is short
   const tabs = host.clientHeight > 0 && host.clientHeight < 420;
-  dock.addPanel({ id: 'histogram', component: 'histogram', title: 'histogram',
-    position: { referencePanel: 'scatter', direction: tabs ? 'within' : 'below' }, inactive: tabs });
   dock.addPanel({ id: 'table', component: 'table', title: 'table',
-    position: { referencePanel: 'histogram', direction: 'within' }, inactive: true });
+    position: { referencePanel: 'scatter', direction: tabs ? 'within' : 'below' }, inactive: tabs });
   placeFixed(host, true);
 }
 

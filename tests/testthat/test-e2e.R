@@ -37,6 +37,7 @@ test_that("viewer boots, lasso selection reaches R, and R selections reach the p
     v$push_metadata(fx$meta)
     expect_true(browser_wait(br,
         "document.querySelector('[data-section=cells] .color-by').options.length === 3"))
+    dock_add(br, "histogram")
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
 
     # Everything comes from this server: works offline, one DuckDB
@@ -164,7 +165,7 @@ test_that("a points-only viewer boots without errors", {
     expect_true(browser_wait(br, "[...(window.__giottolens?.state.cache.keys() ?? [])].some(k => k.startsWith('transcripts:'))"))
     # No cells, so no cells panel
     expect_true(pump_until(function() v$connected()))
-    expect_identical(v$panels()$id, c("spatial", "scatter", "histogram", "table", "layers"))
+    expect_identical(v$panels()$id, c("spatial", "scatter", "table", "layers"))
     expect_identical(br$errors(), character())
 })
 
@@ -596,7 +597,7 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     v$push_metadata(fx$meta)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram') != null"))
+    expect_true(browser_wait(br, "window.__giottolens?.panel('scatter') != null"))
 
     spec <- list(
         mark = "point",
@@ -609,12 +610,12 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     expect_identical(id, "panel-1")
     expect_true(browser_wait(br, "window.__giottolens.panel('panel-1')?.view != null"))
     p <- v$panels()
-    expect_setequal(p$id, c("spatial", "scatter", "histogram", "table", "panel-1", "layers"))
+    expect_setequal(p$id, c("spatial", "scatter", "table", "panel-1", "layers"))
     expect_identical(p$title[p$id == "panel-1"], "score")
     expect_identical(p$kind[p$id == "panel-1"], "spec")
     # "right" with no ref: its own group, beside the others; the charts in view
     expect_false(p$group[p$id == "panel-1"] %in% p$group[p$id != "panel-1"])
-    expect_true(all(p$visible[p$id %in% c("scatter", "histogram", "panel-1")]))
+    expect_true(all(p$visible[p$id %in% c("scatter", "table", "panel-1")]))
     # Issue #3: the chart, axes and titles fit inside the panel
     fits <- br$js("(() => { const a = document.querySelector('[data-panel=\"panel-1\"] .stats-chart-area'), c = a.querySelector('canvas'), v = window.__giottolens.panel('panel-1').view; return c.clientWidth <= a.clientWidth + 1 && c.clientHeight <= a.clientHeight + 1 && v.origin()[0] >= 20 && v.origin()[1] >= 0; })()")
     expect_true(fits)
@@ -646,16 +647,16 @@ test_that("push_panel docks a Vega-Lite spec linked to the selection", {
     v$push_panel(spec, data = transform(fx$meta, rank = rev(seq_len(nrow(fx$meta)))),
         id = "panel-1", title = "score 2")
     v$push_panel(list(mark = "bar", encoding = list(x = list(field = "a", type = "nominal"))),
-        data = data.frame(a = c("x", "y")), id = "bars", ref = "histogram")
+        data = data.frame(a = c("x", "y")), id = "bars", ref = "table")
     expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
     p <- v$panels()
     expect_identical(p$title[p$id == "panel-1"], "score 2")
-    expect_identical(p$group[p$id == "bars"], p$group[p$id == "histogram"])
-    expect_false(p$visible[p$id == "histogram"])   # behind the new tab
+    expect_identical(p$group[p$id == "bars"], p$group[p$id == "table"])
+    expect_false(p$visible[p$id == "table"])   # behind the new tab
 
     v$remove_panel("bars")
     v$remove_panel("scatter")
-    expect_true(pump_until(function() setequal(v$panels()$id, c("spatial", "histogram", "table", "panel-1", "layers"))))
+    expect_true(pump_until(function() setequal(v$panels()$id, c("spatial", "table", "panel-1", "layers"))))
     expect_identical(br$errors(), character())
 })
 
@@ -669,16 +670,15 @@ test_that("the tray shows the control picked last; folded, it stays so after a r
     expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
     expect_true(pump_until(function() v$connected()))
 
-    # The tools bar at the left edge, the spatial view, the charts with the
-    # table a tab behind the histogram; in the tray beside the dock, one
-    # control: layers, the first
+    # The tools bar at the left edge, the spatial view, the scatter with the
+    # table below it; in the tray beside the dock, one control: layers, the
+    # first
     p <- v$panels()
-    expect_identical(p$id, c("spatial", "scatter", "histogram", "table", "layers"))
+    expect_identical(p$id, c("spatial", "scatter", "table", "layers"))
     expect_identical(p$kind, p$id)
-    expect_identical(length(unique(p$group[1:2])), 2L)
-    expect_identical(p$group[3], p$group[4])
-    expect_identical(p$group[5], "tray")
-    expect_identical(p$visible, c(TRUE, TRUE, TRUE, FALSE, TRUE))
+    expect_identical(length(unique(p$group[1:3])), 3L)
+    expect_identical(p$group[4], "tray")
+    expect_identical(p$visible, c(TRUE, TRUE, TRUE, TRUE))
     width <- br$js("document.querySelector('.tray-sections').getBoundingClientRect().width")
     expect_equal(width, 260, tolerance = 2)
     expect_identical(unlist(br$js("[...document.querySelectorAll('.tray-rail [data-tray]')].filter(b => b.offsetParent).map(b => b.dataset.tray)")),
@@ -782,7 +782,7 @@ test_that("the tray shows the control picked last; folded, it stays so after a r
         data = data.frame(a = c("x", "y")), id = "bars")
     expect_true(browser_wait(br, "window.__giottolens.panel('bars')?.view != null"))
     p <- v$panels()
-    expect_true(p$group[p$id == "bars"] %in% p$group[p$id %in% c("scatter", "histogram")])
+    expect_true(p$group[p$id == "bars"] %in% p$group[p$id %in% c("scatter", "table")])
 
     # Annotations: names on the view and outline settings, from the section
     # or from R
@@ -972,6 +972,7 @@ test_that("a reload brings back the layout, panels, settings and brushes", {
     v$push_metadata(fx$meta)
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
+    dock_add(br, "histogram")
     expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
 
     spec <- list(mark = "point",
@@ -1057,7 +1058,7 @@ test_that("the density panel bins two columns, and its rectangle is two ranges",
     suppressMessages(v$push_metadata(m))
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
-    expect_true(browser_wait(br, "window.__giottolens?.panel('histogram')?.view != null"))
+    expect_true(browser_wait(br, "!!document.querySelector('[data-panel=scatter]')"))
 
     # Added from the + menu, titled by its columns
     br$js("[...document.querySelectorAll('.dock-add')].find(b => b.offsetParent).click()")
@@ -1813,6 +1814,7 @@ test_that("a type change redraws a histogram of the column once it loads", {
     suppressMessages(v$push_metadata(fx$meta))
     br <- lens_browser(v$url)
     on.exit(br$close(), add = TRUE)
+    dock_add(br, "histogram")
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=histogram] canvas')"))
     expect_identical(br$js("document.querySelector('[data-panel=histogram] select')?.value"), "score")
     # The column gets a new file and is not loaded for a moment; the selection
