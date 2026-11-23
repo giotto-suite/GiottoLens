@@ -9,7 +9,6 @@ lens_analysis_fixture <- local({
         testthat::skip_if_not_installed("GiottoDisk")
         testthat::skip_if_not_installed("Giotto")
         if (!is.null(fx)) return(fx)
-        sw <- function(...) suppressMessages(suppressWarnings(...))
         grid <- expand.grid(col = 0:29, row = 0:19)
         ids <- sprintf("c%03d", seq_len(nrow(grid)))
         type <- c("A", "B", "C")[1L + (grid$col %/% 10L)]

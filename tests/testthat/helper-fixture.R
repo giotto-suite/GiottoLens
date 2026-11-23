@@ -1,3 +1,9 @@
+sw <- function(...) suppressMessages(suppressWarnings(...))
+
+# The private environment of a viewer, and an ask as the page sends it
+lens_priv <- function(v) get("private", v$.__enclos_env__)
+lens_ask <- function(v, ...) lens_priv(v)$ask(list(...))
+
 # A tiny GiottoDisk-backed dataset: 400 transcripts of 4 genes over a
 # 100 x 100 extent, and 100 square cells. Built once per test run.
 lens_fixture <- local({
@@ -17,7 +23,6 @@ lens_fixture <- local({
     old_seed <- .Random.seed_or_null()
     set.seed(1)
     on.exit(.restore_seed(old_seed), add = TRUE)
-    sw <- function(...) suppressMessages(suppressWarnings(...))
 
     n   <- 400L
     pts <- terra::vect(data.frame(
@@ -51,7 +56,6 @@ lens_fixture <- local({
 # Giotto object `g` saved as snapshot "fixture" in a new project, as an object
 # loaded from a project is
 .fixture_project <- function(g) {
-    sw <- function(...) suppressMessages(suppressWarnings(...))
     src <- sw(GiottoDisk::gDirSource(tempfile("lensproj_")))
     g <- sw(GiottoDisk::sourceWrite(src, g))
     sw(GiottoDisk::snapshotSave(src, g, name = "fixture", verbose = FALSE))
@@ -83,7 +87,6 @@ lens_image_fixture <- local({
             gdal = c("BLOCKSIZE=256", "COMPRESS=JPEG"))
         rgb_img <- GiottoClass::createGiottoLargeImage(rgb_file, name = "he", verbose = FALSE)
         terra::ext(rgb_img) <- c(0, 100, -100, 0)
-        sw <- function(...) suppressMessages(suppressWarnings(...))
         # Its own stores: saving into the project moves them into its vault
         own <- .fixture_layers()
         g <- sw(GiottoClass::giotto())
@@ -107,7 +110,6 @@ lens_bins_fixture <- local({
         testthat::skip_if_not_installed("GiottoClass")
         testthat::skip_if_not_installed("GiottoDisk")
         if (!is.null(fx)) return(fx)
-        sw <- function(...) suppressMessages(suppressWarnings(...))
         grid <- expand.grid(col = 0:29, row = 0:29)
         a  <- 10 * pi / 180
         xy <- data.frame(
@@ -181,6 +183,9 @@ pump_until <- function(cond, timeout = 10) {
     TRUE
 }
 
+# Run the event loop for `secs`, for what should (or should not) arrive
+pump_for <- function(secs) invisible(pump_until(function() FALSE, secs))
+
 http_get <- function(url, headers = list(), timeout = 10) {
     testthat::skip_if_not_installed("curl")
     res <- NULL
@@ -214,6 +219,7 @@ lens_viewer_at <- function(url) {
 # `load`: the load the page says it shows (the manifest's), or NULL to say
 #   nothing, as a page from before set_object() existed
 ws_client <- function(url, origin = NULL, load = NULL, allow = TRUE, key = NULL) {
+    testthat::skip_if_not_installed("websocket")
     if (allow) {
         viewer <- lens_viewer_at(sub("^ws", "http", url))
         if (!is.null(viewer)) suppressMessages(viewer$allow())
@@ -241,6 +247,22 @@ ws_client <- function(url, origin = NULL, load = NULL, allow = TRUE, key = NULL)
     })
     ws$connect()
     list(ws = ws, state = state)
+}
+
+# What window `cl` heard of `type`; what it says to R; an ask it sends and
+# the answer R gives
+ws_msgs <- function(cl, type) Filter(function(m) identical(m$type, type), cl$state$msgs)
+ws_say <- function(cl, type, data = NULL)
+    cl$ws$send(jsonlite::toJSON(list(type = type, data = data), auto_unbox = TRUE, null = "null"))
+ws_ask <- function(cl, id, ...)
+    cl$ws$send(jsonlite::toJSON(list(type = "ask", id = id, data = list(...)), auto_unbox = TRUE))
+ws_answer <- function(cl, id, timeout = 10) {
+    hit <- NULL
+    pump_until(function() {
+        for (m in ws_msgs(cl, "answer")) if (identical(m$data$id, id)) hit <<- m$data
+        !is.null(hit)
+    }, timeout)
+    hit
 }
 
 # The URL of data path `rel` of `viewer`, under its current data secret
