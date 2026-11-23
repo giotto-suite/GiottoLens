@@ -557,6 +557,19 @@
     .reg-n { width: 18px; text-align: right; color: var(--fg-2); font-family: monospace; }
     .reg-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid; flex-shrink: 0; }
     .reg-res { flex: 1; font-family: monospace; color: var(--fg-2); }
+    /* Every slider as the images' (.range2, below): a 3 px track and a 10 px
+       round thumb. .range2's own rules are more specific and keep its stacked
+       pair as it is. */
+    input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+    input[type=range]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--bg-3); }
+    input[type=range]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--bg-3); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 10px; height: 10px; margin-top: -3.5px; border-radius: 50%; background: var(--fg-1); border: none;
+    }
+    input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-1); border: none; }
+    input[type=range]:focus-visible::-webkit-slider-thumb { outline: 1px solid var(--fg-2); }
+    input[type=range]:disabled::-webkit-slider-thumb { background: var(--fg-4); }
+    input[type=range]:disabled::-moz-range-thumb { background: var(--fg-4); }
     /* Two thumbs on one track: two range inputs stacked, only their thumbs
        take the pointer, so each drags its own end */
     .range2 { position: relative; flex: 1; height: 14px; }
@@ -595,6 +608,13 @@
     #workarea { flex: 1; min-height: 0; display: flex; }
     /* The docked panels (panels/dock.ts): dockview's dark theme, in the colour tokens */
     #dock { position: relative; flex: 1; min-width: 0; overflow: hidden; background: var(--bg-0); }
+    /* The left tray (panels/drawer.ts): page chrome as the right tray, its right edge drags */
+    #drawer { position: relative; flex-shrink: 0; display: none; flex-direction: column; width: var(--drawer-width);
+      background: var(--bg-1); border-right: 1px solid var(--bg-2); }
+    #drawer.open { display: flex; }
+    .drawer-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .drawer-panel { position: relative; flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; color: var(--fg-1); }
+    #drawer .drawer-sash { left: auto; right: -3px; }
     .dockview-theme-dark.lens-dock {
       --dv-group-view-background-color: var(--bg-0);
       --dv-tabs-and-actions-container-background-color: var(--bg-1);
@@ -814,6 +834,11 @@
     .tool-btn svg { width: 15px; height: 15px; stroke-width: 1.75; pointer-events: none; }
     .tool-btn:hover { background: var(--bg-3); color: var(--fg-0); }
     .tool-btn.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-fg); }
+    /* The tray's rail: its controls are shown most of the time, so shown is the
+       plain look and hidden is faded, with no accent */
+    .tray-rail .tool-btn[data-tray] { color: var(--fg-4); opacity: 0.6; }
+    .tray-rail .tool-btn[data-tray].active { background: none; border-color: transparent; color: var(--fg-2); opacity: 1; }   /* as the tools rail's icons */
+    .tray-rail .tool-btn[data-tray]:hover { background: var(--bg-3); color: var(--fg-0); opacity: 1; }
     .tool-sep { width: 1px; height: 16px; background: var(--bg-3); margin: 0 2px; flex-shrink: 0; }
     .tool-group { position: relative; }
     .tool-submenu {
@@ -944,7 +969,7 @@
     /* The dialog follows the theme; the start page is in the always-dark spatial pane */
     :root[data-theme="light"] .start-overlay :is(.start-btn.danger, .start-status.error) { color: #b91c1c; }
   </style>
-  <script type="module" crossorigin src="./assets/index-BQepVRDb.js"></script>
+  <script type="module" crossorigin src="./assets/index-CwxsQ2Pz.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-BHncyuL9.css">
 </head>
 <body>
@@ -952,6 +977,8 @@
     <div id="workarea">
       <!-- The page's own actions (panels/tools.ts) -->
       <div id="tools-rail" data-panel="tools"></div>
+      <!-- The left tray: the Analysis panel (panels/drawer.ts) -->
+      <div id="drawer"></div>
       <!-- The panels, the spatial view among them (panels/dock.ts) -->
       <div id="dock"></div>
       <!-- The controls (panels/tray.ts) -->
