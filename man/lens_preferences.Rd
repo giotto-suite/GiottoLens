@@ -45,6 +45,8 @@ item, adr/0024); \code{"default"} takes \code{scale_style}.
 \item \code{cat_palette}: colors of categories, \code{"default"}, \code{"vivid"} or
 \code{"okabe_ito"}.
 \item \code{tx_palette}: transcript colors, \code{"default"} or \code{"vivid"}.
+\item \code{theme}: the panels and controls, \code{"dark"} or \code{"light"}; the spatial view
+and scatter plots stay dark (see \link{LensViewer} \verb{$set_theme()}).
 \item \code{background}: color behind the cells, \code{"#rrggbb"}; unset, the theme's.
 \item \code{outline_color}, \code{outline_width}, \code{outline_opacity}: cell outlines.
 \item \code{selection_color}: the color selected cells draw in, \code{"#rrggbb"} (see

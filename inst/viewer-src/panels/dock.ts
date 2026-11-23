@@ -37,7 +37,8 @@ import { createHistogramPanel } from './histogram.js';
 import { createSpecPanel } from './spec.js';
 import { createDensityPanel } from './density.ts';
 import { createTablePanel } from './table.ts';
-import { setTrayHidden, trayHidden } from './tray.ts';
+import { setTrayHidden, trayHidden, metadataNote } from './tray.ts';
+import { moduleView } from './modules.ts';
 import { createSpatialPanel } from '../spatial/view.ts';
 // @ts-ignore: plain JS module
 import { abortAllTiles } from '../data/schedule.js';
@@ -152,7 +153,7 @@ class PanelView implements IContentRenderer {
         if (my !== this.gen) { h.destroy(); return; }
         this.handle = h;
       } else if (typeOf(this.kind)!.meta && !state.metaInfo?.size) {
-        this.element.append(el('div', 'panel-note', 'Push metadata from R to fill this panel: viewer$push_metadata(g)'));
+        this.element.append(metadataNote('to fill this panel'));
       } else {
         this.handle = typeOf(this.kind)!.create(this.element, this.ctx());
       }
@@ -225,27 +226,6 @@ function showIn(kind: BuiltinKind, group: IDockviewGroupPanel): void {
   const to = dock?.groups.find(g => g.id === group.id);
   if (open && to && group.panels.length === 0) open.api.moveTo({ group: to, position: 'center' });
   else addBuiltin(kind, { referenceGroup: group.id, direction: 'within' });
-}
-
-// The tools rail's "+": the same menu, the panel added at the dock's left
-// edge. It is how a closed spatial view comes back when no other group is left.
-export function openAddMenu(anchor: HTMLElement): void {
-  const doc = anchor.ownerDocument;
-  doc.querySelectorAll('.dock-menu.open').forEach(m => m.classList.remove('open'));
-  const menu = el('div', 'dock-menu open dock-menu-float');
-  const r = anchor.getBoundingClientRect();
-  Object.assign(menu.style, { left: `${r.right + 4}px`, top: `${r.top}px`, right: 'auto' });
-  const close = () => { menu.remove(); doc.removeEventListener('click', close); };
-  menu.append(...builtins().map(kind => {
-    const item = el('button', '', kind) as HTMLButtonElement;
-    item.addEventListener('click', () => {
-      close();
-      addBuiltin(kind, { direction: 'left' });
-    });
-    return item;
-  }));
-  doc.body.append(menu);
-  setTimeout(() => doc.addEventListener('click', close));   // not the click that opened it
 }
 
 // The empty space: with every panel closed, or a pane a split left empty
@@ -400,6 +380,8 @@ function applyLayout(layout: object | null): void {
   if (held) for (const p of [...dock.panels])
     if (views.get(p.id)?.kind === 'spec' && !held.has(p.id)) { byR.add(p.id); dock.removePanel(p); }
   for (const p of payloads.values()) if (!dock.getPanel(p.id)) pushPanel({ ...p, restore: true });
+  // A restore shows every pane: the module on keeps its view alone
+  focusView(moduleView());
   save();
 }
 
@@ -437,30 +419,51 @@ export function initDock(host: HTMLElement): void {
   store.subscribe(s => s.layout, applyLayout);
 }
 
-// The tools rail's panels toggle: every group but the spatial view's is
-// hidden, and the tray's column, or shown again. Hidden groups are saved with
-// the layout. Without a spatial view there is nothing to show alone.
-const keepsShown = (g: DockviewGroupPanel) => g.panels.some(p => p.id === 'spatial');
-export function panelsShown(): boolean {
-  return !dock || (!trayHidden() && dock.groups.every(g => keepsShown(g) || g.api.isVisible));
+// One view alone in the data area, its pane maximized (dockview hides the
+// others and keeps the layout as it was when saving it), or every pane again
+// with null. A module asks for its view (panels/modules.ts), and the panels
+// toggle for the spatial view's. Making another pane active ends it, as when
+// R pushes a panel. The view is opened if closed.
+// dockview gives the panes back their shares of the width the dock had while
+// one was alone, so the pane focused gets its own width back on leaving.
+let unfocused: { group: DockviewGroupPanel; width: number } | null = null;
+export function focusView(id: string | null): void {
+  if (!dock) return;
+  if (!id) {
+    if (!dock.hasMaximizedGroup()) return;
+    dock.exitMaximizedGroup();
+    if (unfocused && dock.groups.includes(unfocused.group)) unfocused.group.api.setSize({ width: unfocused.width });
+    unfocused = null;
+    return;
+  }
+  let p = dock.getPanel(id);
+  if (!p && isSingle(id) && available(id as BuiltinKind)) { showBuiltin(id as BuiltinKind); p = dock.getPanel(id); }
+  if (!p) return;
+  p.api.setActive();
+  if (p.api.isMaximized()) return;
+  if (dock.hasMaximizedGroup()) focusView(null);
+  unfocused = { group: p.group, width: p.group.api.width };
+  dock.maximizeGroup(p);
 }
-// Shown again, the hidden groups take their old widths from the view
-// unevenly: it gets its own back
-let shownWidth: number | null = null;
+
+// The bottom bar's panels toggle (ui/selbar.js): the spatial view alone, the tray's column
+// hidden too, or everything back. With a module on, the data area keeps the
+// module's view alone and the toggle hides or shows the tray.
+export function panelsShown(): boolean {
+  return !dock || (!trayHidden() && (!dock.hasMaximizedGroup() || !!moduleView()));
+}
 export function togglePanels(): void {
   if (!dock) return;
-  const view = dock.getPanel('spatial')?.group;
-  const show = !panelsShown() || !view;
-  if (!show && view) shownWidth = view.api.width;
-  for (const g of dock.groups) if (!keepsShown(g)) g.api.setVisible(show);
+  const show = !panelsShown();
+  // The dock's width changes with the tray's, laid out at once rather than at
+  // its resize observer. The view is focused before it widens and let go
+  // after it narrows, so focusView() keeps and gives back its width as laid
+  // out beside the tray.
+  const relayout = () => { if (dockHost) dock?.layout(dockHost.clientWidth, dockHost.clientHeight); };
+  if (!show) focusView('spatial');
   setTrayHidden(!show);
-  // The dock's own width changes with the tray's: laid out now, not at its
-  // resize observer, so the width below is set on the new width
-  if (dockHost) dock.layout(dockHost.clientWidth, dockHost.clientHeight);
-  if (show && shownWidth) {
-    view?.api.setSize({ width: shownWidth });
-    shownWidth = null;
-  }
+  relayout();
+  if (show) focusView(moduleView());
 }
 export function onLayoutChange(fn: () => void): () => void {
   const d = dock?.onDidLayoutChange(fn);

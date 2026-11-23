@@ -18,6 +18,10 @@ interface Group { title: string | null; items: Item[] }
 
 const SECTIONS: { title: string; groups: Group[] }[] = [
   { title: 'Colors', groups: [
+    { title: 'Page', items: [
+      { id: 'theme', label: 'theme', kind: 'select', options: ['dark', 'light'],
+        title: 'the panels and controls; the spatial view and scatter plots stay dark' },
+    ] },
     { title: 'Continuous', items: [
       { id: 'seq_palette', label: 'sequential palette', kind: 'palette',
         options: ['viridis', 'magma', 'inferno', 'plasma', 'cividis', 'turbo', 'gray', 'blue-red'] },
@@ -57,7 +61,7 @@ const SECTIONS: { title: string; groups: Group[] }[] = [
 ];
 
 const ITEMS = SECTIONS.flatMap(s => s.groups.flatMap(g => g.items));
-const open = new Set<string>(['Colors', 'Colors/Continuous']);
+const open = new Set<string>(['Colors', 'Colors/Page', 'Colors/Continuous']);
 
 const el = (tag: string, className = '', text = ''): HTMLElement =>
   Object.assign(document.createElement(tag), { className, textContent: text });

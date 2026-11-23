@@ -24,6 +24,7 @@ import type { Legend } from '../render/colors.ts';
 import type { PanelHandle } from './dock.ts';
 import { isItemKey, fieldLabel } from '../data/items.ts';
 import { openPicker } from './picker.ts';
+import { metadataNote } from './tray.ts';
 
 const LEGEND_MAX = 30;
 const TYPE_TIMEOUT_MS = 5000;
@@ -330,8 +331,7 @@ export function createOutlineSection(key: keyof typeof OUTLINE_ACTIONS = 'outlin
 
 export function createCellsPanel(body: HTMLElement): PanelHandle {
   const root = Object.assign(document.createElement('div'), { className: 'ctl-body' });
-  const note = Object.assign(document.createElement('div'), {
-    className: 'panel-note', textContent: 'Push metadata from R to color the cells: viewer$push_metadata(g)' });
+  const note = metadataNote('to color the cells');
   const row = Object.assign(document.createElement('div'), { className: 'alpha-row' });
   const select = Object.assign(document.createElement('select'), { className: 'ctl-select color-by' });
   const browse = Object.assign(document.createElement('button'), { className: 'scale-btn color-by-browse',

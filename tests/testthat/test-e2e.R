@@ -226,7 +226,9 @@ test_that("the Data panel lists the object and pulls the items queued", {
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "window.__giottolens?.state.cells?.n === 900"))
     expect_true(pump_until(function() v$connected()))
-    tray_show(br, "data")
+    # The Data panel flies out from the tools rail
+    br$js("document.querySelector('[data-panel=tools] [data-act=data]').click()")
+    expect_true(browser_wait(br, "!!document.querySelector('.flyout-body[data-panel=data]')?.offsetParent"))
     q <- function(sel) sprintf("document.querySelector('[data-panel=data] %s')", sel)
     items <- sprintf("[...document.querySelectorAll('[data-panel=data] .data-item')].map(e => e.dataset.item)")
     expect_true(browser_wait(br, sprintf("%s.join() === 'array_row,array_col,half'", items)))
@@ -564,14 +566,16 @@ test_that("R drives the viewer: select, state, view, colour, screenshot, log", {
     v$set_selection_color()
     expect_identical(unlist(v$state()$config$selectionColor), c(255L, 220L, 50L))
     # Light panels, the spatial view still dark
-    expect_identical(v$state()$config$theme, "dark")
+    expect_null(v$state()$config$theme)
     v$set_theme("light")
     expect_identical(v$state()$config$theme, "light")
     expect_true(browser_wait(br, "document.documentElement.dataset.theme === 'light'"))
     expect_true(browser_wait(br, paste0(
-        "getComputedStyle(window.__giottolens.spatial.root).backgroundColor === 'rgb(17, 24, 39)' && ",
+        "getComputedStyle(window.__giottolens.spatial.root).backgroundColor === 'rgb(13, 17, 23)' && ",
         "getComputedStyle(document.body).backgroundColor === 'rgb(243, 244, 246)'")))
-    v$set_theme("dark")
+    v$set_theme()
+    expect_null(v$state()$config$theme)
+    expect_true(browser_wait(br, "document.documentElement.dataset.theme === undefined"))
 
     png <- v$screenshot()
     expect_true(file.exists(png))
@@ -687,18 +691,20 @@ test_that("the tray shows the control picked last; folded, it stays so after a r
     br$js("document.querySelector('[data-section=cells] .layer-toggle').click()")
     expect_identical(unlist(br$js(sections)), c("cells-", "transcripts+", "images-", "annotations-"))
     br$js("document.querySelector('[data-section=cells] .layer-toggle').click()")
-    # A rail click shows that control instead; the other keeps its state
+    # A rail click shows that control beside the one shown, which keeps its
+    # state; a click on a shown one hides it, and with none shown the tray
+    # stays open with a note
     shown <- function(k) isTRUE(br$js(sprintf("!!document.querySelector('[data-panel=%s]')?.offsetParent", k)))
     open <- "document.getElementById('tray').classList.contains('open')"
     tray_show(br, "selection")
-    expect_false(shown("layers"))
-    expect_identical(utils::tail(v$panels()$id, 1L), "selection")
-    # A click on the one shown folds the tray; another click opens it
+    expect_true(shown("layers"))
+    expect_identical(utils::tail(v$panels()$id, 2L), c("layers", "selection"))
     br$js("document.querySelector('.tray-rail [data-tray=selection]').click()")
-    expect_true(browser_wait(br, sprintf("!%s", open)))
+    expect_true(browser_wait(br, "!document.querySelector('[data-panel=selection]')?.offsetParent"))
     expect_false("selection" %in% v$panels()$id)
-    br$js("document.querySelector('.tray-rail [data-tray=selection]').click()")
-    expect_true(browser_wait(br, open))
+    br$js("document.querySelector('.tray-rail [data-tray=layers]').click()")
+    expect_true(browser_wait(br, sprintf("%s && !!document.querySelector('.tray-empty')?.offsetParent", open)))
+    expect_false(any(v$panels()$group == "tray"))
     tray_show(br, "layers")
     expect_identical(unlist(br$js(sections)), c("cells+", "transcripts+", "images-", "annotations-"))
     # The + menu offers views only
@@ -793,19 +799,20 @@ test_that("the tray shows the control picked last; folded, it stays so after a r
     expect_identical(v$state()$config$annotOutline$width, 4L)
     expect_error(v$set_annotation_style(names = NA), "TRUE or FALSE")
 
-    # remove_panel() of the control shown folds the tray; the control and
-    # the fold stay after a reload, and a rail click opens it on the control
-    # picked, with its sections as they were left
+    # remove_panel() of a control hides it, the tray staying open; the
+    # controls shown and the fold stay after a reload, and a rail click opens
+    # it on the control picked, with its sections as they were left
     tray_show(br, "selection")
     v$remove_panel("selection")
+    expect_true(browser_wait(br, sprintf("%s && !document.querySelector('[data-panel=selection]')?.offsetParent", open)))
+    br$js("document.querySelector('.tray-fold').click()")
     expect_true(browser_wait(br, sprintf("!%s", open)))
     priv <- get("private", v$.__enclos_env__)
-    expect_true(pump_until(function() grepl('"trayActive":"selection"', priv$config_json %||% "", fixed = TRUE) &&
+    expect_true(pump_until(function() grepl('"trayShown":{"":["layers"]}', priv$config_json %||% "", fixed = TRUE) &&
         grepl('"trayCollapsed":true', priv$config_json, fixed = TRUE)))
     br$js("location.reload()")
     Sys.sleep(0.3)
     expect_true(browser_wait(br, sprintf(paste("!!document.querySelector('.r-status.connected')",
-        "&& window.__giottolens.store.getState().trayActive === 'selection'",
         "&& window.__giottolens.store.getState().trayCollapsed && !%s"), open)))
     expect_false(any(v$panels()$group == "tray"))
     tray_show(br, "layers")
@@ -838,7 +845,7 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
 
     # The panels toggle hides every group but the view's, and the tray's
     # column (its rail stays), and gives the view its width back
-    toggle <- "document.querySelector('[data-panel=tools] [data-act=panels]').click()"
+    toggle <- "document.getElementById('btn-panels').click()"
     w0 <- width("spatial")
     br$js(toggle)
     expect_true(browser_wait(br, "!document.getElementById('tray').classList.contains('open')"))
@@ -873,26 +880,29 @@ test_that("the spatial view docks: it closes, comes back, and the panels hide be
     v$set_selection(c("cell_001", "cell_002"))
     expect_true(browser_wait(br, "document.getElementById('sel-count').textContent.startsWith('2 ')"))
 
-    # It stays closed after a reload, and the tools bar's + brings it back
-    # where it was looking
+    # It stays closed after a reload, and a group's + brings it back where it
+    # was looking
     br$js("location.reload()")
     Sys.sleep(0.3)
     expect_true(browser_wait(br, paste("!!document.querySelector('.r-status.connected')",
         "&& window.__giottolens.store.getState().closedPanels.includes('spatial')")))
     expect_false("spatial" %in% v$panels()$id)
     expect_null(br$js("window.__giottolens.spatial"))
-    br$js("document.querySelector('[data-panel=tools] [data-act=add]').click()")
-    br$js("[...document.querySelectorAll('.dock-menu-float button')].find(b => b.textContent === 'spatial').click()")
+    br$js("[...document.querySelectorAll('.dv-tab')].find(t => t.textContent.trim() === 'scatter').closest('.dv-groupview').querySelector('.dock-add').click()")
+    br$js("[...document.querySelectorAll('.dock-menu.open button')].find(b => b.textContent === 'spatial').click()")
     expect_true(browser_wait(br, "window.__giottolens.spatial?.viewState?.zoom === 3"))
     expect_identical(unlist(br$js("window.__giottolens.spatial.viewState.target.slice(0, 2)")), c(10L, -20L))
     expect_true(browser_wait(br, tiles_loaded))
-    expect_equal(width("spatial"), round(0.65 * dock()), tolerance = 2)
     expect_false("spatial" %in% unlist(br$js("window.__giottolens.store.getState().closedPanels")))
 
     # A layout saved before the view docked gets the view
     br$js("(() => { const g = window.__giottolens, L = structuredClone(g.store.getState().layout);
-      const keep = n => n.type === 'leaf' ? !n.data.views.some(id => id === 'spatial')
-        : (n.data = n.data.filter(keep), true);
+      const keep = n => {
+        if (n.type !== 'leaf') return (n.data = n.data.filter(keep), true);
+        n.data.views = n.data.views.filter(id => id !== 'spatial');
+        if (n.data.activeView === 'spatial') n.data.activeView = n.data.views[0];
+        return n.data.views.length > 0;
+      };
       keep(L.grid.root); delete L.panels.spatial; g.actions.setLayout(L); })()")
     expect_true(browser_wait(br, "window.__giottolens.spatial?.viewState != null"))
     expect_identical(v$panels()$id[1:2], c("spatial", "scatter"))
@@ -1459,6 +1469,51 @@ test_that("flipped and rotated images are drawn where GiottoClass places them", 
     expect_identical(br$errors(), character())
 })
 
+test_that("a module shows its controls and its view alone, and leaving puts both back", {
+    fx <- lens_image_fixture()
+    v  <- launch_lens(fx$g, open = FALSE, images = "stain", image_files = c(hne = fx$rgb_file))
+    on.exit(v$close(), add = TRUE)
+    br <- lens_browser(v$url, width = 1200, height = 800)
+    on.exit(br$close(), add = TRUE)
+    expect_true(browser_wait(br, "window.__giottolens?.state.images?.size === 2"))
+    expect_true(pump_until(function() v$connected()))
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
+    tray_show(br, "selection")
+    shown <- function() unlist(br$js("[...document.querySelectorAll('.tray-section')].filter(s => s.style.display !== 'none').map(s => s.dataset.control)"))
+    rail <- function() unlist(br$js("[...document.querySelectorAll('.tray-rail [data-tray]')].filter(b => b.style.display !== 'none').map(b => b.dataset.tray)"))
+    visible <- function() { p <- v$panels(); p$id[p$visible & p$group != "tray"] }
+    tray0 <- shown()
+    expect_false("register" %in% rail())
+    expect_gt(length(visible()), 1L)
+    panes0 <- visible()
+
+    # On: the register control alone, offered and shown; the spatial view alone
+    v$set_module("registration")
+    expect_true(browser_wait(br, "!!document.querySelector('.tray-body[data-panel=register]')?.offsetParent"))
+    expect_identical(shown(), "register")
+    expect_identical(rail(), "register")
+    expect_true(br$js("!!document.querySelector('.tray-leave').offsetParent"))
+    expect_true(browser_wait(br, "document.querySelector('[data-panel=tools] [data-act=modules]').classList.contains('active')"))
+    expect_true(pump_until(function() identical(visible(), "spatial")))
+    priv <- get("private", v$.__enclos_env__)
+    expect_true(pump_until(function() grepl('"module":"registration"', priv$config_json %||% "", fixed = TRUE)))
+
+    # A reload comes back in the module
+    br$js("location.reload()")
+    Sys.sleep(0.3)
+    expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected') && !!document.querySelector('.tray-body[data-panel=register]')?.offsetParent"))
+    expect_true(pump_until(function() identical(visible(), "spatial")))
+
+    # Left by the rail's button: the tray's controls and the panes as before
+    br$js("document.querySelector('.tray-leave').click()")
+    expect_true(browser_wait(br, "!document.querySelector('.tray-leave').offsetParent"))
+    expect_identical(shown(), tray0)
+    expect_false("register" %in% rail())
+    expect_true(pump_until(function() setequal(visible(), panes0)))
+    expect_true(pump_until(function() grepl('"module":null', priv$config_json %||% "", fixed = TRUE)))
+    expect_identical(br$errors(), character())
+})
+
 test_that("an image is registered by landmarks, saved, reloaded and added to the object", {
     fx <- lens_image_fixture()
     v  <- launch_lens(fx$g, open = FALSE, images = "stain", image_files = c(hne = fx$rgb_file))
@@ -1466,7 +1521,7 @@ test_that("an image is registered by landmarks, saved, reloaded and added to the
     br <- lens_browser(v$url, width = 900, height = 700)
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "window.__giottolens?.state.images?.size === 2"))
-    expect_true(browser_wait(br, "document.querySelector('.tray-rail [data-tray=register]')?.style.display === ''"))
+    expect_true(module_available(br, "registration"))
     tray_show(br, "register")
     expect_true(browser_wait(br, "!!document.querySelector('[data-panel=register] .reg-start')"))
     expect_true(pump_until(function() v$connected()))
@@ -1662,12 +1717,15 @@ test_that("an annotation's select button selects the cells inside it", {
     click(1, shift = TRUE)
     expect_true(pump_until(function() setequal(v$selection, c(first, "cell_089", "cell_090", "cell_099", "cell_100"))))
 
-    # Names are unique: a taken one is marked and reverts; a free one is the key
-    br$js("document.querySelectorAll('.annot-row')[1].click()")
-    expect_true(browser_wait(br, "document.querySelector('.annot-popup.visible .annot-name')?.value === 'annotation_2'"))
-    rename <- function(to) br$js(sprintf("(() => { const i = document.querySelector('.annot-popup.visible .annot-name');
+    # Renamed by a double-click on the name in the list. Names are unique: a
+    # taken or empty one is marked and changes nothing; a free one is the key
+    rename <- function(to) br$js(sprintf("(() => {
+        const t = document.querySelectorAll('.annot-row .annot-name-text')[1];
+        t.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        const i = document.querySelector('.annot-row .name-edit');
         i.value = '%s'; i.dispatchEvent(new Event('input')); const bad = i.classList.contains('invalid');
-        i.dispatchEvent(new Event('change')); return [bad, i.value]; })()", to))
+        i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+        return [bad, document.querySelectorAll('.annot-row .annot-name-text')[1].textContent]; })()", to))
     expect_identical(rename("annotation_1"), list(TRUE, "annotation_2"))
     expect_identical(rename(""), list(TRUE, "annotation_2"))
     expect_identical(rename("tumor"), list(FALSE, "tumor"))
@@ -1964,7 +2022,7 @@ test_that("the add image button adds a file R picks, ready to register", {
     on.exit(br$close(), add = TRUE)
     expect_true(browser_wait(br, "!!document.querySelector('.r-status.connected')"))
     expect_true(pump_until(function() v$connected()))
-    expect_false(br$js("document.querySelector('.tray-rail [data-tray=register]').style.display === ''"))
+    expect_false(module_available(br, "registration"))
     tray_show(br, "layers", "images")
     expect_true(browser_wait(br, "document.querySelector('[data-section=images] .img-add-status')?.textContent === 'no images'"))
     pick_type <- function(br, type) {
@@ -1993,7 +2051,7 @@ test_that("the add image button adds a file R picks, ready to register", {
     nm <- sub("\\.tif$", "", basename(fx$rgb_file))
     expect_true(browser_wait(br, sprintf("window.__giottolens.state.images?.has('%s')", nm)))
     expect_true(browser_wait(br, sprintf("document.querySelector('[data-section=images] .img-add-status')?.textContent === 'added %s'", nm)))
-    expect_true(browser_wait(br, "document.querySelector('.tray-rail [data-tray=register]').style.display === ''"))
+    expect_true(module_available(br, "registration"))
     expect_true(isTRUE(v$state()$config$images[[nm]]$show))
 
     # A name already taken is reported in the panel

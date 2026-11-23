@@ -55,6 +55,13 @@ test_that("saved selections keep the rules, and bring them back as they were", {
     v$select(lens_range("score", 9, 10), source = "hist:score", replace = FALSE)
     expect_identical(v$selections()$cells[1L], length(sel))
 
+    # Renamed in place; never onto another's name
+    v$rename_selection("a", " a2 ")
+    expect_identical(v$selections()$name, c("a2", "b"))
+    expect_error(v$rename_selection("a2", "b"), "already named 'b'")
+    expect_error(v$rename_selection("z", "y"), "no saved selection 'z'")
+    v$rename_selection("a2", "a")
+
     v$remove_selection("a")
     expect_identical(v$selections()$name, "b")
     expect_error(v$selections("a"), "no saved selection 'a'; saved: b")

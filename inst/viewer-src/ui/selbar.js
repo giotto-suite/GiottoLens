@@ -1,13 +1,16 @@
 // The selection bar along the bottom of the page (adr/0023). The selection is
 // one for the whole page, rules from every view and panel combined with OR or
 // AND, so its count lives here rather than in a view, with how many rules make
-// it and how they combine; that opens the selection panel, which lists them
+// it and how they combine (the mode's symbol: intersect for AND, unite for OR);
+// the rules open the selection panel, which lists them
 // (panels/selection.ts). R's connection and the stop button (viewer$close())
-// are at its left end, the status line at its right.
+// are at its left end, the status line and the panels toggle at its right.
+import { createIcons, icons } from 'lucide';
 import { store, actions } from '../core/store.ts';
 import { liveView, onLive } from '../selection/live.ts';
 import { onRStatus, sendToR } from '../core/comms.js';
 import { showControl } from '../panels/tray.ts';
+import { togglePanels, panelsShown, onLayoutChange } from '../panels/dock.ts';
 
 const CLOSE_ARM_MS = 3000;
 
@@ -69,7 +72,7 @@ export function initSelectionBar() {
     const s = store.getState();
     const n = Object.keys(s.rules).length;
     rules.style.display = n ? '' : 'none';
-    rules.textContent = n > 1 ? `${n} rules · ${s.combine}` : '1 rule';
+    rules.textContent = n > 1 ? `${n} rules` : '1 rule';
     const empty = n > 0 && s.selection.count === 0 && !liveView();
     rules.classList.toggle('empty', empty);
     rules.title = empty
@@ -78,6 +81,18 @@ export function initSelectionBar() {
       : 'show the rules in the selection panel';
   };
   rules.addEventListener('click', () => showControl('selection'));
+
+  // The combine mode, always shown: it decides what the next rule does
+  const mode = document.getElementById('sel-mode');
+  const updateMode = () => {
+    const and = store.getState().combine === 'and';
+    mode.innerHTML = `<i data-lucide="${and ? 'squares-intersect' : 'squares-unite'}"></i>`;
+    mode.title = and ? 'and: the cells every rule selects (cross-filter)' : 'or: the cells any rule selects';
+    mode.dataset.mode = and ? 'and' : 'or';
+    createIcons({ icons, root: mode });
+  };
+  store.subscribe(s => s.combine, updateMode);
+  updateMode();
   store.subscribe(s => s.rules, updateRules);
   store.subscribe(s => s.combine, updateRules);
   store.subscribe(s => s.selection, updateRules);
@@ -89,4 +104,15 @@ export function initSelectionBar() {
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
     if (e.key === 'c') actions.clearSelection();
   });
+}
+
+// The panels toggle, at the bar's right end: the spatial view alone and the
+// tray hidden, or everything back (panels/dock.ts togglePanels()). Lit while
+// the panels show. After the dock, whose layout it follows.
+export function initPanelsToggle() {
+  const btn = document.getElementById('btn-panels');
+  const showState = () => btn.classList.toggle('active', panelsShown());
+  btn.addEventListener('click', () => { togglePanels(); showState(); });
+  onLayoutChange(showState);
+  showState();
 }

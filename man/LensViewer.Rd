@@ -67,6 +67,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-set_outline}{\code{LensViewer$set_outline()}}
     \item \href{#method-LensViewer-set_annotation_style}{\code{LensViewer$set_annotation_style()}}
     \item \href{#method-LensViewer-set_selection_color}{\code{LensViewer$set_selection_color()}}
+    \item \href{#method-LensViewer-set_module}{\code{LensViewer$set_module()}}
     \item \href{#method-LensViewer-set_theme}{\code{LensViewer$set_theme()}}
     \item \href{#method-LensViewer-add_image}{\code{LensViewer$add_image()}}
     \item \href{#method-LensViewer-set_image}{\code{LensViewer$set_image()}}
@@ -86,6 +87,7 @@ complete pairs on, the placement before). See
     \item \href{#method-LensViewer-save_selection}{\code{LensViewer$save_selection()}}
     \item \href{#method-LensViewer-selections}{\code{LensViewer$selections()}}
     \item \href{#method-LensViewer-remove_selection}{\code{LensViewer$remove_selection()}}
+    \item \href{#method-LensViewer-rename_selection}{\code{LensViewer$rename_selection()}}
     \item \href{#method-LensViewer-restore_selection}{\code{LensViewer$restore_selection()}}
     \item \href{#method-LensViewer-compare_selections}{\code{LensViewer$compare_selections()}}
     \item \href{#method-LensViewer-de_results}{\code{LensViewer$de_results()}}
@@ -906,6 +908,30 @@ Part of the saved config (\code{state()$config$selectionColor}).
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-set_module"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-set_module}{}}}
+\subsection{\code{LensViewer$set_module()}}{
+  Enter a module, a mode for one task: the tray offers
+its controls only and the data area shows its view alone, until
+it is left (adr/0031). \code{"registration"}: the register control and
+the spatial view, split into the image's pane and the data's while
+placing points; it needs an image. \code{register_image()} enters it
+too. Part of the saved config (\code{state()$config$module}).
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$set_module(module = NULL)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{module}}{A module's name, or \code{NULL} to leave the one on}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-set_theme"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-set_theme}{}}}
 \subsection{\code{LensViewer$set_theme()}}{
@@ -913,16 +939,17 @@ Part of the saved config (\code{state()$config$selectionColor}).
 The spatial view and scatter plots stay dark in both: their
 colors (the selection, uncolored cells, image channels) are
 chosen for a dark background. Part of the saved config
-(\code{state()$config$theme}).
+(\code{state()$config$theme}, \code{NULL} while it follows the preference).
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
-    \preformatted{LensViewer$set_theme(theme)}
+    \preformatted{LensViewer$set_theme(theme = NULL)}
     \if{html}{\out{</div>}}
   }
   \subsection{Arguments}{
     \if{html}{\out{<div class="arguments">}}
     \describe{
-      \item{\code{theme}}{\code{"dark"} (the default) or \code{"light"}}
+      \item{\code{theme}}{\code{"dark"} or \code{"light"}; \code{NULL} goes back to the \code{theme}
+preference (see \code{\link[=lens_preferences]{lens_preferences()}}), dark unless set}
     }
     \if{html}{\out{</div>}}
   }
@@ -1365,6 +1392,26 @@ selects now; or the cell IDs of \code{name}
 }
 
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-LensViewer-rename_selection"></a>}}
+\if{latex}{\out{\hypertarget{method-LensViewer-rename_selection}{}}}
+\subsection{\code{LensViewer$rename_selection()}}{
+  Rename a saved selection. Its place in the list stays.
+  \subsection{Usage}{
+    \if{html}{\out{<div class="r">}}
+    \preformatted{LensViewer$rename_selection(name, new_name)}
+    \if{html}{\out{</div>}}
+  }
+  \subsection{Arguments}{
+    \if{html}{\out{<div class="arguments">}}
+    \describe{
+      \item{\code{name}}{Its name}
+      \item{\code{new_name}}{The new name; no other saved selection may have it}
+    }
+    \if{html}{\out{</div>}}
+  }
+}
+
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-LensViewer-restore_selection"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-restore_selection}{}}}
 \subsection{\code{LensViewer$restore_selection()}}{
@@ -1582,7 +1629,7 @@ hidden control stays hidden after a page reload.
   The panels: id, kind (a chart: \code{"scatter"},
 \code{"histogram"}, \code{"density"}, \code{"table"}, or \code{"spec"} for a pushed
 one; \code{"spatial"}, \code{"analysis"}; a control shown in the
-tray: \code{"layers"}, \code{"selection"}, \code{"data"}, \code{"register"},
+tray: \code{"layers"}, \code{"selection"}, \code{"register"},
 \code{"annotations"}), title,
 the group of tabs it is in (\code{"tray"} for a control), and whether
 it is in view (not behind another tab, nor hidden by the panels

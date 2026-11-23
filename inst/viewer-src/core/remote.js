@@ -14,6 +14,7 @@ import { isItemKey, parseItemKey, needItems, primeItem, scaleKey, itemColumn } f
 import { startRegistration, registrationPayload } from '../ui/registration.ts';
 import { apply, compose } from '../data/registration.ts';
 import { THEMES } from '../ui/theme.ts';
+import { setModule, isModule } from '../panels/modules.ts';
 import { spatialView, needView } from '../spatial/current.ts';
 
 const LAYERS = ['poly', 'tx', 'annotations', 'img'];
@@ -171,9 +172,14 @@ export function initRemote() {
     actions.setSelectionColor(reset ? null : color);
   });
 
-  onMessage('set_theme', ({ theme }) => {
-    if (!THEMES.includes(theme)) throw new Error(`theme must be one of ${THEMES.join(', ')}`);
-    actions.setTheme(theme);
+  onMessage('set_module', ({ module }) => {
+    if (module != null && !isModule(module)) throw new Error(`no module '${module}'`);
+    setModule(module ?? null);
+  });
+
+  onMessage('set_theme', ({ theme, reset }) => {
+    if (!reset && !THEMES.includes(theme)) throw new Error(`theme must be one of ${THEMES.join(', ')}`);
+    actions.setTheme(reset ? null : theme);
   });
 
   onMessage('set_mark', ({ mark, reset }) => {

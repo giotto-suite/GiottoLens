@@ -9,7 +9,18 @@ import { jobsButton } from '../ui/jobs.ts';
 import { infoButton } from '../ui/info.ts';
 import { initPreferencesButton } from '../ui/preferences.ts';
 import { askR } from '../core/comms.js';
-import { togglePanels, panelsShown, onLayoutChange, openAddMenu, type PanelHandle } from './dock.ts';
+import type { PanelHandle } from './dock.ts';
+import { moduleList, setModule, moduleControls } from './modules.ts';
+import { store } from '../core/store.ts';
+import { state } from '../core/state.js';
+import { railFlyout, type Flyout } from '../ui/flyout.ts';
+import { createDataPanel } from './data.ts';
+
+// The Data panel is a flyout from the rail, not a tray control: it fetches
+// from the object, as opening a project or a save does, and its queue and
+// pull outlast clicks elsewhere. Only with a giotto object shown (a catalog).
+let dataFly: Flyout | null = null;
+export function showData(): void { dataFly?.open(); }
 
 export function initToolsRail(body: HTMLElement): PanelHandle {
   const off = new AbortController();
@@ -19,8 +30,8 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
     <button class="tool-btn" data-act="project" title="project: open a save, a snapshot or another project"><i data-lucide="folder-open"></i></button>
     <button class="tool-btn" data-act="info" title="about the object shown: its snapshot and what it holds (viewer$object_info())"><i data-lucide="info"></i></button>
     <button class="tool-btn" data-act="save" title="save the work in the viewer (viewer$save())"><i data-lucide="save"></i></button>
-    <button class="tool-btn" data-act="panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
-    <button class="tool-btn" data-act="add" title="add a panel"><i data-lucide="plus"></i></button>
+    <button class="tool-btn" data-act="data" title="data: pull what the object holds into the metadata (viewer$pull())"><i data-lucide="database"></i></button>
+    <button class="tool-btn" data-act="modules" title="modules: a mode for one task (registration)"><i data-lucide="blocks"></i></button>
     <button class="tool-btn jobs-btn" data-act="jobs" title="jobs"><i data-lucide="activity"></i></button>
     <button class="tool-btn" data-act="preferences" title="preferences: defaults for every viewer"><i data-lucide="settings"></i></button>`;
   body.append(bar);
@@ -28,19 +39,20 @@ export function initToolsRail(body: HTMLElement): PanelHandle {
 
   initProjectButton(bar.querySelector('[data-act=project]') as HTMLElement, off.signal);
   initPreferencesButton(bar.querySelector('[data-act=preferences]') as HTMLElement, off.signal);
-  const panels = bar.querySelector('[data-act=panels]') as HTMLElement;
-  const showState = () => panels.classList.toggle('active', panelsShown());
-  panels.addEventListener('click', () => { togglePanels(); showState(); });
-  const offLayout = onLayoutChange(showState);
-  const add = bar.querySelector('[data-act=add]') as HTMLElement;
-  add.addEventListener('click', () => openAddMenu(add));
-  showState();
+  const dataBtn = bar.querySelector('[data-act=data]') as HTMLElement;
+  if (state.cells && state.manifest?.catalog) dataFly = railFlyout(dataBtn, 'data', 'data', createDataPanel);
+  else dataBtn.style.display = 'none';
+  const mods = bar.querySelector('[data-act=modules]') as HTMLElement;
+  mods.addEventListener('click', () => openModulesMenu(mods));
+  // Lit while a module is on
+  const offModule = store.subscribe(s => s.module, () =>
+    mods.classList.toggle('active', moduleList().some(m => m.on)), { fireImmediately: true });
   // Jobs R runs for the page, and cancelling them (ui/jobs.ts)
   const offJobs = jobsButton(bar.querySelector('[data-act=jobs]') as HTMLElement);
   const closeInfo = infoButton(bar.querySelector('[data-act=info]') as HTMLElement);
   const closeSave = saveForm(bar.querySelector('[data-act=save]') as HTMLElement);
 
-  return { destroy() { off.abort(); offLayout(); closeSave(); offJobs(); closeInfo(); } };
+  return { destroy() { off.abort(); closeSave(); offJobs(); closeInfo(); offModule(); dataFly?.destroy(); dataFly = null; } };
 }
 
 // Save the viewer's work (adr/0026): a name and a description, beside the
@@ -103,4 +115,26 @@ function saveForm(button: HTMLElement): () => void {
     }
   });
   return () => form.remove();
+}
+
+// The modules button's menu: modes for one task (panels/modules.ts), the one
+// on ticked; picking it leaves it, picking another enters that one
+function openModulesMenu(anchor: HTMLElement): void {
+  const doc = anchor.ownerDocument;
+  doc.querySelectorAll('.dock-menu.open').forEach(m => m.classList.remove('open'));
+  const menu = Object.assign(doc.createElement('div'), { className: 'dock-menu open dock-menu-float modules-menu' });
+  const r = anchor.getBoundingClientRect();
+  Object.assign(menu.style, { left: `${r.right + 4}px`, top: `${r.top}px`, right: 'auto' });
+  const close = () => { menu.remove(); doc.removeEventListener('click', close); };
+  menu.append(...moduleList().map(m => {
+    const item = Object.assign(doc.createElement('button'), {
+      textContent: `${m.on ? '\u2713' : '\u2003'} ${m.label}`, disabled: !m.available,
+      title: !m.available ? `${m.label} needs ${m.needs}` : m.on ? `leave ${m.label}` : `${m.label}: its controls and view alone` });
+    item.dataset.module = m.id;
+    item.dataset.controls = moduleControls(m.id).join(' ');
+    item.addEventListener('click', () => { close(); setModule(m.on ? null : m.id); });
+    return item;
+  }));
+  doc.body.append(menu);
+  setTimeout(() => doc.addEventListener('click', close));   // not the click that opened it
 }
