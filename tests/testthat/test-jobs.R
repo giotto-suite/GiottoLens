@@ -119,3 +119,22 @@ test_that("jobs need an object from a snapshot, and close() stops the daemon", {
     expect_null(priv$job_profile)
     expect_identical(as.integer(mirai::status(.compute = profile)$connections), 0L)
 })
+
+test_that("a job the page started reports to the page when it ends; R's to the console", {
+    jv <- jobs_viewer()
+    on.exit(jv$v$close(), add = TRUE)
+    priv <- jv$priv
+    end <- NULL
+    expect_no_warning(priv$for_page("pull", priv$start_job("from page", function(g) 1,
+        apply = function(x) warning("[site] applied ", x), on_end = function(r) end <<- r)))
+    expect_no_warning(expect_true(pump_until(function() !is.null(end), timeout = 30)))
+    e <- utils::tail(priv$log_entries, 1L)[[1L]]
+    expect_identical(e$action, "warning")
+    expect_identical(e$detail$where, "from page")
+    expect_identical(e$detail$message, "applied 1")
+
+    end <- NULL
+    priv$start_job("from R", function(g) 1,
+        apply = function(x) warning("applied ", x), on_end = function(r) end <<- r)
+    expect_warning(pump_until(function() !is.null(end), timeout = 30), "applied 1")
+})

@@ -84,3 +84,4 @@ Not bug fixes, behaviour-preserving refactors or naming conventions (AGENTS.md
 | [0031](0031-modules-are-modes-for-one-task.md) | Modules are modes for one task: their controls in the tray, their view alone | Proposed | 2026-11-22 |
 | [0032](0032-analysis-in-a-left-tray.md) | The Analysis panel is a left tray beside the tools rail, not a dock pane | Proposed | 2026-11-23 |
 | [0033](0033-saves-deleted-from-the-page-working-bundles-named-by-owner.md) | Saves are deleted from the page; a working bundle names its user and beats | Proposed | 2026-11-23 |
+| [0034](0034-page-actions-report-to-the-page.md) | What the page asks R to do reports to the page, not the console | Proposed | 2026-11-24 |

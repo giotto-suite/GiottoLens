@@ -20,6 +20,7 @@ import { initAnnotations, generateAnnotId, nextAnnotName } from './ui/annotation
 import { initReleaseGuard } from './ui/release.js';
 import { initSelectionBar, initRStatus, initPanelsToggle } from './ui/selbar.js';
 import { initJobs } from './ui/jobs.ts';
+import { initLog, logEntries } from './ui/log.ts';
 import { initRegistration } from './ui/registration.ts';
 import { showStartPage } from './ui/start.ts';
 import { initDock, refreshBuiltins, refreshCharts, pushPanel, removePanel, panelHandle } from './panels/dock.ts';
@@ -178,6 +179,7 @@ async function main() {
   initReleaseGuard();
   initSelectionBar();
   initJobs();
+  initLog();
   initSaved(() => showControl('selection'));
   // The tray beside the dock, so the dock lays out at its own width
   initTray(document.getElementById('tray'));
@@ -289,6 +291,7 @@ function showEmpty(project) {
   document.getElementById('main-layout').prepend(host);
   showStartPage(host, project);
   initRStatus();
+  initLog();
   onMessage('preferences', applyPrefs);
   followTheme();
   initComms();
@@ -297,7 +300,7 @@ function showEmpty(project) {
 
 // Handles for tests and debugging from the browser console
 window.__giottolens = { state, store, actions, dataUrl, panel: panelHandle, saved: savedList,
-  analysis: analysisModel, get spatial() { return spatialView(); } };
+  analysis: analysisModel, get spatial() { return spatialView(); }, get log() { return logEntries(); } };
 
 main().catch(err => {
   $status('error: ' + err.message);

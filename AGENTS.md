@@ -81,6 +81,7 @@ inst/viewer-src/  Vite source (edit here, then npm run build:dev)
               (landmark tool, image pane), start.ts (start page and project dialog, through askR()),
               jobs.ts (the tools bar's jobs button and popover; the page's list of jobs),
               info.ts (the tools bar's info button: the snapshot shown, from its sidecars),
+              log.ts (the log: the status line's notice, the bottom bar's log button and drawer),
               preferences.ts (the tools bar's Preferences dialog)
   panels/     dock.ts (dockview: view types, placement, layout), tray.ts (the controls' tray:
               CONTROLS, rail, sections), tools.ts (the tools rail), selection.ts (the selection
@@ -404,7 +405,7 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   before a style (`migrateConfig()`): sequential, `blue-red` when they named no preset, and
   the 7-color `blue-white-red` as `RdBu`.
 
-### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 9)
+### Protocol (`core/comms.js` ↔ `R/protocol.R`, PROTOCOL = 10)
 
 - `{type, id?, data}`. Messages from R with an `id` are requests; the handler's return value
   comes back as `{type: 'reply', id, data | error}`; `LensViewer` private `request()` waits.
@@ -422,6 +423,15 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
   older load to `reload`, and drops `.lens_object_types` messages from a tab that has not
   reloaded since the last `set_object()` (adr/0017).
 - Browser errors are forwarded as `client_error`, printed in the R console and kept in `log()`.
+- What the page asks R to do reports to the page, never the console (adr/0034): the WebSocket
+  handler runs each message in `for_page(where, ...)`, which logs the action's warnings,
+  messages and error as one entry (`error`, `warning` or `message`, with `items`). A job
+  started inside it reports to the page when it ends; work deferred with `later::later()`
+  needs its own `for_page()`. Raise plain conditions; a handler that goes on after an error
+  calls `report()`; a message for the R user about what the page did (the object or window
+  changed) is `.console_message()`, which stays in the console. Never add a `tryCatch()` that warns to the console. R sends every log entry
+  as `log_entry` and the log on `ready` (`log_entries`); `ui/log.ts` shows the newest notice
+  in place of the status line and the log in a drawer above the bottom bar.
 - Jobs: R broadcasts `job` `{id, label, ref, state, message?, progress?}` as each starts, reports
   progress and ends (`running`, `done`, `error`, `cancelled`), and sends the running ones to a
   tab on `ready`; the page cancels one with the `cancel_job` ask. The page keeps the running
@@ -564,7 +574,8 @@ viewer <- launch_lens(g); viewer$push_metadata(g, dimreds = "umap")
 - The selection bar (`ui/selbar.js`, static markup with ids in `index.html`, outside the
   dock) shows R's connection with the stop button (`close`; also on the start page,
   `initRStatus()`), the combine mode's symbol (`#sel-mode`), the page's selection count (a
-  fixed minimum width) and the status line.
+  fixed minimum width), the status line (or a notice in its place, `#notice`) and, at its
+  right end, the log button (`#btn-log`).
   Keep buttons out of it after the count, since they would move as the count changes. The
   actions on the selection (combine mode, invert, clear), its rules as cards and the saved
   selections are the selection panel's, a control in the tray (`panels/selection.ts`,

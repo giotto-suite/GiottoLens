@@ -1173,7 +1173,9 @@ an image of the same name.
 \if{html}{\out{<a id="method-LensViewer-log"></a>}}
 \if{latex}{\out{\hypertarget{method-LensViewer-log}{}}}
 \subsection{\code{LensViewer$log()}}{
-  Recent user actions and browser errors, newest last
+  Recent user actions, browser errors, and the errors,
+warnings and messages from what the viewer asked R to do (which the
+viewer shows instead of the console), newest last
   \subsection{Usage}{
     \if{html}{\out{<div class="r">}}
     \preformatted{LensViewer$log(n = 20L)}
