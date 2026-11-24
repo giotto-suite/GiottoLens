@@ -1339,7 +1339,9 @@ LensViewer <- R6::R6Class("LensViewer",
             invisible(file)
         },
 
-        #' @description Recent user actions and browser errors, newest last
+        #' @description Recent user actions, browser errors, and the errors,
+        #'   warnings and messages from what the viewer asked R to do (which the
+        #'   viewer shows instead of the console), newest last
         #' @param n Number of entries
         log = function(n = 20L) {
             entries <- utils::tail(private$log_entries, n)
@@ -1987,15 +1989,12 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(a)) a$close()
         },
         # A message for the analysis from a tab: `analysis_open` makes one
-        analysis_message = function(ws, type, dat) tryCatch({
+        analysis_message = function(ws, type, dat) {
             if (identical(type, "analysis_open")) {
                 if (is.null(private$lens_analysis)) private$start_analysis("LensViewer")
                 private$lens_analysis$announce()
             } else if (!is.null(private$lens_analysis)) private$lens_analysis$handle(type, dat)
-        }, error = function(e) {
-            private$add_log("error", list(where = type, message = conditionMessage(e)))
-            warning("[LensViewer] ", .console_text(conditionMessage(e)), call. = FALSE)
-        }),
+        },
         # The metadata columns `owner` keeps in the metadata shown, beside
         # those pushed and pulled: `df` (cell_ID and its columns now) replaces
         # its previous set, and rules on columns it no longer has are dropped
@@ -2111,8 +2110,7 @@ LensViewer <- R6::R6Class("LensViewer",
             if (is.null(de) || !is.character(gene) || length(gene) != 1L || !nzchar(gene)) return()
             key <- .item_key("expression", de$feat_type, gene, name = de$values)
             private$need_item(key, "LensViewer", function(r) {
-                if (!is.null(r$error)) return(private$add_log("error",
-                    list(where = "panel_pick", message = r$error)))
+                if (!is.null(r$error)) return(private$report("error", r$error))
                 try(ws$send(.encode_ws_message("set_color_by", list(column = key, item = r$data))),
                     silent = TRUE)
             })
@@ -2271,6 +2269,8 @@ LensViewer <- R6::R6Class("LensViewer",
         req_id      = 0L,
         replies     = list(),
         log_entries = list(),
+        notice      = NULL,     # the page's action collecting conditions (for_page())
+        autosave_error = NULL,  # the autosave failure last logged
 
         cells_xy    = NULL,
 
@@ -2328,7 +2328,6 @@ LensViewer <- R6::R6Class("LensViewer",
                 }
             }, error = function(e) {
                 private$add_log("error", list(where = "add_image", message = conditionMessage(e)))
-                warning(.console_text(conditionMessage(e)), call. = FALSE)
                 list(error = sub("^\\[LensViewer\\] ", "", conditionMessage(e)))
             })
             try(ws$send(.encode_ws_message("add_image_result", r)), silent = TRUE)
@@ -2339,9 +2338,65 @@ LensViewer <- R6::R6Class("LensViewer",
             if (!is.null(url)) unlink(file.path(private$work, sub("^work/", "", url)))
         },
 
+        # The page shows the log too: entries `error`, `warning` and
+        # `message` on its status line
         add_log = function(action, detail) {
             entry <- list(time = as.numeric(Sys.time()), action = action, detail = detail)
             private$log_entries <- utils::tail(c(private$log_entries, list(entry)), 200L)
+            private$broadcast(.encode_ws_message("log_entry", entry))
+        },
+
+        # Run `expr` for the page's action `where`. Its warnings, messages
+        # and error go to the page as one log entry, never to the console:
+        # whoever asked is looking at the page (adr/0034). An error ends
+        # `expr`, which returns NULL. `where` NULL (R's own calls) runs `expr`
+        # as is; a nested call adds to the outer one.
+        for_page = function(where, expr) {
+            if (is.null(where) || !is.null(private$notice)) return(expr)
+            acc <- new.env(parent = emptyenv())
+            acc$items <- list()
+            acc$more <- 0L
+            private$notice <- acc
+            on.exit({
+                private$notice <- NULL
+                private$log_notice(where, acc)
+            }, add = TRUE)
+            withCallingHandlers(
+                tryCatch(expr, error = function(e) {
+                    private$report("error", conditionMessage(e))
+                    NULL
+                }),
+                warning = function(w) {
+                    private$report("warning", conditionMessage(w))
+                    invokeRestart("muffleWarning")
+                },
+                message = function(m) {
+                    if (inherits(m, "lens_console")) return()
+                    private$report("message", conditionMessage(m))
+                    invokeRestart("muffleMessage")
+                })
+        },
+        # The page's action, if one is running (for_page()), else the console
+        report = function(level, text) {
+            acc <- private$notice
+            if (is.null(acc)) {
+                if (level == "message") message(text) else warning(text, call. = FALSE)
+                return(invisible())
+            }
+            if (length(acc$items) >= .lens_notice_items) acc$more <- acc$more + 1L
+            else acc$items[[length(acc$items) + 1L]] <- list(level = level,
+                text = sub("^\\[[^]]*\\] *", "", trimws(text)))
+            invisible()
+        },
+        # One log entry for an action's conditions, at the most severe level;
+        # `message` is that level's first
+        log_notice = function(where, acc) {
+            if (!length(acc$items)) return(invisible())
+            lv <- vapply(acc$items, `[[`, "", "level")
+            level <- c("error", "warning", "message")[min(match(lv, c("error", "warning", "message")))]
+            private$add_log(level, c(list(where = where,
+                message = acc$items[[match(level, lv)]]$text, items = acc$items),
+                if (acc$more) list(more = acc$more)))
         },
 
         # A set_rule message numbered so the page can say which rules its
@@ -2567,7 +2622,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     private$open_snapshot(src, name, spat_unit = str1(dat$spat_unit) %||% NA,
                         feat_type = str1(dat$feat_type) %||% NA, site = "LensViewer")
                     private$add_log("open", list(path = src@path, name = name))
-                    message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
+                    .console_message("[LensViewer] the viewer opened snapshot '", name, "' of ", src@path)
                     list(data = list(snapshot = private$snapshot))
                 },
                 catalog = list(data = .catalog_payload(private$need_catalog("LensViewer"))),
@@ -2627,7 +2682,7 @@ LensViewer <- R6::R6Class("LensViewer",
                     if (is.null(id))
                         return(list(error = "no waiting window shows that code", code = "code"))
                     reply(list(data = list()))
-                    message("[LensViewer] the viewer moved to another window")
+                    .console_message("[LensViewer] the viewer moved to another window")
                     private$grant(id)
                     NULL
                 },
@@ -2762,8 +2817,17 @@ LensViewer <- R6::R6Class("LensViewer",
         autosave = function() {
             later::later(function() {
                 if (is.null(private$server)) return()
-                tryCatch(private$write_state() || private$heartbeat(), error = function(e)
-                    private$add_log("error", list(where = "autosave", message = conditionMessage(e))))
+                # A failure is logged, and so shown in the page, once until it
+                # changes or passes: this runs every second
+                tryCatch({
+                    private$write_state() || private$heartbeat()
+                    private$autosave_error <- NULL
+                }, error = function(e) {
+                    msg <- conditionMessage(e)
+                    if (!identical(msg, private$autosave_error))
+                        private$add_log("error", list(where = "autosave", message = msg))
+                    private$autosave_error <- msg
+                })
                 private$autosave()
             }, getOption("GiottoLens.autosave_interval", 1))
         },
@@ -2841,7 +2905,7 @@ LensViewer <- R6::R6Class("LensViewer",
             } else unlink(dir, recursive = TRUE)
             private$write_state(force = TRUE)
             private$add_log("open_save", hit$name)
-            message("[LensViewer] the viewer opened '", hit$name, "' of ", src@path)
+            .console_message("[LensViewer] the viewer opened '", hit$name, "' of ", src@path)
         },
 
         # The work of bundle `dir` (`st` its state.json, `b` its bundle.json)
@@ -2989,20 +3053,24 @@ LensViewer <- R6::R6Class("LensViewer",
                 private$job_message(job, state, msg)
                 if (!is.null(on_end)) on_end(list(state = state, result = result, message = msg))
             }
+            # A job the page started reports to the page when it ends too
+            where <- if (!is.null(private$notice)) label
             promises::then(job$m,
-                onFulfilled = function(value) {
+                onFulfilled = function(value) private$for_page(where, {
                     if (!identical(private$load_seq, job$load))
-                        return(end("cancelled", msg = "the object shown changed"))
-                    res <- tryCatch(list(ok = apply(value)), error = function(e) e)
-                    if (inherits(res, "error")) end("error", msg = conditionMessage(res))
-                    else end("done", result = res$ok)
-                },
+                        end("cancelled", msg = "the object shown changed")
+                    else {
+                        res <- tryCatch(list(ok = apply(value)), error = function(e) e)
+                        if (inherits(res, "error")) end("error", msg = conditionMessage(res))
+                        else end("done", result = res$ok)
+                    }
+                }),
                 # A cancel rejects too ("Operation canceled"): told apart by
                 # the job's own flag
-                onRejected = function(e) {
+                onRejected = function(e) private$for_page(where, {
                     if (job$cancelled) end("cancelled", msg = job$why)
                     else end("error", msg = .job_error_text(e))
-                })
+                }))
             id
         },
         # start_job() and wait for it, pumping the event loop: its result, or
@@ -3405,14 +3473,17 @@ LensViewer <- R6::R6Class("LensViewer",
                     # about that object would land on this one
                     if (parsed$type %in% .lens_object_types && !priv$conn_current(ws))
                         return(invisible())
-                    switch(parsed$type,
+                    # Reinstalling is done in R: this one stays in the console
+                    if (parsed$type == "ready" && !identical(as.integer(dat$protocol), .lens_protocol))
+                        warning("[LensViewer] the viewer bundle speaks protocol ",
+                            .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
+                            "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
+                    where <- if (parsed$type == "ask" && is.character(dat$op) && length(dat$op) == 1L)
+                        dat$op else parsed$type
+                    priv$for_page(where, switch(parsed$type,
                         # The tab has registered its handlers: send what it
                         # needs, so a reload or new tab matches the others
                         ready = {
-                            if (!identical(as.integer(dat$protocol), .lens_protocol))
-                                warning("[LensViewer] the viewer bundle speaks protocol ",
-                                    .console_text(dat$protocol %||% "?"), ", this package ", .lens_protocol,
-                                    "; reinstall GiottoLens or rebuild inst/viewer", call. = FALSE)
                             # The page loaded before the last set_object(): it
                             # reloads first. A page that does not say which
                             # load it has (an older bundle) is taken as current.
@@ -3446,6 +3517,7 @@ LensViewer <- R6::R6Class("LensViewer",
                             # Jobs already running: a reload or a new tab lists them too
                             for (j in priv$running_jobs) ws$send(priv$job_json(j, "running"))
                             ws$send(.encode_ws_message("selections", priv$saved_msg()))
+                            ws$send(.encode_ws_message("log_entries", list(entries = priv$log_entries)))
                             if (!is.null(priv$lens_analysis)) priv$lens_analysis$on_ready(ws)
                             if (length(priv$waiting))
                                 ws$send(.encode_ws_message("claim_request",
@@ -3465,19 +3537,18 @@ LensViewer <- R6::R6Class("LensViewer",
                         analysis_history = , analysis_feature = , analysis_open =
                             priv$analysis_message(ws, parsed$type, dat),
                         ask = priv$answer(ws, parsed$id, dat),
-                        # The Preferences dialog (the tools bar's gear)
+                        # The Preferences dialog (the tools bar's gear); a
+                        # refused change puts the dialog back
                         preferences_set = tryCatch(.lens_pref_from_viewer(dat),
                             error = function(e) {
-                                priv$add_log("error", list(where = "preferences",
-                                    message = conditionMessage(e)))
-                                warning("[LensViewer] ", .console_text(conditionMessage(e)),
-                                    call. = FALSE)
                                 .lens_pref_broadcast()
+                                stop(e)
                             }),
                         # The images panel's "add image" button
                         choose_image = {
                             type <- if (is.character(dat$type) && length(dat$type) == 1L) dat$type else "if"
-                            later::later(function() priv$choose_image(ws, type))
+                            later::later(function()
+                                priv$for_page("choose_image", priv$choose_image(ws, type)))
                         },
                         config = if (is.character(dat$json) && length(dat$json) == 1L)
                             priv$config_json <- dat$json,
@@ -3501,17 +3572,12 @@ LensViewer <- R6::R6Class("LensViewer",
                             pub$close()
                         }),
                         # "treat as" menu in the viewer
-                        set_column_type = tryCatch({
+                        set_column_type = {
                             pub$set_column_type(as.character(dat$column %||% ""),
                                 as.character(dat$type %||% ""))
                             priv$add_log("set_column_type",
                                 paste0(dat$column, " = ", dat$type))
-                        }, error = function(e) {
-                            priv$add_log("error", list(where = "set_column_type",
-                                message = conditionMessage(e)))
-                            warning("[LensViewer] ", .console_text(conditionMessage(e)),
-                                call. = FALSE)
-                        }),
+                        },
                         {
                             # A selection the page made before it had R's
                             # latest rules: dropped, or it would undo them. The
@@ -3520,8 +3586,7 @@ LensViewer <- R6::R6Class("LensViewer",
                                     dat$r_seq < priv$rule_seq)
                                 return(invisible())
                             tryCatch(.handle_ws_message(pub, parsed, priv$cell_ids),
-                                error = function(e) warning("[LensViewer] message error: ",
-                                    .console_text(conditionMessage(e)), call. = FALSE))
+                                error = function(e) priv$report("error", conditionMessage(e)))
                             if (parsed$type == "registration_update")
                                 priv$registration_msg <- dat
                             if (parsed$type == "cell_selection") {
@@ -3534,7 +3599,7 @@ LensViewer <- R6::R6Class("LensViewer",
                             cb <- priv$cbs[[parsed$type]]
                             if (!is.null(cb)) later::later(function() cb(dat))
                         }
-                    )
+                    ))
                 },
                 close = function(ws) {
                     if (priv$is_pending(ws)) priv$pending <- NULL

@@ -31,6 +31,16 @@
 # Seconds the window that shows the viewer has to answer that it is there
 .lens_probe_wait <- 2
 
+# Conditions kept from one of the page's actions (for_page()); past it, a count
+.lens_notice_items <- 50L
+
+# For whoever is at the R console, about what the page did there (the object
+# shown changed, the viewer moved): kept in the console even inside
+# for_page(), which takes the page's own messages (adr/0034)
+.console_message <- function(...)
+    message(structure(class = c("lens_console", "message", "condition"),
+        list(message = paste0(..., "\n"), call = NULL)))
+
 # Browser-supplied text for the console, without control characters (which
 # could carry terminal escape sequences); newlines and tabs are kept
 .console_text <- function(x) {

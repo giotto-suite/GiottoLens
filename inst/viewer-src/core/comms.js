@@ -23,7 +23,7 @@
 import { dataRoot, setDataRoot } from './base.ts';
 
 // Bump when the message format changes; R warns on a mismatch
-export const PROTOCOL = 9;
+export const PROTOCOL = 10;
 
 let ws             = null;
 let reconnectTimer = null;

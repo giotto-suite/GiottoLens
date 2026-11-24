@@ -256,12 +256,12 @@ test_that("the add image button adds a file R picks, ready to register", {
     expect_true(module_available(br, "registration"))
     expect_true(isTRUE(v$state()$config$images[[nm]]$show))
 
-    # A name already taken is reported in the panel
+    # A name already taken is reported in the panel and the log, not the console
     withr::local_options(GiottoLens.choose_file = function() fx$rgb_file)
     pick_type(br, "if")
-    expect_warning(expect_true(browser_wait(br,
-        "document.querySelector('[data-section=images] .img-add-status.img-add-error') !== null")),
-        "image names must be unique")
+    expect_no_warning(expect_true(browser_wait(br,
+        "document.querySelector('[data-section=images] .img-add-status.img-add-error') !== null")))
+    expect_match(utils::tail(v$log(1L)$detail, 1L), "image names must be unique")
 
     # From R, then the first registered against it
     v$add_image(fx$image_file, name = "stain")

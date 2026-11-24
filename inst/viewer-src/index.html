@@ -831,6 +831,52 @@
     #selection-bar .tool-btn { padding: 3px 5px; }
     #selection-bar .tool-btn svg { width: 13px; height: 13px; }
     #status { color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+    /* The latest error, warning or message from what the page asked R, in
+       place of the status line until it times out or is read (ui/log.ts) */
+    #notice { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 50%; padding: 1px 6px;
+      background: none; border: 1px solid transparent; border-radius: 4px; color: var(--fg-1); font: inherit; cursor: pointer; }
+    #notice[hidden] { display: none; }
+    #notice:not([hidden]) + #status { display: none; }
+    #notice:hover { border-color: var(--bg-3); }
+    .notice-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notice-more { flex-shrink: 0; color: var(--fg-3); }
+    #notice.lvl-warning { color: #fcd34d; }
+    #notice.lvl-error { color: #fca5a5; border-color: rgba(248,113,113,0.5); }
+    :root[data-theme="light"] #notice.lvl-warning { color: #b45309; }
+    :root[data-theme="light"] #notice.lvl-error { color: #b91c1c; border-color: #fca5a5; }
+    .log-badge.error { background: #ef4444; color: #fff; }
+
+    /* The log (ui/log.ts): over the panels, just above the bar */
+    #log-drawer {
+      position: absolute; left: 0; right: 0; bottom: 28px; height: min(35vh, 320px); z-index: 900;
+      display: flex; flex-direction: column; background: var(--bg-1); border-top: 1px solid var(--bg-3);
+      box-shadow: 0 -6px 20px rgba(0,0,0,0.35); font-size: 11px; color: var(--fg-1);
+      transform: translateY(calc(100% + 28px)); visibility: hidden;
+      transition: transform 0.15s ease-out, visibility 0s 0.15s;
+    }
+    #log-drawer.open { transform: none; visibility: visible; transition: transform 0.15s ease-out; }
+    .log-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--bg-2); }
+    .log-title { margin-right: auto; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; }
+    .log-filter { padding: 1px 8px; background: none; border: 1px solid var(--bg-3); border-radius: 10px;
+      color: var(--fg-2); font: inherit; cursor: pointer; }
+    .log-filter.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-fg); }
+    .log-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px; }
+    .log-row { display: grid; grid-template-columns: auto auto 1fr auto; column-gap: 10px; align-items: baseline;
+      padding: 3px 0; border-bottom: 1px solid var(--bg-2); }
+    .log-time { color: var(--fg-4); font-variant-numeric: tabular-nums; }
+    .log-where { color: var(--fg-3); white-space: nowrap; }
+    .log-msg { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .log-tail { display: flex; gap: 6px; color: var(--fg-3); white-space: nowrap; }
+    .log-toggle { padding: 0; background: none; border: none; color: var(--fg-3); font: inherit; cursor: pointer; }
+    .log-toggle:hover { color: var(--fg-0); }
+    .log-items { grid-column: 3 / -1; display: flex; flex-direction: column; gap: 2px; margin-top: 3px;
+      padding-left: 8px; border-left: 2px solid var(--bg-3); }
+    .log-item { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+    .log-none { padding: 6px 0; color: var(--fg-4); }
+    .log-row.lvl-warning .log-msg, .log-item.lvl-warning { color: #fcd34d; }
+    .log-row.lvl-error .log-msg, .log-item.lvl-error { color: #fca5a5; }
+    :root[data-theme="light"] :is(.log-row.lvl-warning .log-msg, .log-item.lvl-warning) { color: #b45309; }
+    :root[data-theme="light"] :is(.log-row.lvl-error .log-msg, .log-item.lvl-error) { color: #b91c1c; }
 
     .toolbar {
       position: absolute; bottom: 20px;
@@ -915,7 +961,7 @@
     /* No object loaded (launch_lens() without one): the start page in place
        of the panels */
     body.empty #workarea, body.empty .selbar-sel { display: none; }
-    body.empty #status { margin-left: auto; }
+    body.empty :is(#status, #notice) { margin-left: auto; }
     body.empty #btn-panels { display: none; }
     .start-host { position: relative; flex: 1; overflow: hidden; background: var(--bg-0); color: var(--fg-1); }
 
@@ -1020,9 +1066,13 @@
         <button id="sel-rules" style="display:none"></button>
         <span id="sel-count"></span>
       </div>
+      <button id="notice" hidden></button>
       <div id="status">initializing…</div>
+      <button class="tool-btn" id="btn-log" title="log (viewer$log())"><i data-lucide="scroll-text"></i></button>
       <button class="tool-btn" id="btn-panels" title="show or hide the panels beside the spatial view"><i data-lucide="bar-chart-2"></i></button>
     </div>
+    <!-- The log, sliding up from the bar (ui/log.ts) -->
+    <div id="log-drawer"></div>
   </div>
 
   <script type="module" src="./main.js"></script>

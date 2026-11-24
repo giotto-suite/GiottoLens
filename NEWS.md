@@ -1,5 +1,8 @@
 # GiottoLens (development version)
 
+* Errors, warnings and messages from what you do in the viewer show in the viewer instead
+  of the R console: the latest on the status line, and all of them in a log that slides up
+  from the bottom bar's log button. Calls from R still report in the console (adr/0034).
 * The left rail's modules button closes its list when clicked again.
 * The tray's selection button shows how many selection rules are on, as the jobs button shows
   running jobs; its tooltip gives the cells they select.
